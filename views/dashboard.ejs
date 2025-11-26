@@ -1,0 +1,427 @@
+<div class="stats-grid">
+    <div class="stat-card stat-users">
+        <div class="stat-header">
+            <span class="stat-icon">👥</span>
+            <span class="stat-trend">активных</span>
+        </div>
+        <div class="stat-value"><%= stats.users.enabled %></div>
+        <div class="stat-label">из <%= stats.users.total %> пользователей</div>
+    </div>
+    
+    <div class="stat-card stat-nodes">
+        <div class="stat-header">
+            <span class="stat-icon">🖥️</span>
+            <span class="stat-trend">онлайн</span>
+        </div>
+        <div class="stat-value"><%= stats.nodes.online %></div>
+        <div class="stat-label">из <%= stats.nodes.total %> нод</div>
+    </div>
+    
+    <div class="stat-card stat-online">
+        <div class="stat-header">
+            <span class="stat-icon">🌐</span>
+            <span class="stat-trend">сейчас</span>
+        </div>
+        <div class="stat-value" id="onlineCount"><%= stats.onlineUsers %></div>
+        <div class="stat-label">подключений</div>
+    </div>
+    
+    <div class="stat-card stat-sync">
+        <div class="stat-header">
+            <span class="stat-icon">⏱️</span>
+            <span class="stat-trend">sync</span>
+        </div>
+        <div class="stat-value"><%= stats.lastSync ? new Date(stats.lastSync).toLocaleTimeString('ru', {hour: '2-digit', minute: '2-digit'}) : '—' %></div>
+        <div class="stat-label">последняя проверка</div>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <div class="dashboard-main">
+        <!-- Nodes Status -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Статус нод</h2>
+                <div class="header-actions">
+                    <button class="btn btn-sm" onclick="refreshStats()" title="Обновить">🔄</button>
+                </div>
+            </div>
+            <div class="card-body no-padding">
+                <table class="table nodes-table">
+                    <thead>
+                        <tr>
+                            <th>Нода</th>
+                            <th>Статус</th>
+                            <th>Онлайн</th>
+                            <th>Загрузка</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <% if (nodes.length === 0) { %>
+                        <tr>
+                            <td colspan="5" class="text-center text-muted">
+                                <a href="/panel/nodes/add" class="btn btn-primary btn-sm mt-2">Добавить ноду</a>
+                            </td>
+                        </tr>
+                        <% } %>
+                        <% nodes.forEach(node => { %>
+                        <tr class="node-row" data-nodeid="<%= node._id %>">
+                            <td>
+                                <div class="node-cell">
+                                    <strong><%= node.name %></strong>
+                                    <code class="node-ip"><%= node.ip %></code>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="status-indicator status-<%= node.status %>">
+                                    <span class="status-dot"></span>
+                                    <%= node.status %>
+                                </span>
+                            </td>
+                            <td class="online-count"><%= node.onlineUsers || 0 %></td>
+                            <td class="node-load" data-nodeid="<%= node._id %>">
+                                <span class="load-placeholder">—</span>
+                            </td>
+                            <td>
+                                <div class="node-actions">
+                                    <button class="btn-icon" onclick="restartNode('<%= node._id %>')" title="Перезапустить">🔄</button>
+                                    <a href="/panel/nodes/<%= node._id %>" class="btn-icon" title="Настройки">⚙️</a>
+                                    <a href="/panel/nodes/<%= node._id %>/terminal" class="btn-icon" title="Терминал">💻</a>
+                                </div>
+                            </td>
+                        </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Logs -->
+        <div class="card mt-2">
+            <div class="card-header">
+                <h2>Логи</h2>
+                <button class="btn btn-sm" onclick="refreshLogs()">Обновить</button>
+            </div>
+            <div class="card-body no-padding">
+                <div class="logs-container" id="logsContainer">
+                    <div class="logs-loading">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-sidebar">
+        <!-- Quick Actions -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Быстрые действия</h2>
+            </div>
+            <div class="card-body">
+                <div class="quick-actions">
+                    <a href="/panel/nodes/add" class="quick-action">
+                        <span class="qa-icon">➕</span>
+                        <span class="qa-text">Добавить ноду</span>
+                    </a>
+                    <a href="/panel/users/add" class="quick-action">
+                        <span class="qa-icon">👤</span>
+                        <span class="qa-text">Создать пользователя</span>
+                    </a>
+                    <button class="quick-action" onclick="syncAll()">
+                        <span class="qa-icon">🔄</span>
+                        <span class="qa-text">Синхронизация</span>
+                    </button>
+                    <button class="quick-action" onclick="createBackup()">
+                        <span class="qa-icon">💾</span>
+                        <span class="qa-text">Backup БД</span>
+                    </button>
+                    <button class="quick-action" onclick="document.getElementById('restoreInput').click()">
+                        <span class="qa-icon">📥</span>
+                        <span class="qa-text">Restore БД</span>
+                    </button>
+                    <input type="file" id="restoreInput" accept=".tar.gz,.tgz" style="display:none" onchange="restoreBackup(this)">
+                </div>
+            </div>
+        </div>
+
+        <!-- System Info -->
+        <div class="card mt-2">
+            <div class="card-header">
+                <h2>Панель</h2>
+                <button class="btn btn-sm" onclick="loadSystemStats()" title="Обновить">🔄</button>
+            </div>
+            <div class="card-body">
+                <div class="system-info" id="systemStats">
+                    <div class="sys-item">
+                        <span class="sys-label">CPU Load</span>
+                        <span class="sys-value" id="cpuLoad">—</span>
+                    </div>
+                    <div class="sys-item">
+                        <span class="sys-label">RAM</span>
+                        <div class="progress-bar-wrap">
+                            <div class="progress-bar" id="ramBar" style="width: 0%"></div>
+                        </div>
+                        <span class="sys-value" id="ramValue">—</span>
+                    </div>
+                    <div class="sys-item">
+                        <span class="sys-label">Process</span>
+                        <span class="sys-value" id="processValue">—</span>
+                    </div>
+                    <div class="sys-item">
+                        <span class="sys-label">Uptime</span>
+                        <span class="sys-value" id="uptime">—</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<style>
+.progress-bar-wrap {
+    width: 60px;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    margin: 4px 0;
+}
+.progress-bar {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 3px;
+    transition: width 0.3s;
+}
+.progress-bar.high { background: #ef4444; }
+.progress-bar.medium { background: #f59e0b; }
+.node-load {
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+.node-load .cpu, .node-load .mem {
+    display: block;
+}
+.load-placeholder {
+    color: var(--muted);
+}
+</style>
+
+<script>
+// Load on page load
+document.addEventListener('DOMContentLoaded', () => {
+    refreshLogs();
+    loadSystemStats();
+    loadNodesStats();
+});
+
+async function refreshLogs() {
+    try {
+        const res = await fetch('/panel/logs', { credentials: 'include' });
+        const data = await res.json();
+        
+        const container = document.getElementById('logsContainer');
+        if (data.logs && data.logs.length > 0) {
+            container.innerHTML = data.logs.map(log => {
+                const isError = log.includes('error') || log.includes('Error') || log.includes('❌');
+                const isWarn = log.includes('warn') || log.includes('⚠');
+                const isSuccess = log.includes('✅') || log.includes('✓');
+                let cls = 'log-line';
+                if (isError) cls += ' log-error';
+                else if (isWarn) cls += ' log-warn';
+                else if (isSuccess) cls += ' log-success';
+                return `<div class="${cls}">${escapeHtml(log)}</div>`;
+            }).join('');
+        } else {
+            container.innerHTML = '<div class="logs-empty">Нет логов</div>';
+        }
+    } catch (e) {
+        document.getElementById('logsContainer').innerHTML = '<div class="logs-error">Ошибка загрузки</div>';
+    }
+}
+
+function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function loadSystemStats() {
+    try {
+        const res = await fetch('/panel/system-stats', { credentials: 'include' });
+        const data = await res.json();
+        
+        if (data.success) {
+            // CPU
+            document.getElementById('cpuLoad').textContent = data.cpu.load1.toFixed(2);
+            
+            // RAM
+            const ramPercent = data.mem.percent;
+            const ramBar = document.getElementById('ramBar');
+            ramBar.style.width = ramPercent + '%';
+            ramBar.className = 'progress-bar' + (ramPercent > 80 ? ' high' : ramPercent > 60 ? ' medium' : '');
+            document.getElementById('ramValue').textContent = ramPercent + '%';
+            
+            // Process memory
+            const processMB = Math.round(data.process.rss / 1024 / 1024);
+            document.getElementById('processValue').textContent = processMB + ' MB';
+            
+            // Uptime
+            const uptime = data.uptime;
+            const hours = Math.floor(uptime / 3600);
+            const mins = Math.floor((uptime % 3600) / 60);
+            document.getElementById('uptime').textContent = `${hours}ч ${mins}м`;
+        }
+    } catch (e) {
+        console.error('Failed to load system stats:', e);
+    }
+}
+
+async function loadNodesStats() {
+    const nodeRows = document.querySelectorAll('.node-row');
+    
+    for (const row of nodeRows) {
+        const nodeId = row.dataset.nodeid;
+        const loadCell = row.querySelector('.node-load');
+        
+        try {
+            const res = await fetch(`/panel/nodes/${nodeId}/stats`, { credentials: 'include' });
+            const data = await res.json();
+            
+            if (data.success) {
+                const cpuLoad = data.cpu.load1.toFixed(1);
+                const memPercent = data.mem.percent;
+                
+                loadCell.innerHTML = `
+                    <span class="cpu">CPU: ${cpuLoad}</span>
+                    <span class="mem">RAM: ${memPercent}%</span>
+                `;
+            } else {
+                loadCell.innerHTML = '<span class="load-placeholder">N/A</span>';
+            }
+        } catch (e) {
+            loadCell.innerHTML = '<span class="load-placeholder">—</span>';
+        }
+    }
+}
+
+async function refreshStats() {
+    location.reload();
+}
+
+async function syncAll() {
+    showToast('Синхронизация запущена...');
+    try {
+        await fetch('/api/sync', { method: 'POST', credentials: 'include' });
+        showToast('✓ Синхронизация запущена');
+    } catch (e) {
+        showToast('Ошибка', 'error');
+    }
+}
+
+async function restartNode(nodeId) {
+    const row = document.querySelector(`tr[data-nodeid="${nodeId}"]`);
+    const btn = row.querySelector('.btn-icon');
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    
+    try {
+        const res = await fetch(`/panel/nodes/${nodeId}/restart`, { 
+            method: 'POST', 
+            credentials: 'include' 
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast('✓ Нода перезапущена');
+            row.querySelector('.status-indicator').className = 'status-indicator status-online';
+            row.querySelector('.status-indicator').innerHTML = '<span class="status-dot"></span>online';
+        } else {
+            showToast('Ошибка: ' + (data.error || 'unknown'), 'error');
+        }
+    } catch (e) {
+        showToast('Ошибка перезапуска', 'error');
+    }
+    
+    btn.disabled = false;
+    btn.textContent = '🔄';
+}
+
+async function createBackup() {
+    showToast('Создание backup...');
+    try {
+        const res = await fetch('/panel/backup', { 
+            method: 'POST', 
+            credentials: 'include' 
+        });
+        
+        if (!res.ok) {
+            const data = await res.json();
+            showToast('Ошибка: ' + (data.error || 'unknown'), 'error');
+            return;
+        }
+        
+        // Получаем blob и скачиваем
+        const blob = await res.blob();
+        const contentDisposition = res.headers.get('Content-Disposition');
+        let filename = 'backup.tar.gz';
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
+            if (match) filename = match[1];
+        }
+        
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        showToast('✓ Backup скачан');
+    } catch (e) {
+        showToast('Ошибка backup', 'error');
+    }
+}
+
+async function restoreBackup(input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    if (!confirm(`Восстановить базу данных из "${file.name}"?\n\n⚠️ Текущие данные будут заменены!`)) {
+        input.value = '';
+        return;
+    }
+    
+    showToast('Восстановление БД...');
+    
+    const formData = new FormData();
+    formData.append('backup', file);
+    
+    try {
+        const res = await fetch('/panel/restore', { 
+            method: 'POST', 
+            credentials: 'include',
+            body: formData
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast('✓ БД восстановлена! Перезагрузка...');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('Ошибка: ' + (data.error || 'unknown'), 'error');
+        }
+    } catch (e) {
+        showToast('Ошибка restore', 'error');
+    }
+    
+    input.value = '';
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = 'toast show ' + type;
+    setTimeout(() => toast.className = 'toast', 3000);
+}
+</script>

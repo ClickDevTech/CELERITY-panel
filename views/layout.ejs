@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= title %> | Hysteria Panel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="app">
+        <nav class="sidebar">
+            <div class="logo">
+                <span class="logo-icon">⚡</span>
+                <span class="logo-text">Hysteria</span>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="/panel" class="<%= page === 'dashboard' ? 'active' : '' %>">
+                    <span class="nav-icon">📊</span>
+                    <span>Dashboard</span>
+                </a></li>
+                <li><a href="/panel/nodes" class="<%= page === 'nodes' ? 'active' : '' %>">
+                    <span class="nav-icon">🖥️</span>
+                    <span>Ноды</span>
+                </a></li>
+                <li><a href="/panel/groups" class="<%= page === 'groups' ? 'active' : '' %>">
+                    <span class="nav-icon">📁</span>
+                    <span>Группы</span>
+                </a></li>
+                <li><a href="/panel/users" class="<%= page === 'users' ? 'active' : '' %>">
+                    <span class="nav-icon">👥</span>
+                    <span>Пользователи</span>
+                </a></li>
+                <li><a href="/panel/settings" class="<%= page === 'settings' ? 'active' : '' %>">
+                    <span class="nav-icon">⚙️</span>
+                    <span>Настройки</span>
+                </a></li>
+            </ul>
+            <div class="sidebar-footer">
+                <a href="/panel/logout" class="logout-btn">Выйти</a>
+            </div>
+        </nav>
+        <main class="content">
+            <header class="topbar">
+                <h1><%= title %></h1>
+                <div class="topbar-right">
+                    <span class="status-dot online"></span>
+                    <span>Online</span>
+                </div>
+            </header>
+            <div class="main-content">
+                <%- content %>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

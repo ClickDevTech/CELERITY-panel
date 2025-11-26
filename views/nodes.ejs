@@ -1,0 +1,106 @@
+<div class="page-header">
+    <div class="page-header-left">
+        <span class="results-count">Всего: <%= nodes.length %></span>
+    </div>
+    <a href="/panel/nodes/add" class="btn btn-primary">+ Добавить ноду</a>
+</div>
+
+<div class="card">
+    <div class="card-body no-padding">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Название</th>
+                    <th>Сервер</th>
+                    <th>Порты</th>
+                    <th>Статус</th>
+                    <th>Онлайн</th>
+                    <th>Группы</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                <% if (nodes.length === 0) { %>
+                <tr>
+                    <td colspan="7" class="text-center text-muted">
+                        <div class="empty-state">
+                            <span class="empty-icon">🖥️</span>
+                            <p>Нет добавленных нод</p>
+                            <a href="/panel/nodes/add" class="btn btn-primary">Добавить первую ноду</a>
+                        </div>
+                    </td>
+                </tr>
+                <% } %>
+                <% nodes.forEach(node => { %>
+                <tr>
+                    <td>
+                        <strong><%= node.name %></strong>
+                        <% if (node.domain) { %>
+                        <br><small class="text-muted"><%= node.domain %></small>
+                        <% } %>
+                    </td>
+                    <td><code><%= node.ip %></code></td>
+                    <td>
+                        <code><%= node.port %></code>
+                        <% if (node.portRange) { %>
+                        <br><small class="text-muted">hop: <%= node.portRange %></small>
+                        <% } %>
+                    </td>
+                    <td>
+                        <span class="badge badge-<%= node.status === 'online' ? 'success' : (node.status === 'error' ? 'danger' : 'warning') %>">
+                            <%= node.status %>
+                        </span>
+                        <% if (!node.active) { %>
+                        <span class="badge badge-secondary">выкл</span>
+                        <% } %>
+                    </td>
+                    <td>
+                        <span class="<%= node.maxOnlineUsers && node.onlineUsers >= node.maxOnlineUsers ? 'text-danger' : '' %>">
+                            <%= node.onlineUsers || 0 %><% if (node.maxOnlineUsers) { %>/<%= node.maxOnlineUsers %><% } %>
+                        </span>
+                    </td>
+                    <td>
+                        <% if (node.groups && node.groups.length > 0) { %>
+                            <% node.groups.slice(0,2).forEach(group => { %>
+                                <span class="group-tag-sm" style="background: <%= group.color %>20; border-color: <%= group.color %>; color: <%= group.color %>">
+                                    <%= group.name %>
+                                </span>
+                            <% }); %>
+                            <% if (node.groups.length > 2) { %>
+                                <span class="group-more">+<%= node.groups.length - 2 %></span>
+                            <% } %>
+                        <% } else { %>
+                            <span class="text-muted">Все</span>
+                        <% } %>
+                    </td>
+                    <td>
+                        <div class="btn-group">
+                            <a href="/panel/nodes/<%= node._id %>" class="btn btn-sm">Редактировать</a>
+                            <button class="btn btn-sm btn-danger" onclick="deleteNode('<%= node._id %>')">Удалить</button>
+                        </div>
+                    </td>
+                </tr>
+                <% }); %>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+async function deleteNode(id) {
+    if (!confirm('Удалить ноду?')) return;
+    
+    const res = await fetch(`/api/nodes/${id}`, {
+        method: 'DELETE',
+        headers: { 'X-API-Key': window.API_KEY }
+    });
+    
+    if (res.ok) {
+        location.reload();
+    } else {
+        alert('Ошибка удаления');
+    }
+}
+</script>
+
+

@@ -1,0 +1,16 @@
+{
+  "defaults": {
+    "subscriberEmail": "admin@example.com",
+    "agreeToTerms": true,
+    "store": {
+      "module": "greenlock-store-fs",
+      "basePath": "./greenlock.d"
+    },
+    "challenges": {
+      "http-01": {
+        "module": "acme-http-01-standalone"
+      }
+    }
+  },
+  "sites": []
+}

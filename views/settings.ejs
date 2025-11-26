@@ -1,0 +1,149 @@
+<% if (message) { %>
+<div class="alert alert-success"><%= message %></div>
+<% } %>
+<% if (error) { %>
+<div class="alert alert-error"><%= error %></div>
+<% } %>
+
+<div class="row">
+    <div class="col-6">
+        <div class="card">
+            <div class="card-header">
+                <h2>Общие настройки</h2>
+            </div>
+            <div class="card-body">
+                <div class="settings-list">
+                    <div class="setting-item">
+                        <label>Base URL</label>
+                        <code><%= config.BASE_URL %></code>
+                    </div>
+                    <div class="setting-item">
+                        <label>Порт</label>
+                        <code><%= config.PORT %></code>
+                    </div>
+                    <div class="setting-item">
+                        <label>MongoDB</label>
+                        <code><%= config.MONGO_URI.replace(/\/\/.*@/, '//***@') %></code>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-2">
+            <div class="card-header">
+                <h2>⚙️ Настройки подписок</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/panel/settings">
+                    <h4 style="margin-bottom: 0.75rem;">⚖️ Балансировка нагрузки</h4>
+                    <div class="settings-list" style="margin-bottom: 1rem;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="loadBalancing.enabled" 
+                                   <%= settings?.loadBalancing?.enabled ? 'checked' : '' %>>
+                            <span>Сортировать по загрузке</span>
+                        </label>
+                        <small class="hint" style="display: block; margin-top: 0.25rem;">
+                            Менее загруженные ноды будут первыми в подписке
+                        </small>
+                        
+                        <label class="checkbox-label" style="margin-top: 0.75rem;">
+                            <input type="checkbox" name="loadBalancing.hideOverloaded" 
+                                   <%= settings?.loadBalancing?.hideOverloaded ? 'checked' : '' %>>
+                            <span>Скрывать перегруженные</span>
+                        </label>
+                        <small class="hint" style="display: block; margin-top: 0.25rem;">
+                            Ноды с онлайн ≥ лимиту не будут включены в подписку
+                        </small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Сохранить настройки</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-6">
+        <div class="card">
+            <div class="card-header">
+                <h2>🔐 Безопасность</h2>
+            </div>
+            <div class="card-body">
+                <div class="settings-list">
+                    <div class="setting-item">
+                        <label>Администратор</label>
+                        <span><%= admin?.username || 'N/A' %></span>
+                    </div>
+                    <div class="setting-item">
+                        <label>Последний вход</label>
+                        <span><%= admin?.lastLogin ? new Date(admin.lastLogin).toLocaleString('ru-RU') : 'Никогда' %></span>
+                    </div>
+                    <div class="setting-item">
+                        <label>IP Whitelist</label>
+                        <span><%= config.PANEL_IP_WHITELIST || 'Отключен (доступ всем)' %></span>
+                    </div>
+                </div>
+                
+                <hr style="margin: 1rem 0; border-color: var(--border);">
+                
+                <h4 style="margin-bottom: 0.5rem;">Смена пароля</h4>
+                <form method="POST" action="/panel/settings/password" class="compact-form">
+                    <div class="form-group">
+                        <input type="password" name="currentPassword" placeholder="Текущий пароль" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="password" name="newPassword" placeholder="Новый пароль (мин. 6 символов)" minlength="6" required>
+                    </div>
+                    <div class="form-group">
+                        <input type="password" name="confirmPassword" placeholder="Подтверждение пароля" minlength="6" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Изменить пароль</button>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-2">
+            <div class="card-header">
+                <h2>SSL Сертификат</h2>
+            </div>
+            <div class="card-body">
+                <% if (ssl.enabled) { %>
+                <div class="alert alert-success">
+                    <strong>✅ HTTPS активен</strong>
+                    <p>Домен: <%= ssl.domain %></p>
+                    <p>Let's Encrypt автообновление</p>
+                </div>
+                <% } else { %>
+                <div class="alert alert-warning">
+                    <strong>⚠️ HTTP режим</strong>
+                    <p>Для включения HTTPS задайте переменные:</p>
+                    <pre>PANEL_DOMAIN=panel.example.com
+ACME_EMAIL=admin@example.com</pre>
+                </div>
+                <% } %>
+            </div>
+        </div>
+        
+        <div class="card mt-2">
+            <div class="card-header">
+                <h2>Статус системы</h2>
+            </div>
+            <div class="card-body">
+                <div class="settings-list">
+                    <div class="setting-item">
+                        <label>Uptime</label>
+                        <span><%= Math.floor(process.uptime() / 3600) %>h <%= Math.floor((process.uptime() % 3600) / 60) %>m</span>
+                    </div>
+                    <div class="setting-item">
+                        <label>Memory</label>
+                        <span><%= Math.round(process.memoryUsage().heapUsed / 1024 / 1024) %> MB</span>
+                    </div>
+                    <div class="setting-item">
+                        <label>Node.js</label>
+                        <span><%= process.version %></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+

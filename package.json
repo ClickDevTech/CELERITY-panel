@@ -1,0 +1,36 @@
+{
+  "name": "hysteria-backend",
+  "version": "1.0.0",
+  "description": "Backend для управления Hysteria 2 нодами и пользователями",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "express-rate-limit": "^7.1.5",
+    "mongoose": "^8.0.0",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "ejs": "^3.1.9",
+    "node-cron": "^3.0.3",
+    "ssh2": "^1.15.0",
+    "winston": "^3.11.0",
+    "yaml": "^2.3.4",
+    "crypto-js": "^4.2.0",
+    "axios": "^1.6.2",
+    "ws": "^8.14.2",
+    "bcryptjs": "^2.4.3",
+    "cookie": "^0.6.0",
+    "multer": "^1.4.5-lts.1",
+    "@root/greenlock-express": "^4.0.3",
+    "greenlock-store-fs": "^3.2.2",
+    "greenlock-manager-fs": "^3.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
+

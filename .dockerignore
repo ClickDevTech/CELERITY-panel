@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+!.env.docker
+logs/*
+!logs/.gitkeep
+greenlock.d/*
+!greenlock.d/config.json
+*.md
+.vscode
+.idea
+
+
+

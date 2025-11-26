@@ -1,0 +1,47 @@
+# Hysteria Backend - Docker Compose
+# Запуск: docker-compose up -d
+
+version: '3.8'
+
+services:
+  # MongoDB (с авторизацией)
+  mongo:
+    image: mongo:7
+    container_name: hysteria-mongo
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: hysteria
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hysteria}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    networks:
+      - hysteria-net
+
+  # Hysteria Backend
+  backend:
+    build: .
+    container_name: hysteria-backend
+    restart: always
+    depends_on:
+      - mongo
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./logs:/app/logs
+      - ./greenlock.d:/app/greenlock.d
+      - ./backups:/app/backups
+    env_file:
+      - .env
+    environment:
+      MONGO_URI: mongodb://${MONGO_USER:-hysteria}:${MONGO_PASSWORD}@mongo:27017/hysteria?authSource=admin
+    networks:
+      - hysteria-net
+
+networks:
+  hysteria-net:
+    driver: bridge
+
+volumes:
+  mongo_data:

@@ -1,0 +1,65 @@
+# Шаблон конфига Hysteria 2 с HTTP авторизацией
+# 
+# Переменные:
+#   {{PORT}} - основной порт (443)
+#   {{AUTH_URL}} - URL для HTTP авторизации (https://your-backend.com/api/auth)
+#   {{CERT_PATH}} - путь к сертификату
+#   {{KEY_PATH}} - путь к ключу
+#   {{STATS_SECRET}} - секрет для API статистики
+
+listen: :{{PORT}}
+
+# TLS
+tls:
+  cert: {{CERT_PATH}}
+  key: {{KEY_PATH}}
+  sniGuard: strict
+
+# Sniffing для определения протокола
+sniff:
+  enable: true
+  timeout: 2s
+  rewriteDomain: false
+  tcpPorts: 80,443,8000-9000
+  udpPorts: 443,80,53
+
+# QUIC настройки
+quic:
+  initStreamReceiveWindow: 8388608
+  maxStreamReceiveWindow: 8388608
+  initConnReceiveWindow: 20971520
+  maxConnReceiveWindow: 20971520
+  maxIdleTimeout: 60s
+  maxIncomingStreams: 256
+  disablePathMTUDiscovery: false
+
+# HTTP авторизация - запросы идут на бэкенд
+auth:
+  type: http
+  http:
+    url: {{AUTH_URL}}
+    insecure: false
+
+# Bandwidth
+ignoreClientBandwidth: false
+
+# Маскировка под Google
+masquerade:
+  type: proxy
+  proxy:
+    url: https://www.google.com
+    rewriteHost: true
+
+# ACL
+acl:
+  inline:
+    - reject(geoip:cn)
+    - reject(geoip:private)
+
+# API статистики (для сбора трафика и kick)
+trafficStats:
+  listen: 127.0.0.1:9999
+  secret: {{STATS_SECRET}}
+
+
+

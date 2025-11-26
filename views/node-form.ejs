@@ -1,0 +1,538 @@
+<div class="page-header">
+    <a href="/panel/nodes" class="btn btn-back">← Назад к списку</a>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2><%= node ? 'Редактирование ноды' : 'Новая нода' %></h2>
+    </div>
+    <div class="card-body">
+        <form method="POST" action="/panel/nodes<%= node ? '/' + node._id : '' %>" class="form">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="name">Название *</label>
+                    <input type="text" id="name" name="name" value="<%= node?.name || '' %>" 
+                           placeholder="Германия, Нидерланды..." required>
+                    <small>Отображается в подписке клиента</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="ip">IP адрес *</label>
+                    <input type="text" id="ip" name="ip" value="<%= node?.ip || '' %>" 
+                           placeholder="123.45.67.89" required>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="flag">Флаг (эмодзи)</label>
+                    <input type="text" id="flag" name="flag" value="<%= node?.flag || '' %>" 
+                           placeholder="🇩🇪">
+                    <small>Эмодзи флага страны</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="countryCode">Код страны</label>
+                    <input type="text" id="countryCode" name="countryCode" value="<%= node?.countryCode || '' %>" 
+                           placeholder="DE, NL, US...">
+                    <small>ISO код страны</small>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="domain">Домен (для SNI)</label>
+                <input type="text" id="domain" name="domain" value="<%= node?.domain || '' %>" 
+                       placeholder="de.example.com">
+                <small>Опционально. Используется для TLS и в подписке</small>
+            </div>
+            
+            <div class="form-group">
+                <label>Группы серверов</label>
+                <div class="groups-select">
+                    <% if (groups && groups.length > 0) { %>
+                        <% groups.forEach(group => { 
+                            const isSelected = node?.groups?.some(g => g._id?.toString() === group._id.toString() || g.toString() === group._id.toString());
+                        %>
+                            <label class="checkbox-tag" style="border-color: <%= group.color %>">
+                                <input type="checkbox" name="groups" value="<%= group._id %>" <%= isSelected ? 'checked' : '' %>>
+                                <span class="tag-dot" style="background: <%= group.color %>"></span>
+                                <span><%= group.name %></span>
+                            </label>
+                        <% }); %>
+                    <% } else { %>
+                        <p class="hint">Нет групп. <a href="/panel/groups">Создайте группу</a></p>
+                    <% } %>
+                </div>
+                <small>Пользователи этих групп получат доступ к этой ноде. Если не выбрано — доступна всем.</small>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="port">Основной порт</label>
+                    <input type="number" id="port" name="port" value="<%= node?.port || 443 %>" 
+                           placeholder="443">
+                </div>
+                
+                <div class="form-group">
+                    <label for="portRange">Port Hopping диапазон</label>
+                    <input type="text" id="portRange" name="portRange" value="<%= node?.portRange || '20000-50000' %>" 
+                           placeholder="20000-50000">
+                    <small>Клиенты будут подключаться на эти порты</small>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="maxOnlineUsers">Лимит онлайн пользователей</label>
+                    <input type="number" id="maxOnlineUsers" name="maxOnlineUsers" 
+                           value="<%= node?.maxOnlineUsers || 0 %>" placeholder="0" min="0">
+                    <small>0 = без лимита. При превышении нода скрывается из подписки (если включено).</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="rankingCoefficient">Приоритет (ranking)</label>
+                    <input type="number" id="rankingCoefficient" name="rankingCoefficient" 
+                           value="<%= node?.rankingCoefficient || 1 %>" placeholder="1" min="0" step="0.1">
+                    <small>Меньше = выше в списке подписки</small>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h3>API статистики</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="statsPort">Порт API</label>
+                        <input type="number" id="statsPort" name="statsPort" value="<%= node?.statsPort || 9999 %>">
+                    </div>
+                    <div class="form-group">
+                        <label for="statsSecret">Секрет API</label>
+                        <input type="text" id="statsSecret" name="statsSecret" value="<%= node?.statsSecret || '' %>" 
+                               placeholder="secret123">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h3>SSH доступ (опционально)</h3>
+                <small class="section-hint">Для автоматического управления конфигом ноды</small>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sshPort">Порт SSH</label>
+                        <input type="number" id="sshPort" name="ssh.port" value="<%= node?.ssh?.port || 22 %>">
+                    </div>
+                    <div class="form-group">
+                        <label for="sshUsername">Пользователь</label>
+                        <input type="text" id="sshUsername" name="ssh.username" value="<%= node?.ssh?.username || 'root' %>">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="sshPassword">Пароль SSH <%= node?.ssh?.password ? '(установлен)' : '' %></label>
+                    <input type="password" id="sshPassword" name="ssh.password" 
+                           placeholder="<%= node?.ssh?.password ? 'Оставьте пустым чтобы не менять' : 'Введите пароль' %>">
+                    <small class="hint">Пароль хранится в зашифрованном виде</small>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h3>Конфигурация Hysteria</h3>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="useCustomConfig" id="useCustomConfig" 
+                               <%= node?.useCustomConfig ? 'checked' : '' %>
+                               onchange="toggleCustomConfig()">
+                        Использовать кастомный конфиг
+                    </label>
+                    <small>Если включено — при синхронизации будет использоваться конфиг ниже вместо автогенерации</small>
+                </div>
+                
+                <div id="customConfigSection" style="<%= node?.useCustomConfig ? '' : 'display:none' %>">
+                    <div class="form-group">
+                        <label for="customConfig">Конфиг config.yaml</label>
+                        <textarea id="customConfig" name="customConfig" rows="20" 
+                                  class="code-textarea" placeholder="listen: :443&#10;&#10;acme:&#10;  domains:&#10;    - example.com..."><%= node?.customConfig || '' %></textarea>
+                        <small>YAML формат. Используйте кнопку "Сгенерировать" чтобы заполнить базовым конфигом.</small>
+                    </div>
+                    <button type="button" class="btn btn-sm" onclick="generateConfig()">📝 Сгенерировать базовый конфиг</button>
+                    <button type="button" class="btn btn-sm" onclick="loadCurrentConfig()">📥 Загрузить текущий с ноды</button>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="active" <%= node?.active !== false ? 'checked' : '' %>>
+                    Нода активна
+                </label>
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <%= node ? 'Сохранить' : 'Создать ноду' %>
+                </button>
+                <a href="/panel/nodes" class="btn">Отмена</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<% if (node) { %>
+<div class="card mt-3">
+    <div class="card-header">
+        <h2>Управление</h2>
+    </div>
+    <div class="card-body">
+        <div class="actions-grid">
+            <button class="action-btn" onclick="setupNode()" id="btnSetup">
+                <span class="action-icon">⚙️</span>
+                <span>Настроить автоматически</span>
+            </button>
+            <button class="action-btn" onclick="openTerminal()">
+                <span class="action-icon">🖥️</span>
+                <span>SSH Терминал</span>
+            </button>
+            <button class="action-btn" onclick="getNodeLogs()">
+                <span class="action-icon">📋</span>
+                <span>Логи Hysteria</span>
+            </button>
+            <button class="action-btn" onclick="checkStatus()">
+                <span class="action-icon">🔍</span>
+                <span>Проверить статус</span>
+            </button>
+            <button class="action-btn" onclick="resetStatus()">
+                <span class="action-icon">🔄</span>
+                <span>Сбросить статус</span>
+            </button>
+        </div>
+        <div id="setupResult" class="mt-2"></div>
+        <div id="logsContainer" class="mt-2" style="display:none;">
+            <div class="logs-header">
+                <strong>📋 Логи выполнения:</strong>
+                <button class="btn btn-sm" onclick="clearLogs()">Очистить</button>
+            </div>
+            <pre class="logs-output" id="logsOutput"></pre>
+        </div>
+    </div>
+</div>
+
+<style>
+.logs-output {
+    background: #1a1a2e;
+    color: #0f0;
+    padding: 15px;
+    border-radius: 8px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 12px;
+    max-height: 500px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin-top: 10px;
+}
+.logs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.logs-output .error { color: #ff6b6b; }
+.logs-output .success { color: #51cf66; }
+.logs-output .warning { color: #ffd43b; }
+</style>
+
+<script>
+function showLogs(logs) {
+    const container = document.getElementById('logsContainer');
+    const output = document.getElementById('logsOutput');
+    container.style.display = 'block';
+    
+    let html = '';
+    if (Array.isArray(logs)) {
+        html = logs.map(line => {
+            if (line.includes('✓') || line.includes('success')) return '<span class="success">' + escapeHtml(line) + '</span>';
+            if (line.includes('❌') || line.includes('Error') || line.includes('[STDERR]')) return '<span class="error">' + escapeHtml(line) + '</span>';
+            if (line.includes('⚠')) return '<span class="warning">' + escapeHtml(line) + '</span>';
+            return escapeHtml(line);
+        }).join('\n');
+    } else {
+        html = escapeHtml(logs);
+    }
+    output.innerHTML = html;
+    output.scrollTop = output.scrollHeight;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function clearLogs() {
+    document.getElementById('logsContainer').style.display = 'none';
+    document.getElementById('logsOutput').innerHTML = '';
+}
+
+async function setupNode() {
+    if (!confirm('Настроить ноду автоматически через SSH?\n\nЭто:\n• Установит Hysteria (если не установлена)\n• Сгенерирует сертификат\n• Загрузит конфигурацию\n• Настроит port hopping\n• Перезапустит сервис')) return;
+    
+    const btn = document.getElementById('btnSetup');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="action-icon">⏳</span><span>Настройка...</span>';
+    
+    document.getElementById('setupResult').innerHTML = '<div class="alert">⏳ Выполняется настройка... Это может занять 1-2 минуты.</div>';
+    
+    try {
+        const res = await fetch('/panel/nodes/<%= node._id %>/setup', {
+            method: 'POST',
+        });
+        const data = await res.json();
+        
+        // Показываем логи
+        if (data.logs) {
+            showLogs(data.logs);
+        }
+        
+        if (data.success) {
+            document.getElementById('setupResult').innerHTML = '<div class="alert alert-success">✅ ' + data.message + '</div>';
+        } else {
+            document.getElementById('setupResult').innerHTML = '<div class="alert alert-error">❌ ' + (data.error || 'Ошибка') + '</div>';
+        }
+    } catch (err) {
+        document.getElementById('setupResult').innerHTML = '<div class="alert alert-error">❌ ' + err.message + '</div>';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="action-icon">⚙️</span><span>Настроить автоматически</span>';
+    }
+}
+
+async function getNodeLogs() {
+    document.getElementById('setupResult').innerHTML = '<div class="alert">📋 Загрузка логов...</div>';
+    
+    try {
+        const res = await fetch('/panel/nodes/<%= node._id %>/logs');
+        const data = await res.json();
+        
+        if (data.success) {
+            document.getElementById('setupResult').innerHTML = '';
+            showLogs(data.logs);
+        } else {
+            document.getElementById('setupResult').innerHTML = '<div class="alert alert-error">❌ ' + data.error + '</div>';
+        }
+    } catch (err) {
+        document.getElementById('setupResult').innerHTML = '<div class="alert alert-error">❌ ' + err.message + '</div>';
+    }
+}
+
+async function checkStatus() {
+    document.getElementById('setupResult').innerHTML = '<div class="alert">🔍 Проверка...</div>';
+    
+    try {
+        const res = await fetch('/api/nodes/<%= node._id %>/status', {
+            headers: { 'X-API-Key': window.API_KEY }
+        });
+        const data = await res.json();
+        
+        const statusColors = { online: 'alert-success', offline: 'alert-warning', error: 'alert-error' };
+        const statusIcons = { online: '✅', offline: '⚠️', error: '❌' };
+        const color = statusColors[data.status] || '';
+        const icon = statusIcons[data.status] || '❓';
+        
+        document.getElementById('setupResult').innerHTML = '<div class="alert ' + color + '">' + icon + ' Статус: ' + data.status + '</div>';
+    } catch (err) {
+        document.getElementById('setupResult').innerHTML = '<div class="alert alert-error">Ошибка: ' + err.message + '</div>';
+    }
+}
+
+function openTerminal() {
+    window.open('/panel/nodes/<%= node._id %>/terminal', '_blank', 'width=1000,height=600');
+}
+
+async function resetStatus() {
+    document.getElementById('setupResult').innerHTML = '<div class="alert">🔄 Сброс статуса...</div>';
+    
+    try {
+        const res = await fetch('/api/nodes/<%= node._id %>/reset-status', {
+            method: 'POST',
+            headers: { 'X-API-Key': window.API_KEY }
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            document.getElementById('setupResult').innerHTML = '<div class="alert alert-success">✅ Статус сброшен на online</div>';
+        } else {
+            document.getElementById('setupResult').innerHTML = '<div class="alert alert-error">❌ ' + (data.error || 'Ошибка') + '</div>';
+        }
+    } catch (err) {
+        document.getElementById('setupResult').innerHTML = '<div class="alert alert-error">Ошибка: ' + err.message + '</div>';
+    }
+}
+</script>
+
+<div class="card mt-3">
+    <div class="card-header">
+        <h2>Конфиг для ноды</h2>
+    </div>
+    <div class="card-body">
+        <p class="hint">Скопируйте этот конфиг в <code>/etc/hysteria/config.yaml</code> на сервере:</p>
+        <pre class="code-block"><code>listen: :<%= node.port %>
+
+tls:
+<% if (node.domain) { %>
+  acme:
+    domains:
+      - <%= node.domain %>
+    email: admin@<%= node.domain %>
+<% } else { %>
+  cert: /etc/hysteria/cert.pem
+  key: /etc/hysteria/key.pem
+<% } %>
+  sniGuard: strict
+
+auth:
+  type: http
+  http:
+    url: <%= baseUrl %>/api/auth
+    insecure: false
+
+masquerade:
+  type: string
+  string:
+    content: "Hello World"
+    statusCode: 200
+
+acl:
+  inline:
+    - reject(geoip:cn)</code></pre>
+        <button class="btn btn-sm" onclick="copyConfig()">Копировать</button>
+    </div>
+</div>
+<% } %>
+
+<style>
+.code-textarea {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 15px;
+    width: 100%;
+    resize: vertical;
+    line-height: 1.5;
+}
+.code-textarea:focus {
+    outline: none;
+    border-color: #1a659e;
+}
+</style>
+
+<script>
+function copyConfig() {
+    const code = document.querySelector('.code-block code').textContent;
+    navigator.clipboard.writeText(code);
+    alert('Скопировано!');
+}
+
+function toggleCustomConfig() {
+    const checked = document.getElementById('useCustomConfig').checked;
+    document.getElementById('customConfigSection').style.display = checked ? 'block' : 'none';
+}
+
+function generateConfig() {
+    const name = document.getElementById('name').value || 'Node';
+    const domain = document.getElementById('domain').value;
+    const port = document.getElementById('port').value || 443;
+    const statsPort = document.getElementById('statsPort').value || 9999;
+    const statsSecret = document.getElementById('statsSecret').value || 'secret';
+    const portRange = document.getElementById('portRange').value || '20000-50000';
+    
+    let tlsSection;
+    if (domain) {
+        tlsSection = `acme:
+  domains:
+    - ${domain}
+  email: admin@${domain}
+  dir: /etc/hysteria/acme
+  listenHost: 0.0.0.0`;
+    } else {
+        tlsSection = `tls:
+  cert: /etc/hysteria/cert.pem
+  key: /etc/hysteria/key.pem`;
+    }
+    
+    const config = `# Hysteria 2 Config - ${name}
+# Generated: ${new Date().toISOString()}
+
+listen: :${port}
+
+${tlsSection}
+
+sniff:
+  enable: true
+  timeout: 2s
+  rewriteDomain: false
+  tcpPorts: 80,443,8000-9000
+  udpPorts: 443,80,53
+
+quic:
+  initStreamReceiveWindow: 8388608
+  maxStreamReceiveWindow: 8388608
+  initConnReceiveWindow: 20971520
+  maxConnReceiveWindow: 20971520
+  maxIdleTimeout: 60s
+  maxIncomingStreams: 256
+
+auth:
+  type: http
+  http:
+    url: <%= baseUrl %>/api/auth
+    insecure: false
+
+# Ограничение скорости (раскомментируй при необходимости)
+# bandwidth:
+#   up: 100 mbps
+#   down: 100 mbps
+# ignoreClientBandwidth: true
+
+masquerade:
+  type: string
+  string:
+    content: "Service Unavailable"
+    headers:
+      Content-Type: text/plain
+    statusCode: 503
+
+acl:
+  inline:
+    - reject(geoip:cn)
+    - reject(geoip:private)
+
+trafficStats:
+  listen: :${statsPort}
+  secret: ${statsSecret}
+`;
+    
+    document.getElementById('customConfig').value = config;
+}
+
+async function loadCurrentConfig() {
+    <% if (node) { %>
+    if (!confirm('Загрузить текущий конфиг с ноды через SSH?')) return;
+    
+    try {
+        const res = await fetch('/panel/nodes/<%= node._id %>/get-config');
+        const data = await res.json();
+        
+        if (data.success) {
+            document.getElementById('customConfig').value = data.config;
+            alert('Конфиг загружен!');
+        } else {
+            alert('Ошибка: ' + data.error);
+        }
+    } catch (err) {
+        alert('Ошибка: ' + err.message);
+    }
+    <% } else { %>
+    alert('Сначала сохраните ноду');
+    <% } %>
+}
+</script>
+

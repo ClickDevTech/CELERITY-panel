@@ -1,0 +1,189 @@
+<div class="page-header">
+    <h1>Группы серверов</h1>
+    <p class="hint">Группы позволяют гибко управлять доступом пользователей к серверам</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>➕ Создать группу</h2>
+    </div>
+    <div class="card-body">
+        <form method="POST" action="/panel/groups" class="form-inline">
+            <div class="form-row">
+                <div class="form-group" style="flex: 2;">
+                    <input type="text" name="name" placeholder="Название группы" required>
+                </div>
+                <div class="form-group" style="flex: 2;">
+                    <input type="text" name="description" placeholder="Описание (опционально)">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <input type="number" name="maxDevices" placeholder="0" min="0" value="0" title="Лимит устройств (0 = безлимит)">
+                </div>
+                <div class="form-group" style="flex: 0.5;">
+                    <input type="color" name="color" value="#6366f1" title="Цвет группы">
+                </div>
+                <button type="submit" class="btn btn-primary">Создать</button>
+            </div>
+            <small class="hint">Лимит устройств — максимальное количество одновременных подключений. 0 = без лимита.</small>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-2">
+    <div class="card-header">
+        <h2>📋 Все группы (<%= groups.length %>)</h2>
+    </div>
+    <div class="card-body">
+        <% if (groups.length === 0) { %>
+            <div class="empty-state">
+                <p>Групп пока нет. Создайте первую группу выше.</p>
+                <p class="hint">Группы помогают организовать серверы по регионам, тарифам или другим критериям.</p>
+            </div>
+        <% } else { %>
+            <div class="groups-grid">
+                <% groups.forEach(group => { %>
+                    <div class="group-card" style="border-left: 4px solid <%= group.color %>">
+                        <form method="POST" action="/panel/groups/<%= group._id %>">
+                            <div class="group-header">
+                                <input type="text" name="name" value="<%= group.name %>" class="group-name-input" required>
+                                <input type="color" name="color" value="<%= group.color %>" class="color-picker">
+                            </div>
+                            
+                            <div class="group-stats">
+                                <span class="stat">🖥️ <%= group.nodesCount || 0 %> нод</span>
+                                <span class="stat">👥 <%= group.usersCount || 0 %> пользователей</span>
+                                <span class="stat" title="Лимит устройств">📱 <%= group.maxDevices || '∞' %></span>
+                            </div>
+                            
+                            <div class="form-row-inline">
+                                <input type="text" name="description" value="<%= group.description || '' %>" placeholder="Описание" class="group-description" style="flex: 2;">
+                                <input type="number" name="maxDevices" value="<%= group.maxDevices || 0 %>" min="0" placeholder="Устройства" class="group-devices" style="flex: 1;" title="Лимит устройств (0 = безлимит)">
+                            </div>
+                            
+                            <div class="group-actions">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" name="active" <%= group.active !== false ? 'checked' : '' %>>
+                                    <span>Активна</span>
+                                </label>
+                                <div class="btn-group">
+                                    <button type="submit" class="btn btn-sm btn-secondary">Сохранить</button>
+                                </div>
+                            </div>
+                        </form>
+                        
+                        <form method="POST" action="/panel/groups/<%= group._id %>/delete" class="delete-form" onsubmit="return confirm('Удалить группу <%= group.name %>? Она будет отвязана от всех нод и пользователей.')">
+                            <button type="submit" class="btn btn-sm btn-danger">🗑️</button>
+                        </form>
+                    </div>
+                <% }); %>
+            </div>
+        <% } %>
+    </div>
+</div>
+
+<style>
+.form-inline .form-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-end;
+}
+.form-inline .form-group {
+    margin: 0;
+}
+.form-inline input[type="color"] {
+    width: 48px;
+    height: 38px;
+    padding: 2px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.groups-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+}
+.group-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    position: relative;
+}
+.group-header {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.group-name-input {
+    flex: 1;
+    font-weight: 600;
+    font-size: 1.1rem;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.25rem 0;
+}
+.group-name-input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+.color-picker {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.group-stats {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+.form-row-inline {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.group-description, .group-devices {
+    padding: 0.5rem;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.9rem;
+}
+.group-devices {
+    width: 80px;
+    text-align: center;
+}
+.group-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+.delete-form {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+}
+.delete-form .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: var(--muted);
+}
+</style>
+
