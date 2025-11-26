@@ -105,10 +105,7 @@
                     </td>
                     <td class="td-actions">
                         <div class="action-buttons">
-                            <% 
-                                const userSubPrefix = (user.groups || []).find(g => g.subscriptionPrefix)?.subscriptionPrefix || '';
-                            %>
-                            <button class="btn-icon" onclick="copySubscription('<%= user.subscriptionToken || user.userId %>', '<%= userSubPrefix %>')" title="Копировать подписку">
+                            <button class="btn-icon" onclick="copySubscription('<%= user.subscriptionToken || user.userId %>')" title="Копировать подписку">
                                 📋
                             </button>
                             <a href="/panel/users/<%= user.userId %>" class="btn-icon" title="Подробнее">
@@ -215,9 +212,8 @@ async function toggleUser(userId, enabled) {
 }
 
 // Copy subscription
-function copySubscription(token, subName = '') {
-    const fragment = subName ? '#' + encodeURIComponent(subName) : '';
-    const url = `${baseUrl}/api/files/${token}${fragment}`;
+function copySubscription(token) {
+    const url = `${baseUrl}/api/files/${token}`;
     navigator.clipboard.writeText(url).then(() => {
         showToast('📋 Ссылка скопирована');
     }).catch(() => {

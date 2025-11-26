@@ -546,7 +546,7 @@ router.get('/users', requireAuth, async (req, res) => {
                 .sort({ createdAt: -1 })
                 .skip((page - 1) * limit)
                 .limit(limit)
-                .populate('groups', 'name color subscriptionPrefix')
+                .populate('groups', 'name color')
                 .lean(),
             HyUser.countDocuments(filter),
             ServerGroup.find({ active: true }).sort({ name: 1 }),
@@ -643,7 +643,7 @@ router.get('/users/:userId', requireAuth, async (req, res) => {
         const [user, allGroups] = await Promise.all([
             HyUser.findOne({ userId: req.params.userId })
                 .populate('nodes', 'name ip domain')
-                .populate('groups', 'name color subscriptionPrefix'),
+                .populate('groups', 'name color'),
             ServerGroup.find({ active: true }).sort({ name: 1 }),
         ]);
         
@@ -695,7 +695,7 @@ router.get('/groups', requireAuth, async (req, res) => {
 // POST /panel/groups - Создать группу
 router.post('/groups', requireAuth, async (req, res) => {
     try {
-        const { name, description, color, maxDevices, subscriptionPrefix } = req.body;
+        const { name, description, color, maxDevices, subscriptionTitle } = req.body;
         
         if (!name || !name.trim()) {
             return res.status(400).send('Название обязательно');
@@ -706,7 +706,7 @@ router.post('/groups', requireAuth, async (req, res) => {
             description: description || '',
             color: color || '#6366f1',
             maxDevices: parseInt(maxDevices) || 0,
-            subscriptionPrefix: subscriptionPrefix?.trim() || '',
+            subscriptionTitle: subscriptionTitle?.trim() || '',
         });
         
         res.redirect('/panel/groups');
@@ -721,7 +721,7 @@ router.post('/groups', requireAuth, async (req, res) => {
 // POST /panel/groups/:id - Обновить группу
 router.post('/groups/:id', requireAuth, async (req, res) => {
     try {
-        const { name, description, color, active, maxDevices, subscriptionPrefix } = req.body;
+        const { name, description, color, active, maxDevices, subscriptionTitle } = req.body;
         
         await ServerGroup.findByIdAndUpdate(req.params.id, {
             $set: {
@@ -730,7 +730,7 @@ router.post('/groups/:id', requireAuth, async (req, res) => {
                 color: color || '#6366f1',
                 active: active === 'on',
                 maxDevices: parseInt(maxDevices) || 0,
-                subscriptionPrefix: subscriptionPrefix?.trim() || '',
+                subscriptionTitle: subscriptionTitle?.trim() || '',
             }
         });
         

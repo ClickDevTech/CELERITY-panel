@@ -10,7 +10,6 @@ const express = require('express');
 const router = express.Router();
 const HyUser = require('../models/hyUserModel');
 const HyNode = require('../models/hyNodeModel');
-const ServerGroup = require('../models/serverGroupModel');
 const Settings = require('../models/settingsModel');
 const logger = require('../utils/logger');
 const { getNodesByGroups } = require('../utils/helpers');
@@ -35,28 +34,34 @@ function isBrowser(req) {
 async function getUserByToken(token) {
     let user = await HyUser.findOne({ subscriptionToken: token })
         .populate('nodes')
-        .populate('groups', 'name subscriptionPrefix');
+        .populate('groups');
     if (!user) {
         user = await HyUser.findOne({ userId: token })
             .populate('nodes')
-            .populate('groups', 'name subscriptionPrefix');
+            .populate('groups');
     }
     return user;
 }
 
 /**
- * Получить prefix для названия подписки из групп пользователя
+ * Получить название подписки для пользователя
+ * Берётся subscriptionTitle первой группы или name группы
  */
-function getSubscriptionPrefix(user) {
-    if (!user.groups || user.groups.length === 0) return '';
-    
-    // Берём prefix из первой группы где он задан
-    for (const group of user.groups) {
-        if (group.subscriptionPrefix) {
-            return group.subscriptionPrefix;
-        }
+function getSubscriptionTitle(user) {
+    if (!user.groups || user.groups.length === 0) {
+        return 'Hysteria';
     }
-    return '';
+    
+    // Берём первую группу
+    const group = user.groups[0];
+    return group.subscriptionTitle || group.name || 'Hysteria';
+}
+
+/**
+ * Кодирует название в base64 (как в Marzban)
+ */
+function encodeTitle(text) {
+    return `base64:${Buffer.from(text).toString('base64')}`;
 }
 
 async function getActiveNodes(user) {
@@ -464,15 +469,12 @@ router.get('/files/:token', async (req, res) => {
         
         logger.info(`[Sub] Serving ${nodes.length} nodes to user ${user.userId}`);
         
-        // Получаем название подписки из групп пользователя (для заголовка)
-        const subscriptionName = getSubscriptionPrefix(user);
-        
         // Определяем формат
         const format = req.query.format;
         
         // Если указан format - отдаём подписку
         if (format) {
-            return sendSubscription(res, user, nodes, format, userAgent, subscriptionName);
+            return sendSubscription(res, user, nodes, format, userAgent);
         }
         
         // Если браузер без format - HTML
@@ -483,7 +485,7 @@ router.get('/files/:token', async (req, res) => {
         
         // Приложение без format - автоопределение
         const detectedFormat = detectFormat(userAgent);
-        return sendSubscription(res, user, nodes, detectedFormat, userAgent, subscriptionName);
+        return sendSubscription(res, user, nodes, detectedFormat, userAgent);
         
     } catch (error) {
         logger.error(`[Sub] Error: ${error.message}`);
@@ -491,7 +493,7 @@ router.get('/files/:token', async (req, res) => {
     }
 });
 
-function sendSubscription(res, user, nodes, format, userAgent, subscriptionName = '') {
+function sendSubscription(res, user, nodes, format, userAgent) {
     let content, contentType = 'text/plain';
     let needsBase64 = false;
     
@@ -526,8 +528,13 @@ function sendSubscription(res, user, nodes, format, userAgent, subscriptionName 
         content = Buffer.from(content).toString('base64');
     }
     
-    const headers = {
+    // Название подписки (отображается в приложениях)
+    const profileTitle = getSubscriptionTitle(user);
+    
+    res.set({
         'Content-Type': `${contentType}; charset=utf-8`,
+        'Content-Disposition': `attachment; filename="${user.username || user.userId}"`,
+        'Profile-Title': encodeTitle(profileTitle),
         'Profile-Update-Interval': '12',
         'Subscription-Userinfo': [
             `upload=${user.traffic?.tx || 0}`,
@@ -535,27 +542,8 @@ function sendSubscription(res, user, nodes, format, userAgent, subscriptionName 
             `total=${user.trafficLimit || 0}`,
             `expire=${user.expireAt ? Math.floor(new Date(user.expireAt).getTime() / 1000) : 0}`,
         ].join('; '),
-    };
+    });
     
-    // Название подписки в заголовке (поддерживается Clash, Hiddify, и др.)
-    if (subscriptionName) {
-        headers['Profile-Title'] = Buffer.from(subscriptionName).toString('base64');
-        
-        // Очищаем имя файла от недопустимых символов для HTTP заголовков
-        // В HTTP заголовках Content-Disposition нельзя использовать: кавычки, переносы строк, табы и др.
-        // Оставляем только безопасные символы: буквы, цифры, пробелы, дефисы, подчеркивания
-        const safeFilename = subscriptionName
-            .replace(/["\r\n\t\\/:*?<>|]/g, '') // Удаляем недопустимые символы для имени файла
-            .replace(/[^\x20-\x7E]/g, '') // Оставляем только безопасные ASCII символы (32-126)
-            .trim()
-            .substring(0, 100) || 'subscription'; // Ограничиваем длину
-        
-        // Используем RFC 5987 encoding для поддержки не-ASCII символов в современных браузерах
-        const encodedFilename = encodeURIComponent(subscriptionName.substring(0, 100));
-        headers['Content-Disposition'] = `attachment; filename="${safeFilename}.txt"; filename*=UTF-8''${encodedFilename}.txt`;
-    }
-    
-    res.set(headers);
     res.send(content);
 }
 

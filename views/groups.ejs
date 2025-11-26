@@ -14,7 +14,7 @@
                     <input type="text" name="name" placeholder="Название группы" required>
                 </div>
                 <div class="form-group" style="flex: 2;">
-                    <input type="text" name="subscriptionPrefix" placeholder="Префикс подписки (напр: Click Premium)">
+                    <input type="text" name="subscriptionTitle" placeholder="Название в приложении" title="Отображается в приложениях клиентов">
                 </div>
                 <div class="form-group" style="flex: 1;">
                     <input type="number" name="maxDevices" placeholder="0" min="0" value="0" title="Лимит устройств (0 = безлимит)">
@@ -24,7 +24,7 @@
                 </div>
                 <button type="submit" class="btn btn-primary">Создать</button>
             </div>
-            <small class="hint">Префикс подписки — отображается в названии серверов в приложениях (например: "Click Premium 🇳🇱 Нидерланды")</small>
+            <small class="hint">Название в приложении — отображается в списке подписок у клиентов. Лимит устройств = 0 означает без лимита.</small>
         </form>
     </div>
 </div>
@@ -56,7 +56,7 @@
                             </div>
                             
                             <div class="form-row-inline">
-                                <input type="text" name="subscriptionPrefix" value="<%= group.subscriptionPrefix || '' %>" placeholder="Префикс подписки" class="group-description" style="flex: 2;" title="Отображается в названии серверов в приложениях">
+                                <input type="text" name="subscriptionTitle" value="<%= group.subscriptionTitle || '' %>" placeholder="Название в приложении" class="group-description" style="flex: 2;" title="Отображается в приложениях клиентов">
                                 <input type="number" name="maxDevices" value="<%= group.maxDevices || 0 %>" min="0" placeholder="Устройства" class="group-devices" style="flex: 1;" title="Лимит устройств (0 = безлимит)">
                             </div>
                             

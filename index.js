@@ -150,7 +150,7 @@ app.use('/api/nodes', requireAuth, nodesRoutes);
 app.get('/api/groups', requireAuth, async (req, res) => {
     try {
         const ServerGroup = require('./src/models/serverGroupModel');
-        const groups = await ServerGroup.find({ active: true }).select('_id name subscriptionPrefix').sort({ name: 1 });
+        const groups = await ServerGroup.find({ active: true }).select('_id name').sort({ name: 1 });
         res.json(groups);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -263,9 +263,9 @@ async function startServer() {
             });
         } else {
             // Standalone с Greenlock (для локальной разработки)
-            logger.info(`🔒 Запуск HTTPS сервера для ${config.PANEL_DOMAIN}`);
-            
-            const Greenlock = require('@root/greenlock-express');
+        logger.info(`🔒 Запуск HTTPS сервера для ${config.PANEL_DOMAIN}`);
+        
+        const Greenlock = require('@root/greenlock-express');
             const greenlockDir = path.join(__dirname, 'greenlock.d');
             
             // Создаём папки для сертификатов если их нет
@@ -275,48 +275,48 @@ async function startServer() {
             }
             
             const configPath = path.join(greenlockDir, 'config.json');
-            try {
-                const glConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-                const siteExists = glConfig.sites.some(s => s.subject === config.PANEL_DOMAIN);
-                
-                if (!siteExists) {
-                    glConfig.sites.push({
-                        subject: config.PANEL_DOMAIN,
-                        altnames: [config.PANEL_DOMAIN],
-                    });
-                }
-                glConfig.defaults.subscriberEmail = config.ACME_EMAIL;
+        try {
+            const glConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            const siteExists = glConfig.sites.some(s => s.subject === config.PANEL_DOMAIN);
+            
+            if (!siteExists) {
+                glConfig.sites.push({
+                    subject: config.PANEL_DOMAIN,
+                    altnames: [config.PANEL_DOMAIN],
+                });
+            }
+            glConfig.defaults.subscriberEmail = config.ACME_EMAIL;
                 glConfig.defaults.store = {
                     module: 'greenlock-store-fs',
                     basePath: greenlockDir,
                 };
-                fs.writeFileSync(configPath, JSON.stringify(glConfig, null, 2));
-            } catch (err) {
+            fs.writeFileSync(configPath, JSON.stringify(glConfig, null, 2));
+        } catch (err) {
                 logger.warn(`⚠️ Greenlock config: ${err.message}`);
-            }
-            
+        }
+        
             const glInstance = Greenlock.init({
-                packageRoot: __dirname,
+            packageRoot: __dirname,
                 configDir: greenlockDir,
-                maintainerEmail: config.ACME_EMAIL,
-                cluster: false,
+            maintainerEmail: config.ACME_EMAIL,
+            cluster: false,
                 staging: false,
             });
             
             glInstance.ready((glx) => {
-                const httpServer = glx.httpServer();
-                httpServer.listen(80, () => {
+            const httpServer = glx.httpServer();
+            httpServer.listen(80, () => {
                     logger.info('✅ HTTP сервер на порту 80');
-                });
-                
-                const httpsServer = glx.httpsServer(null, app);
-                setupWebSocketServer(httpsServer);
-                
-                httpsServer.listen(443, () => {
-                    logger.info('✅ HTTPS сервер на порту 443');
-                    logger.info(`🌐 Панель: https://${config.PANEL_DOMAIN}/panel`);
-                });
             });
+            
+            const httpsServer = glx.httpsServer(null, app);
+            setupWebSocketServer(httpsServer);
+            
+            httpsServer.listen(443, () => {
+                logger.info('✅ HTTPS сервер на порту 443');
+                logger.info(`🌐 Панель: https://${config.PANEL_DOMAIN}/panel`);
+            });
+        });
         }
         
         // Cron задачи

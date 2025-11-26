@@ -117,12 +117,7 @@
                         📋 Копировать подписку
                     </button>
                     
-                    <% 
-                        // Получаем название подписки из первой группы с subscriptionPrefix
-                        const subName = (user.groups || []).find(g => g.subscriptionPrefix)?.subscriptionPrefix || '';
-                        const subFragment = subName ? '#' + encodeURIComponent(subName) : '';
-                    %>
-                    <a href="<%= baseUrl %>/api/files/<%= user.subscriptionToken || user.userId %><%= subFragment %>" 
+                    <a href="<%= baseUrl %>/api/files/<%= user.subscriptionToken || user.userId %>" 
                        target="_blank" class="btn btn-block">
                         🔗 Открыть подписку
                     </a>
@@ -144,7 +139,7 @@
                 <div id="qrcode" style="text-align:center;margin-bottom:12px;"></div>
                 <p class="hint mb-1">Универсальная ссылка (приложения + браузер):</p>
                 <input type="text" readonly class="input-readonly" 
-                       value="<%= baseUrl %>/api/files/<%= user.subscriptionToken || user.userId %><%= subFragment %>" id="subLink">
+                       value="<%= baseUrl %>/api/files/<%= user.subscriptionToken || user.userId %>" id="subLink">
                 <button class="btn btn-sm btn-block mt-1" onclick="copySubscription()">Копировать</button>
             </div>
         </div>

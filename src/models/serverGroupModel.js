@@ -39,9 +39,9 @@ const serverGroupSchema = new mongoose.Schema({
         default: 0,
     },
     
-    // Префикс для названия подписки в приложениях
-    // Например: "Click Premium" или "Click Connect"
-    subscriptionPrefix: {
+    // Название подписки (отображается в приложениях)
+    // Если не задано - используется name
+    subscriptionTitle: {
         type: String,
         default: '',
         trim: true,
