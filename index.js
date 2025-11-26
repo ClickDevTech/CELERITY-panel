@@ -32,8 +32,8 @@ const panelRoutes = require('./src/routes/panel');
 
 const app = express();
 
-// Trust proxy (Caddy)
-app.set('trust proxy', true);
+// Trust proxy (Caddy) - 1 уровень прокси
+app.set('trust proxy', 1);
 
 // ==================== MIDDLEWARE ====================
 
