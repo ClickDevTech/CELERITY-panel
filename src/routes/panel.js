@@ -546,7 +546,7 @@ router.get('/users', requireAuth, async (req, res) => {
                 .sort({ createdAt: -1 })
                 .skip((page - 1) * limit)
                 .limit(limit)
-                .populate('groups', 'name color')
+                .populate('groups', 'name color subscriptionPrefix')
                 .lean(),
             HyUser.countDocuments(filter),
             ServerGroup.find({ active: true }).sort({ name: 1 }),
@@ -643,7 +643,7 @@ router.get('/users/:userId', requireAuth, async (req, res) => {
         const [user, allGroups] = await Promise.all([
             HyUser.findOne({ userId: req.params.userId })
                 .populate('nodes', 'name ip domain')
-                .populate('groups', 'name color'),
+                .populate('groups', 'name color subscriptionPrefix'),
             ServerGroup.find({ active: true }).sort({ name: 1 }),
         ]);
         
@@ -706,7 +706,7 @@ router.post('/groups', requireAuth, async (req, res) => {
             description: description || '',
             color: color || '#6366f1',
             maxDevices: parseInt(maxDevices) || 0,
-            subscriptionPrefix: subscriptionPrefix || '',
+            subscriptionPrefix: subscriptionPrefix?.trim() || '',
         });
         
         res.redirect('/panel/groups');
@@ -730,7 +730,7 @@ router.post('/groups/:id', requireAuth, async (req, res) => {
                 color: color || '#6366f1',
                 active: active === 'on',
                 maxDevices: parseInt(maxDevices) || 0,
-                subscriptionPrefix: subscriptionPrefix || '',
+                subscriptionPrefix: subscriptionPrefix?.trim() || '',
             }
         });
         

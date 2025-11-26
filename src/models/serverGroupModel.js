@@ -39,11 +39,12 @@ const serverGroupSchema = new mongoose.Schema({
         default: 0,
     },
     
-    // Префикс названия серверов в подписке
-    // Например: "🇳🇱 NL" → в приложении будет "🇳🇱 NL - NodeName"
+    // Префикс для названия подписки в приложениях
+    // Например: "Click Premium" или "Click Connect"
     subscriptionPrefix: {
         type: String,
         default: '',
+        trim: true,
     },
     
 }, { timestamps: true });

@@ -10,6 +10,7 @@ const express = require('express');
 const router = express.Router();
 const HyUser = require('../models/hyUserModel');
 const HyNode = require('../models/hyNodeModel');
+const ServerGroup = require('../models/serverGroupModel');
 const Settings = require('../models/settingsModel');
 const logger = require('../utils/logger');
 const { getNodesByGroups } = require('../utils/helpers');
@@ -32,11 +33,30 @@ function isBrowser(req) {
 }
 
 async function getUserByToken(token) {
-    let user = await HyUser.findOne({ subscriptionToken: token }).populate('nodes');
+    let user = await HyUser.findOne({ subscriptionToken: token })
+        .populate('nodes')
+        .populate('groups', 'name subscriptionPrefix');
     if (!user) {
-        user = await HyUser.findOne({ userId: token }).populate('nodes');
+        user = await HyUser.findOne({ userId: token })
+            .populate('nodes')
+            .populate('groups', 'name subscriptionPrefix');
     }
     return user;
+}
+
+/**
+ * Получить prefix для названия подписки из групп пользователя
+ */
+function getSubscriptionPrefix(user) {
+    if (!user.groups || user.groups.length === 0) return '';
+    
+    // Берём prefix из первой группы где он задан
+    for (const group of user.groups) {
+        if (group.subscriptionPrefix) {
+            return group.subscriptionPrefix;
+        }
+    }
+    return '';
 }
 
 async function getActiveNodes(user) {
@@ -136,18 +156,6 @@ function getNodeConfigs(node) {
 
 // ==================== URI GENERATION ====================
 
-function getNodeDisplayName(node, suffix = '') {
-    // Используем subscriptionPrefix из первой группы ноды, если есть
-    const prefix = node.groups?.[0]?.subscriptionPrefix || '';
-    const flag = node.flag || '';
-    const name = node.name || '';
-    
-    // Формат: [prefix] [flag] name [suffix]
-    // Например: "Premium 🇳🇱 Amsterdam TLS"
-    const parts = [prefix, flag, name, suffix].filter(p => p && p.trim());
-    return parts.join(' ').trim();
-}
-
 function generateURI(user, node, config) {
     // Auth содержит userId для идентификации на сервере
     const auth = `${user.userId}:${user.password}`;
@@ -158,7 +166,7 @@ function generateURI(user, node, config) {
     params.push(`insecure=${config.domain ? '0' : '1'}`);
     if (config.portRange) params.push(`mport=${config.portRange}`);
     
-    const name = getNodeDisplayName(node, config.name);
+    const name = `${node.flag || ''} ${node.name} ${config.name}`.trim();
     const uri = `hysteria2://${auth}@${config.host}:${config.port}?${params.join('&')}#${encodeURIComponent(name)}`;
     return uri;
 }
@@ -182,7 +190,7 @@ function generateClashYAML(user, nodes) {
     
     nodes.forEach(node => {
         getNodeConfigs(node).forEach(cfg => {
-            const name = getNodeDisplayName(node, cfg.name);
+            const name = `${node.flag || ''} ${node.name} ${cfg.name}`.trim();
             proxyNames.push(name);
             
             let proxy = `  - name: "${name}"
@@ -211,7 +219,7 @@ function generateSingboxJSON(user, nodes) {
     
     nodes.forEach(node => {
         getNodeConfigs(node).forEach(cfg => {
-            const tag = getNodeDisplayName(node, cfg.name);
+            const tag = `${node.flag || ''} ${node.name} ${cfg.name}`.trim();
             tags.push(tag);
             
             const outbound = {
@@ -456,12 +464,15 @@ router.get('/files/:token', async (req, res) => {
         
         logger.info(`[Sub] Serving ${nodes.length} nodes to user ${user.userId}`);
         
+        // Получаем название подписки из групп пользователя (для заголовка)
+        const subscriptionName = getSubscriptionPrefix(user);
+        
         // Определяем формат
         const format = req.query.format;
         
         // Если указан format - отдаём подписку
         if (format) {
-            return sendSubscription(res, user, nodes, format, userAgent);
+            return sendSubscription(res, user, nodes, format, userAgent, subscriptionName);
         }
         
         // Если браузер без format - HTML
@@ -472,7 +483,7 @@ router.get('/files/:token', async (req, res) => {
         
         // Приложение без format - автоопределение
         const detectedFormat = detectFormat(userAgent);
-        return sendSubscription(res, user, nodes, detectedFormat, userAgent);
+        return sendSubscription(res, user, nodes, detectedFormat, userAgent, subscriptionName);
         
     } catch (error) {
         logger.error(`[Sub] Error: ${error.message}`);
@@ -480,7 +491,7 @@ router.get('/files/:token', async (req, res) => {
     }
 });
 
-function sendSubscription(res, user, nodes, format, userAgent) {
+function sendSubscription(res, user, nodes, format, userAgent, subscriptionName = '') {
     let content, contentType = 'text/plain';
     let needsBase64 = false;
     
@@ -515,7 +526,7 @@ function sendSubscription(res, user, nodes, format, userAgent) {
         content = Buffer.from(content).toString('base64');
     }
     
-    res.set({
+    const headers = {
         'Content-Type': `${contentType}; charset=utf-8`,
         'Profile-Update-Interval': '12',
         'Subscription-Userinfo': [
@@ -524,8 +535,15 @@ function sendSubscription(res, user, nodes, format, userAgent) {
             `total=${user.trafficLimit || 0}`,
             `expire=${user.expireAt ? Math.floor(new Date(user.expireAt).getTime() / 1000) : 0}`,
         ].join('; '),
-    });
+    };
     
+    // Название подписки в заголовке (поддерживается Clash, Hiddify, и др.)
+    if (subscriptionName) {
+        headers['Profile-Title'] = Buffer.from(subscriptionName).toString('base64');
+        headers['Content-Disposition'] = `attachment; filename="${subscriptionName}.txt"`;
+    }
+    
+    res.set(headers);
     res.send(content);
 }
 
