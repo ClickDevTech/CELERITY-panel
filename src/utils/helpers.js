@@ -45,7 +45,7 @@ async function getNodesByGroups(userGroups) {
                 { groups: { $size: 0 } },
                 { groups: { $exists: false } }
             ]
-        });
+        }).populate('groups', 'subscriptionPrefix');
     }
     
     // Ищем ноды, у которых есть пересечение с группами пользователя
@@ -57,7 +57,7 @@ async function getNodesByGroups(userGroups) {
             { groups: { $size: 0 } },
             { groups: { $exists: false } }
         ]
-    });
+    }).populate('groups', 'subscriptionPrefix');
 }
 
 module.exports = {

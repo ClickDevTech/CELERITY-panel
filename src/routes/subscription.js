@@ -136,6 +136,18 @@ function getNodeConfigs(node) {
 
 // ==================== URI GENERATION ====================
 
+function getNodeDisplayName(node, suffix = '') {
+    // Используем subscriptionPrefix из первой группы ноды, если есть
+    const prefix = node.groups?.[0]?.subscriptionPrefix || '';
+    const flag = node.flag || '';
+    const name = node.name || '';
+    
+    // Формат: [prefix] [flag] name [suffix]
+    // Например: "Premium 🇳🇱 Amsterdam TLS"
+    const parts = [prefix, flag, name, suffix].filter(p => p && p.trim());
+    return parts.join(' ').trim();
+}
+
 function generateURI(user, node, config) {
     // Auth содержит userId для идентификации на сервере
     const auth = `${user.userId}:${user.password}`;
@@ -146,7 +158,7 @@ function generateURI(user, node, config) {
     params.push(`insecure=${config.domain ? '0' : '1'}`);
     if (config.portRange) params.push(`mport=${config.portRange}`);
     
-    const name = `${node.flag || ''} ${node.name} ${config.name}`.trim();
+    const name = getNodeDisplayName(node, config.name);
     const uri = `hysteria2://${auth}@${config.host}:${config.port}?${params.join('&')}#${encodeURIComponent(name)}`;
     return uri;
 }
@@ -170,7 +182,7 @@ function generateClashYAML(user, nodes) {
     
     nodes.forEach(node => {
         getNodeConfigs(node).forEach(cfg => {
-            const name = `${node.flag || ''} ${node.name} ${cfg.name}`.trim();
+            const name = getNodeDisplayName(node, cfg.name);
             proxyNames.push(name);
             
             let proxy = `  - name: "${name}"
@@ -199,7 +211,7 @@ function generateSingboxJSON(user, nodes) {
     
     nodes.forEach(node => {
         getNodeConfigs(node).forEach(cfg => {
-            const tag = `${node.flag || ''} ${node.name} ${cfg.name}`.trim();
+            const tag = getNodeDisplayName(node, cfg.name);
             tags.push(tag);
             
             const outbound = {

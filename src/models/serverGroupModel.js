@@ -39,6 +39,13 @@ const serverGroupSchema = new mongoose.Schema({
         default: 0,
     },
     
+    // Префикс названия серверов в подписке
+    // Например: "🇳🇱 NL" → в приложении будет "🇳🇱 NL - NodeName"
+    subscriptionPrefix: {
+        type: String,
+        default: '',
+    },
+    
 }, { timestamps: true });
 
 module.exports = mongoose.model('ServerGroup', serverGroupSchema);

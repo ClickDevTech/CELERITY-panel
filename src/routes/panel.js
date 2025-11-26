@@ -695,7 +695,7 @@ router.get('/groups', requireAuth, async (req, res) => {
 // POST /panel/groups - Создать группу
 router.post('/groups', requireAuth, async (req, res) => {
     try {
-        const { name, description, color, maxDevices } = req.body;
+        const { name, description, color, maxDevices, subscriptionPrefix } = req.body;
         
         if (!name || !name.trim()) {
             return res.status(400).send('Название обязательно');
@@ -706,6 +706,7 @@ router.post('/groups', requireAuth, async (req, res) => {
             description: description || '',
             color: color || '#6366f1',
             maxDevices: parseInt(maxDevices) || 0,
+            subscriptionPrefix: subscriptionPrefix || '',
         });
         
         res.redirect('/panel/groups');
@@ -720,7 +721,7 @@ router.post('/groups', requireAuth, async (req, res) => {
 // POST /panel/groups/:id - Обновить группу
 router.post('/groups/:id', requireAuth, async (req, res) => {
     try {
-        const { name, description, color, active, maxDevices } = req.body;
+        const { name, description, color, active, maxDevices, subscriptionPrefix } = req.body;
         
         await ServerGroup.findByIdAndUpdate(req.params.id, {
             $set: {
@@ -729,6 +730,7 @@ router.post('/groups/:id', requireAuth, async (req, res) => {
                 color: color || '#6366f1',
                 active: active === 'on',
                 maxDevices: parseInt(maxDevices) || 0,
+                subscriptionPrefix: subscriptionPrefix || '',
             }
         });
         
