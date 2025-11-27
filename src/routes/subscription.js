@@ -4,6 +4,8 @@
  * Единый роут /api/files/:token:
  * - Браузер → HTML страница
  * - Приложение → подписка в нужном формате
+ * 
+ * С кэшированием в Redis для высокой производительности
  */
 
 const express = require('express');
@@ -11,6 +13,7 @@ const router = express.Router();
 const HyUser = require('../models/hyUserModel');
 const HyNode = require('../models/hyNodeModel');
 const Settings = require('../models/settingsModel');
+const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
 const { getNodesByGroups } = require('../utils/helpers');
 
@@ -64,6 +67,30 @@ function encodeTitle(text) {
     return `base64:${Buffer.from(text).toString('base64')}`;
 }
 
+/**
+ * Получить настройки (с кэшированием)
+ */
+async function getSettingsWithCache() {
+    const cached = await cache.getSettings();
+    if (cached) return cached;
+    
+    const settings = await Settings.get();
+    await cache.setSettings(settings);
+    return settings;
+}
+
+/**
+ * Получить активные ноды (с кэшированием)
+ */
+async function getActiveNodesWithCache() {
+    const cached = await cache.getActiveNodes();
+    if (cached) return cached;
+    
+    const nodes = await HyNode.find({ active: true }).lean();
+    await cache.setActiveNodes(nodes);
+    return nodes;
+}
+
 async function getActiveNodes(user) {
     let nodes = [];
     
@@ -75,12 +102,21 @@ async function getActiveNodes(user) {
     
     // Если нод нет - берём по группам пользователя
     if (nodes.length === 0) {
-        nodes = await getNodesByGroups(user.groups);
+        // Получаем все активные ноды из кэша
+        const allNodes = await getActiveNodesWithCache();
+        
+        // Фильтруем по группам пользователя
+        const userGroupIds = (user.groups || []).map(g => g._id?.toString() || g.toString());
+        nodes = allNodes.filter(n => {
+            const nodeGroupIds = (n.groups || []).map(g => g._id?.toString() || g.toString());
+            return nodeGroupIds.some(gId => userGroupIds.includes(gId));
+        });
+        
         logger.debug(`[Sub] User ${user.userId}: ${nodes.length} nodes by groups`);
     }
     
-    // Получаем настройки из БД
-    const settings = await Settings.get();
+    // Получаем настройки из кэша
+    const settings = await getSettingsWithCache();
     const lb = settings.loadBalancing || {};
     
     // Фильтрация перегруженных нод (если включено)
@@ -117,7 +153,7 @@ async function getActiveNodes(user) {
         });
         logger.debug(`[Sub] Load balancing applied`);
     } else {
-    nodes.sort((a, b) => (a.rankingCoefficient || 1) - (b.rankingCoefficient || 1));
+        nodes.sort((a, b) => (a.rankingCoefficient || 1) - (b.rankingCoefficient || 1));
     }
     
     return nodes;
@@ -439,13 +475,57 @@ function generateHTML(user, nodes, token, baseUrl) {
  * GET /files/:token - Единственный роут
  * - Браузер → HTML
  * - Приложение → подписка
+ * 
+ * С кэшированием готовых подписок в Redis
  */
 router.get('/files/:token', async (req, res) => {
     try {
         const token = req.params.token;
         const userAgent = req.headers['user-agent'] || 'unknown';
         
-        logger.info(`[Sub] Request: token=${token.substring(0,8)}..., UA=${userAgent.substring(0,50)}`);
+        // Определяем формат
+        let format = req.query.format;
+        const browser = isBrowser(req);
+        
+        // Для браузера без format — не кэшируем (HTML со свежими данными)
+        if (browser && !format) {
+            // HTML страница — не кэшируем, показываем свежие данные
+            const user = await getUserByToken(token);
+            
+            if (!user) {
+                logger.warn(`[Sub] User not found for token: ${token}`);
+                return res.status(404).type('text/plain').send('# User not found');
+            }
+            
+            const validation = validateUser(user);
+            if (!validation.valid) {
+                logger.warn(`[Sub] User ${user.userId} invalid: ${validation.error}`);
+                return res.status(403).type('text/plain').send(`# ${validation.error}`);
+            }
+            
+            const nodes = await getActiveNodes(user);
+            if (nodes.length === 0) {
+                return res.status(503).type('text/plain').send('# No servers available');
+            }
+            
+            const baseUrl = `${req.protocol}://${req.get('host')}/api/files/${token}`;
+            return res.type('text/html').send(generateHTML(user, nodes, token, baseUrl));
+        }
+        
+        // Для приложений — определяем формат и кэшируем
+        if (!format) {
+            format = detectFormat(userAgent);
+        }
+        
+        // Проверяем кэш
+        const cached = await cache.getSubscription(token, format);
+        if (cached) {
+            logger.debug(`[Sub] Cache HIT: ${token}:${format}`);
+            return sendCachedSubscription(res, cached, format, userAgent);
+        }
+        
+        // Кэша нет — генерируем
+        logger.info(`[Sub] Request: token=${token.substring(0,8)}..., format=${format}`);
         
         const user = await getUserByToken(token);
         
@@ -469,23 +549,14 @@ router.get('/files/:token', async (req, res) => {
         
         logger.info(`[Sub] Serving ${nodes.length} nodes to user ${user.userId}`);
         
-        // Определяем формат
-        const format = req.query.format;
+        // Генерируем подписку
+        const subscriptionData = generateSubscriptionData(user, nodes, format, userAgent);
         
-        // Если указан format - отдаём подписку
-        if (format) {
-            return sendSubscription(res, user, nodes, format, userAgent);
-        }
+        // Сохраняем в кэш
+        await cache.setSubscription(token, format, subscriptionData);
         
-        // Если браузер без format - HTML
-        if (isBrowser(req)) {
-            const baseUrl = `${req.protocol}://${req.get('host')}/api/files/${token}`;
-            return res.type('text/html').send(generateHTML(user, nodes, token, baseUrl));
-        }
-        
-        // Приложение без format - автоопределение
-        const detectedFormat = detectFormat(userAgent);
-        return sendSubscription(res, user, nodes, detectedFormat, userAgent);
+        // Отправляем
+        return sendCachedSubscription(res, subscriptionData, format, userAgent);
         
     } catch (error) {
         logger.error(`[Sub] Error: ${error.message}`);
@@ -493,31 +564,30 @@ router.get('/files/:token', async (req, res) => {
     }
 });
 
-function sendSubscription(res, user, nodes, format, userAgent) {
-    let content, contentType = 'text/plain';
+/**
+ * Генерирует данные подписки для кэширования
+ */
+function generateSubscriptionData(user, nodes, format, userAgent) {
+    let content;
     let needsBase64 = false;
     
     switch (format) {
         case 'shadowrocket':
-            // Shadowrocket лучше работает с base64-encoded URI list
             content = generateURIList(user, nodes);
             needsBase64 = true;
             break;
         case 'clash':
         case 'yaml':
             content = generateClashYAML(user, nodes);
-            contentType = 'text/yaml';
             break;
         case 'singbox':
         case 'json':
             content = JSON.stringify(generateSingboxJSON(user, nodes), null, 2);
-            contentType = 'application/json';
             break;
         case 'uri':
         case 'raw':
         default:
             content = generateURIList(user, nodes);
-            // Base64 для Quantumult
             if (/quantumult/i.test(userAgent)) {
                 needsBase64 = true;
             }
@@ -528,23 +598,50 @@ function sendSubscription(res, user, nodes, format, userAgent) {
         content = Buffer.from(content).toString('base64');
     }
     
-    // Название подписки (отображается в приложениях)
-    const profileTitle = getSubscriptionTitle(user);
+    return {
+        content,
+        profileTitle: getSubscriptionTitle(user),
+        username: user.username || user.userId,
+        traffic: {
+            tx: user.traffic?.tx || 0,
+            rx: user.traffic?.rx || 0,
+        },
+        trafficLimit: user.trafficLimit || 0,
+        expireAt: user.expireAt,
+    };
+}
+
+/**
+ * Отправляет закэшированную подписку
+ */
+function sendCachedSubscription(res, data, format, userAgent) {
+    let contentType = 'text/plain';
+    
+    switch (format) {
+        case 'clash':
+        case 'yaml':
+            contentType = 'text/yaml';
+            break;
+        case 'singbox':
+        case 'json':
+            contentType = 'application/json';
+            break;
+    }
     
     res.set({
         'Content-Type': `${contentType}; charset=utf-8`,
-        'Content-Disposition': `attachment; filename="${user.username || user.userId}"`,
-        'Profile-Title': encodeTitle(profileTitle),
+        'Content-Disposition': `attachment; filename="${data.username}"`,
+        'Profile-Title': encodeTitle(data.profileTitle),
         'Profile-Update-Interval': '12',
         'Subscription-Userinfo': [
-            `upload=${user.traffic?.tx || 0}`,
-            `download=${user.traffic?.rx || 0}`,
-            `total=${user.trafficLimit || 0}`,
-            `expire=${user.expireAt ? Math.floor(new Date(user.expireAt).getTime() / 1000) : 0}`,
+            `upload=${data.traffic.tx}`,
+            `download=${data.traffic.rx}`,
+            `total=${data.trafficLimit}`,
+            `expire=${data.expireAt ? Math.floor(new Date(data.expireAt).getTime() / 1000) : 0}`,
         ].join('; '),
     });
     
-    res.send(content);
+    res.send(data.content);
 }
 
 // ==================== INFO ====================

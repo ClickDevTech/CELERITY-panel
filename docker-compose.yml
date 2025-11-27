@@ -2,6 +2,15 @@
 # Запуск: docker-compose up -d
 
 services:
+  # Redis - кэширование
+  redis:
+    image: redis:7-alpine
+    container_name: hysteria-redis
+    restart: always
+    command: redis-server --maxmemory 1gb --maxmemory-policy allkeys-lru --save ""
+    networks:
+      - hysteria-net
+
   # MongoDB
   mongo:
     image: mongo:7
@@ -43,6 +52,7 @@ services:
     restart: always
     depends_on:
       - mongo
+      - redis
     expose:
       - "3000"
     volumes:
@@ -52,6 +62,7 @@ services:
       - .env
     environment:
       MONGO_URI: mongodb://${MONGO_USER:-hysteria}:${MONGO_PASSWORD}@mongo:27017/hysteria?authSource=admin
+      REDIS_URL: redis://redis:6379
       PORT: 3000
       USE_CADDY: "true"
     networks:

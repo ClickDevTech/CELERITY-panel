@@ -36,3 +36,6 @@ Thumbs.db
 
 # Docker volumes (local dev)
 mongo_data/
+
+# Benchmark results
+scripts/benchmark-*.json

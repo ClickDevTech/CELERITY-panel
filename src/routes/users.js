@@ -8,8 +8,19 @@ const HyUser = require('../models/hyUserModel');
 const HyNode = require('../models/hyNodeModel');
 const ServerGroup = require('../models/serverGroupModel');
 const cryptoService = require('../services/cryptoService');
+const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
 const { getNodesByGroups } = require('../utils/helpers');
+
+/**
+ * Инвалидация кэша пользователя
+ */
+async function invalidateUserCache(userId, subscriptionToken) {
+    await cache.invalidateUser(userId);
+    if (subscriptionToken) {
+        await cache.invalidateSubscription(subscriptionToken);
+    }
+}
 
 /**
  * GET /users - Список всех пользователей
@@ -154,6 +165,9 @@ router.put('/:userId', async (req, res) => {
         .populate('nodes', 'name ip')
         .populate('groups', 'name color');
         
+        // Инвалидируем кэш
+        await invalidateUserCache(req.params.userId, user.subscriptionToken);
+        
         logger.info(`[Users API] Обновлён пользователь ${req.params.userId}`);
         
         res.json(updatedUser);
@@ -173,6 +187,9 @@ router.delete('/:userId', async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'Пользователь не найден' });
         }
+        
+        // Инвалидируем кэш
+        await invalidateUserCache(req.params.userId, user.subscriptionToken);
         
         logger.info(`[Users API] Удалён пользователь ${req.params.userId}`);
         
@@ -198,6 +215,9 @@ router.post('/:userId/enable', async (req, res) => {
             return res.status(404).json({ error: 'Пользователь не найден' });
         }
         
+        // Инвалидируем кэш
+        await invalidateUserCache(req.params.userId, user.subscriptionToken);
+        
         logger.info(`[Users API] Включён пользователь ${req.params.userId}`);
         res.json(user);
     } catch (error) {
@@ -219,6 +239,9 @@ router.post('/:userId/disable', async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'Пользователь не найден' });
         }
+        
+        // Инвалидируем кэш
+        await invalidateUserCache(req.params.userId, user.subscriptionToken);
         
         logger.info(`[Users API] Отключён пользователь ${req.params.userId}`);
         res.json(user);
@@ -249,6 +272,9 @@ router.post('/:userId/groups', async (req, res) => {
             return res.status(404).json({ error: 'Пользователь не найден' });
         }
         
+        // Инвалидируем кэш
+        await invalidateUserCache(req.params.userId, user.subscriptionToken);
+        
         logger.info(`[Users API] Добавлены группы пользователю ${req.params.userId}`);
         res.json(user);
     } catch (error) {
@@ -270,6 +296,9 @@ router.delete('/:userId/groups/:groupId', async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'Пользователь не найден' });
         }
+        
+        // Инвалидируем кэш
+        await invalidateUserCache(req.params.userId, user.subscriptionToken);
         
         logger.info(`[Users API] Удалена группа ${req.params.groupId} у пользователя ${req.params.userId}`);
         res.json(user);

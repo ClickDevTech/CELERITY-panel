@@ -22,6 +22,7 @@ const logger = require('./src/utils/logger');
 const requireAuth = require('./src/middleware/auth');
 const { i18nMiddleware } = require('./src/middleware/i18n');
 const syncService = require('./src/services/syncService');
+const cacheService = require('./src/services/cacheService');
 
 // Роуты API
 const usersRoutes = require('./src/routes/users');
@@ -76,12 +77,15 @@ app.use((req, res, next) => {
 
 // ==================== HEALTH CHECK ====================
 
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+    const cacheStats = await cacheService.getStats();
+    
     res.json({
         status: 'ok',
         uptime: process.uptime(),
         lastSync: syncService.lastSyncTime,
         isSyncing: syncService.isSyncing,
+        cache: cacheStats,
     });
 });
 
@@ -245,6 +249,9 @@ async function startServer() {
         // Подключение к MongoDB
         await mongoose.connect(config.MONGO_URI);
         logger.info('✅ Подключено к MongoDB');
+        
+        // Подключение к Redis
+        await cacheService.connect();
         
         const PORT = process.env.PORT || 3000;
         const useCaddy = process.env.USE_CADDY === 'true';

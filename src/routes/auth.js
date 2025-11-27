@@ -9,28 +9,24 @@ const axios = require('axios');
 const HyUser = require('../models/hyUserModel');
 const HyNode = require('../models/hyNodeModel');
 const cryptoService = require('../services/cryptoService');
+const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
-
-// Кэш онлайн сессий (обновляется раз в 5 секунд)
-let onlineCache = {};
-let onlineCacheTime = 0;
-const ONLINE_CACHE_TTL = 5000; // 5 секунд
 
 /**
  * Получить количество онлайн сессий пользователя со всех нод
+ * Использует Redis кэш
  */
 async function getOnlineSessions(userId) {
-    const now = Date.now();
-    
-    // Используем кэш если свежий
-    if (now - onlineCacheTime < ONLINE_CACHE_TTL && onlineCache[userId] !== undefined) {
-        return onlineCache[userId];
+    // Сначала проверяем Redis кэш
+    const cached = await cache.getOnlineSessions();
+    if (cached) {
+        return cached[userId] || 0;
     }
     
-    // Обновляем кэш
+    // Если кэша нет — собираем данные с нод
     try {
         const nodes = await HyNode.find({ active: true, statsPort: { $gt: 0 }, statsSecret: { $ne: '' } });
-        const newCache = {};
+        const onlineData = {};
         
         await Promise.all(nodes.map(async (node) => {
             try {
@@ -41,21 +37,42 @@ async function getOnlineSessions(userId) {
                 
                 // response.data = { "userId1": {...}, "userId2": {...}, ... }
                 for (const id of Object.keys(response.data)) {
-                    newCache[id] = (newCache[id] || 0) + 1;
+                    onlineData[id] = (onlineData[id] || 0) + 1;
                 }
             } catch (err) {
                 // Нода недоступна - пропускаем
             }
         }));
         
-        onlineCache = newCache;
-        onlineCacheTime = now;
+        // Сохраняем в Redis
+        await cache.setOnlineSessions(onlineData);
         
-        return newCache[userId] || 0;
+        return onlineData[userId] || 0;
     } catch (err) {
         logger.error(`[Auth] Ошибка получения онлайн сессий: ${err.message}`);
         return 0; // В случае ошибки разрешаем подключение
     }
+}
+
+/**
+ * Получить пользователя (с кэшированием)
+ */
+async function getUserWithCache(userId) {
+    // Сначала проверяем Redis кэш
+    const cached = await cache.getUser(userId);
+    if (cached) {
+        return cached;
+    }
+    
+    // Если кэша нет — запрашиваем из MongoDB
+    const user = await HyUser.findOne({ userId }).populate('groups').lean();
+    
+    if (user) {
+        // Сохраняем в Redis (без пароля)
+        await cache.setUser(userId, user);
+    }
+    
+    return user;
 }
 
 /**
@@ -93,8 +110,8 @@ router.post('/', async (req, res) => {
             password = null;
         }
         
-        // Ищем пользователя с группами
-        const user = await HyUser.findOne({ userId }).populate('groups');
+        // Ищем пользователя с группами (с кэшированием)
+        const user = await getUserWithCache(userId);
         
         if (!user) {
             logger.warn(`[Auth] Пользователь не найден: ${userId} (${addr})`);
@@ -176,5 +193,3 @@ router.post('/', async (req, res) => {
 // Для отладки используйте логи или веб-панель
 
 module.exports = router;
-
-

@@ -8,7 +8,16 @@ const HyNode = require('../models/hyNodeModel');
 const HyUser = require('../models/hyUserModel');
 const ServerGroup = require('../models/serverGroupModel');
 const cryptoService = require('../services/cryptoService');
+const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
+
+/**
+ * Инвалидация кэша при изменении нод
+ */
+async function invalidateNodesCache() {
+    await cache.invalidateNodes();
+    await cache.invalidateAllSubscriptions();
+}
 
 /**
  * GET /nodes - Список всех нод
@@ -102,6 +111,9 @@ router.post('/', async (req, res) => {
         
         await node.save();
         
+        // Инвалидируем кэш
+        await invalidateNodesCache();
+        
         logger.info(`[Nodes API] Создана нода ${name} (${ip})`);
         
         res.status(201).json(node);
@@ -138,6 +150,9 @@ router.put('/:id', async (req, res) => {
             return res.status(404).json({ error: 'Нода не найдена' });
         }
         
+        // Инвалидируем кэш
+        await invalidateNodesCache();
+        
         logger.info(`[Nodes API] Обновлена нода ${node.name}`);
         
         res.json(node);
@@ -163,6 +178,9 @@ router.delete('/:id', async (req, res) => {
             { nodes: node._id },
             { $pull: { nodes: node._id } }
         );
+        
+        // Инвалидируем кэш
+        await invalidateNodesCache();
         
         logger.info(`[Nodes API] Удалена нода ${node.name}`);
         
@@ -289,6 +307,9 @@ router.post('/:id/groups', async (req, res) => {
             return res.status(404).json({ error: 'Нода не найдена' });
         }
         
+        // Инвалидируем кэш
+        await invalidateNodesCache();
+        
         logger.info(`[Nodes API] Добавлены группы для ноды ${node.name}`);
         res.json(node);
     } catch (error) {
@@ -310,6 +331,9 @@ router.delete('/:id/groups/:groupId', async (req, res) => {
         if (!node) {
             return res.status(404).json({ error: 'Нода не найдена' });
         }
+        
+        // Инвалидируем кэш
+        await invalidateNodesCache();
         
         logger.info(`[Nodes API] Удалена группа ${req.params.groupId} у ноды ${node.name}`);
         res.json(node);
