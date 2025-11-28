@@ -391,15 +391,12 @@ html {
 }
 
 .table th {
-    background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+    background: var(--bg-tertiary);
     font-weight: 600;
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-muted);
-    position: sticky;
-    top: 73px;
-    z-index: 10;
 }
 
 .table tbody tr {
@@ -1771,15 +1768,44 @@ html {
     .table-wrapper {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
+        margin: 0 -16px;
+        padding: 0 16px;
     }
     
     .table {
-        font-size: 13px;
+        font-size: 12px;
+        min-width: 100%;
     }
     
     .table th,
     .table td {
-        padding: 12px 10px;
+        padding: 12px 8px;
+        white-space: nowrap;
+    }
+    
+    .table th:first-child,
+    .table td:first-child {
+        padding-left: 12px;
+        position: sticky;
+        left: 0;
+        background: var(--bg-secondary);
+        z-index: 5;
+    }
+    
+    .table th:first-child {
+        z-index: 11;
+    }
+    
+    /* Logs Container Mobile */
+    .logs-container {
+        max-height: 250px;
+        font-size: 11px;
+    }
+    
+    .log-line {
+        padding: 6px 12px;
+        word-break: break-word;
+        white-space: pre-wrap;
     }
     
     /* Buttons */
@@ -1811,8 +1837,21 @@ html {
     }
     
     /* Dashboard */
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    
+    .dashboard-main,
     .dashboard-sidebar {
+        width: 100%;
         margin-top: 0;
+    }
+    
+    /* Nodes table scrollable */
+    .nodes-table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
     
     /* Quick Actions */

@@ -70,17 +70,11 @@ function encodeTitle(text) {
  * Получить активные ноды (с кэшированием)
  */
 async function getActiveNodesWithCache() {
-    const startTime = Date.now();
     const cached = await cache.getActiveNodes();
-    
-    if (cached) {
-        logger.debug(`[Sub] Cache HIT nodes (${Date.now() - startTime}ms)`);
-        return cached;
-    }
+    if (cached) return cached;
     
     const nodes = await HyNode.find({ active: true }).lean();
     await cache.setActiveNodes(nodes);
-    logger.debug(`[Sub] Cache MISS nodes - MongoDB query (${Date.now() - startTime}ms)`);
     return nodes;
 }
 
@@ -511,16 +505,14 @@ router.get('/files/:token', async (req, res) => {
         }
         
         // Проверяем кэш
-        const startTime = Date.now();
         const cached = await cache.getSubscription(token, format);
         if (cached) {
-            const cacheTime = Date.now() - startTime;
-            logger.info(`[Sub] Cache HIT: ${token.substring(0,8)}:${format} (${cacheTime}ms)`);
+            logger.debug(`[Sub] Cache HIT: ${token}:${format}`);
             return sendCachedSubscription(res, cached, format, userAgent);
         }
         
         // Кэша нет — генерируем
-        logger.info(`[Sub] Cache MISS: ${token.substring(0,8)}:${format} - generating...`);
+        logger.info(`[Sub] Request: token=${token.substring(0,8)}..., format=${format}`);
         
         const user = await getUserByToken(token);
         

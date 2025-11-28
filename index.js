@@ -67,43 +67,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// Логирование запросов с временем ответа
+// Логирование запросов (кроме статики)
 app.use((req, res, next) => {
-    const startTime = Date.now();
-    
-    // Перехватываем завершение ответа
-    const originalSend = res.send;
-    const originalJson = res.json;
-    
-    const logResponse = () => {
-        const duration = Date.now() - startTime;
-        const path = req.path;
-        
-        // Пропускаем статику
-        if (path.startsWith('/css') || path.startsWith('/js')) {
-            return;
-        }
-        
-        // Цвет для времени
-        let timeColor = '';
-        if (duration < 50) timeColor = '⚡'; // Быстро
-        else if (duration < 200) timeColor = '✓'; // Норм
-        else if (duration < 1000) timeColor = '⚠'; // Медленно
-        else timeColor = '❌'; // Очень медленно
-        
-        logger.info(`${req.method} ${path} - ${timeColor} ${duration}ms - ${res.statusCode}`);
-    };
-    
-    res.send = function(data) {
-        logResponse();
-        return originalSend.call(this, data);
-    };
-    
-    res.json = function(data) {
-        logResponse();
-        return originalJson.call(this, data);
-    };
-    
+    if (!req.path.startsWith('/css') && !req.path.startsWith('/js')) {
+        logger.info(`${req.method} ${req.path}`);
+    }
     next();
 });
 

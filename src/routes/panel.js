@@ -248,7 +248,6 @@ router.get('/logout', (req, res) => {
 router.get('/', requireAuth, async (req, res) => {
     try {
         // Получаем статистику трафика из кэша
-        const statsStartTime = Date.now();
         let trafficStats = await cache.getTrafficStats();
         
         if (!trafficStats) {
@@ -265,9 +264,6 @@ router.get('/', requireAuth, async (req, res) => {
             
             // Сохраняем в кэш на 5 минут
             await cache.setTrafficStats(trafficStats);
-            logger.debug(`[Dashboard] Cache MISS traffic - aggregate ${Date.now() - statsStartTime}ms`);
-        } else {
-            logger.debug(`[Dashboard] Cache HIT traffic (${Date.now() - statsStartTime}ms)`);
         }
         
         const [usersTotal, usersEnabled, nodesTotal, nodesOnline] = await Promise.all([

@@ -68,17 +68,7 @@ class CacheService {
      * Подключение к Redis
      */
     async connect() {
-        const config = require('../../config');
-        
-        // Проверяем настройку USE_REDIS
-        if (!config.USE_REDIS) {
-            logger.warn('⚠️  Redis отключен (USE_REDIS=false). Кэширование не работает.');
-            logger.warn('⚠️  Производительность будет ниже. Лимит устройств не будет работать корректно.');
-            this.connected = false;
-            return;
-        }
-        
-        const redisUrl = config.REDIS_URL;
+        const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
         
         try {
             this.redis = new Redis(redisUrl, {
@@ -106,7 +96,6 @@ class CacheService {
             
         } catch (err) {
             logger.error(`[Redis] Не удалось подключиться: ${err.message}`);
-            logger.warn('⚠️  Работаем без кэширования. Производительность снижена.');
             this.connected = false;
         }
     }

@@ -27,10 +27,6 @@ module.exports = {
     // MongoDB
     MONGO_URI: process.env.MONGO_URI || 'mongodb://localhost:27017/hysteria',
     
-    // Redis (кэширование)
-    USE_REDIS: process.env.USE_REDIS !== 'false', // По умолчанию включено
-    REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
-    
     // Безопасность (обязательные переменные, проверяются выше)
     ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
     SESSION_SECRET: process.env.SESSION_SECRET,
