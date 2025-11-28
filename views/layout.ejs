@@ -2,7 +2,8 @@
 <html lang="<%= lang %>">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#6366f1">
     <title><%= title %> | Hysteria Panel</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -10,8 +11,27 @@
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+    <!-- Mobile Menu Overlay -->
+    <div class="mobile-overlay" id="mobileOverlay" onclick="toggleMobileMenu()"></div>
+    
     <div class="app">
-        <nav class="sidebar">
+        <!-- Mobile Header -->
+        <div class="mobile-header">
+            <button class="mobile-menu-btn" onclick="toggleMobileMenu()" aria-label="Menu">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <div class="mobile-logo">
+                <span class="logo-icon">⚡</span>
+                <span class="logo-text">Hysteria</span>
+            </div>
+            <div class="mobile-status">
+                <span class="status-dot online"></span>
+            </div>
+        </div>
+        
+        <nav class="sidebar" id="sidebar">
             <div class="logo">
                 <span class="logo-icon">⚡</span>
                 <span class="logo-text">Hysteria</span>
@@ -52,7 +72,7 @@
                 <h1><%= title %></h1>
                 <div class="topbar-right">
                     <span class="status-dot online"></span>
-                    <span><%= t('common.online') %></span>
+                    <span class="status-text"><%= t('common.online') %></span>
                 </div>
             </header>
             <div class="main-content">
@@ -60,5 +80,24 @@
             </div>
         </main>
     </div>
+    
+    <script>
+    // Mobile menu toggle
+    function toggleMobileMenu() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobileOverlay');
+        sidebar.classList.toggle('active');
+        overlay.classList.toggle('active');
+    }
+    
+    // Close mobile menu on link click
+    document.querySelectorAll('.nav-menu a').forEach(link => {
+        link.addEventListener('click', () => {
+            if (window.innerWidth <= 768) {
+                toggleMobileMenu();
+            }
+        });
+    });
+    </script>
 </body>
 </html>
