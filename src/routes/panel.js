@@ -240,19 +240,31 @@ router.get('/logout', (req, res) => {
 // GET /panel - Dashboard
 router.get('/', requireAuth, async (req, res) => {
     try {
-        const [usersTotal, usersEnabled, nodesTotal, nodesOnline] = await Promise.all([
+        const [usersTotal, usersEnabled, nodesTotal, nodesOnline, trafficAgg] = await Promise.all([
             HyUser.countDocuments(),
             HyUser.countDocuments({ enabled: true }),
             HyNode.countDocuments(),
             HyNode.countDocuments({ status: 'online' }),
+            // Агрегация общего трафика
+            HyUser.aggregate([
+                { $group: { 
+                    _id: null, 
+                    tx: { $sum: '$traffic.tx' }, 
+                    rx: { $sum: '$traffic.rx' } 
+                }}
+            ]),
         ]);
         
         const nodes = await HyNode.find({ active: true })
-            .select('name ip status onlineUsers groups')
+            .select('name ip status onlineUsers groups traffic')
             .populate('groups', 'name color')
             .sort({ name: 1 });
         
         const totalOnline = nodes.reduce((sum, n) => sum + (n.onlineUsers || 0), 0);
+        
+        // Общий трафик в байтах
+        const totalTraffic = trafficAgg[0] || { tx: 0, rx: 0 };
+        const totalTrafficBytes = (totalTraffic.tx || 0) + (totalTraffic.rx || 0);
         
         render(res, 'dashboard', {
             title: 'Dashboard',
@@ -262,6 +274,11 @@ router.get('/', requireAuth, async (req, res) => {
                 nodes: { total: nodesTotal, online: nodesOnline },
                 onlineUsers: totalOnline,
                 lastSync: syncService.lastSyncTime,
+                traffic: {
+                    tx: totalTraffic.tx || 0,
+                    rx: totalTraffic.rx || 0,
+                    total: totalTrafficBytes,
+                },
             },
             nodes,
         });
@@ -791,6 +808,8 @@ router.post('/settings', requireAuth, async (req, res) => {
         const updates = {
             'loadBalancing.enabled': req.body['loadBalancing.enabled'] === 'on',
             'loadBalancing.hideOverloaded': req.body['loadBalancing.hideOverloaded'] === 'on',
+            // Лимит устройств
+            'deviceGracePeriod': parseInt(req.body['deviceGracePeriod']) || 15,
             // TTL кэша
             'cache.subscriptionTTL': parseInt(req.body['cache.subscriptionTTL']) || 3600,
             'cache.userTTL': parseInt(req.body['cache.userTTL']) || 900,

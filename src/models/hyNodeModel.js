@@ -134,6 +134,13 @@ const hyNodeSchema = new mongoose.Schema({
         default: 0,
     },
     
+    // Статистика трафика ноды (сумма всех пользователей)
+    traffic: {
+        tx: { type: Number, default: 0 }, // Передано байт
+        rx: { type: Number, default: 0 }, // Получено байт
+        lastUpdate: { type: Date, default: null },
+    },
+    
     // Коэффициент ранжирования (для балансировки)
     rankingCoefficient: {
         type: Number,

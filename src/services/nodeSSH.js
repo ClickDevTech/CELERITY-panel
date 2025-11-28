@@ -302,6 +302,8 @@ class NodeSSH {
             const result = await this.exec(`
 echo "===CPU==="
 cat /proc/loadavg
+echo "===CORES==="
+nproc
 echo "===MEM==="
 free -b | grep -E "^Mem:"
 echo "===DISK==="
@@ -313,7 +315,7 @@ cat /proc/uptime | cut -d' ' -f1
             const output = result.stdout || '';
             const lines = output.split('\n');
             
-            let cpu = { load1: 0, load5: 0, load15: 0 };
+            let cpu = { load1: 0, load5: 0, load15: 0, cores: 1 };
             let mem = { total: 0, used: 0, free: 0, percent: 0 };
             let disk = { total: 0, used: 0, free: 0, percent: 0 };
             let uptime = 0;
@@ -321,17 +323,20 @@ cat /proc/uptime | cut -d' ' -f1
             let section = '';
             for (const line of lines) {
                 if (line.includes('===CPU===')) { section = 'cpu'; continue; }
+                if (line.includes('===CORES===')) { section = 'cores'; continue; }
                 if (line.includes('===MEM===')) { section = 'mem'; continue; }
                 if (line.includes('===DISK===')) { section = 'disk'; continue; }
                 if (line.includes('===UPTIME===')) { section = 'uptime'; continue; }
                 
                 if (section === 'cpu' && line.trim()) {
                     const parts = line.trim().split(/\s+/);
-                    cpu = {
-                        load1: parseFloat(parts[0]) || 0,
-                        load5: parseFloat(parts[1]) || 0,
-                        load15: parseFloat(parts[2]) || 0,
-                    };
+                    cpu.load1 = parseFloat(parts[0]) || 0;
+                    cpu.load5 = parseFloat(parts[1]) || 0;
+                    cpu.load15 = parseFloat(parts[2]) || 0;
+                }
+                
+                if (section === 'cores' && line.trim()) {
+                    cpu.cores = parseInt(line.trim()) || 1;
                 }
                 
                 if (section === 'mem' && line.trim()) {

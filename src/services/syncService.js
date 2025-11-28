@@ -151,8 +151,15 @@ class SyncService {
             
             const stats = response.data;
             
+            // Суммируем трафик ноды
+            let nodeTx = 0;
+            let nodeRx = 0;
+            
             // Обновляем трафик каждого пользователя
             for (const [userId, traffic] of Object.entries(stats)) {
+                nodeTx += traffic.tx || 0;
+                nodeRx += traffic.rx || 0;
+                
                 await HyUser.updateOne(
                     { userId },
                     {
@@ -165,7 +172,19 @@ class SyncService {
                 );
             }
             
-            logger.info(`[Stats] ${node.name}: ${Object.keys(stats).length} пользователей`);
+            // Обновляем трафик ноды
+            await HyNode.updateOne(
+                { _id: node._id },
+                {
+                    $inc: {
+                        'traffic.tx': nodeTx,
+                        'traffic.rx': nodeRx,
+                    },
+                    $set: { 'traffic.lastUpdate': new Date() }
+                }
+            );
+            
+            logger.info(`[Stats] ${node.name}: ${Object.keys(stats).length} пользователей, трафик: ↑${(nodeTx / 1024 / 1024).toFixed(1)}MB ↓${(nodeRx / 1024 / 1024).toFixed(1)}MB`);
         } catch (error) {
             logger.error(`[Stats] Ошибка ${node.name}: ${error.message}`);
         }
@@ -255,6 +274,9 @@ class SyncService {
             await this.collectTrafficStats(node);
             await this.getOnlineUsers(node);
         }
+        
+        // Обновляем время последнего сбора статистики
+        this.lastSyncTime = new Date();
     }
 
     /**

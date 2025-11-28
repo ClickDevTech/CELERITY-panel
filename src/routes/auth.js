@@ -5,52 +5,93 @@
 
 const express = require('express');
 const router = express.Router();
-const axios = require('axios');
 const HyUser = require('../models/hyUserModel');
-const HyNode = require('../models/hyNodeModel');
 const cryptoService = require('../services/cryptoService');
 const cache = require('../services/cacheService');
+const { getSettings } = require('../utils/helpers');
 const logger = require('../utils/logger');
 
 /**
- * Получить количество онлайн сессий пользователя со всех нод
- * Использует Redis кэш
+ * Извлечь IP из addr (поддержка IPv4 и IPv6)
+ * Примеры:
+ *   "185.90.103.104:55239" → "185.90.103.104"
+ *   "[2001:db8::1]:55239" → "2001:db8::1"
+ *   "::ffff:192.168.1.1:55239" → "::ffff:192.168.1.1"
  */
-async function getOnlineSessions(userId) {
-    // Сначала проверяем Redis кэш
-    const cached = await cache.getOnlineSessions();
-    if (cached) {
-        return cached[userId] || 0;
+function extractIP(addr) {
+    if (!addr) return '';
+    
+    // IPv6 с квадратными скобками: [2001:db8::1]:55239
+    if (addr.startsWith('[')) {
+        const endBracket = addr.indexOf(']');
+        if (endBracket > 0) {
+            return addr.substring(1, endBracket);
+        }
     }
     
-    // Если кэша нет — собираем данные с нод
+    // Находим последнее двоеточие
+    const lastColon = addr.lastIndexOf(':');
+    if (lastColon > 0) {
+        // Проверяем, является ли часть после : портом (только цифры)
+        const afterColon = addr.substring(lastColon + 1);
+        if (/^\d+$/.test(afterColon)) {
+            return addr.substring(0, lastColon);
+        }
+    }
+    
+    return addr;
+}
+
+/**
+ * Проверить лимит устройств по уникальным IP
+ * 
+ * @param {string} userId - ID пользователя
+ * @param {string} clientIP - IP адрес клиента
+ * @param {number} maxDevices - Максимум устройств
+ * @returns {Object} { allowed: boolean, activeCount: number }
+ */
+async function checkDeviceLimit(userId, clientIP, maxDevices) {
     try {
-        const nodes = await HyNode.find({ active: true, statsPort: { $gt: 0 }, statsSecret: { $ne: '' } });
-        const onlineData = {};
+        // Получаем настройки grace period
+        const settings = await getSettings();
+        const gracePeriodMinutes = settings?.deviceGracePeriod ?? 15;
+        const gracePeriodMs = gracePeriodMinutes * 60 * 1000;
         
-        await Promise.all(nodes.map(async (node) => {
-            try {
-                const response = await axios.get(`http://${node.ip}:${node.statsPort}/online`, {
-                    headers: { Authorization: node.statsSecret },
-                    timeout: 2000,
-                });
-                
-                // response.data = { "userId1": {...}, "userId2": {...}, ... }
-                for (const id of Object.keys(response.data)) {
-                    onlineData[id] = (onlineData[id] || 0) + 1;
-                }
-            } catch (err) {
-                // Нода недоступна - пропускаем
+        // Получаем все IP этого пользователя
+        const deviceIPs = await cache.getDeviceIPs(userId);
+        const now = Date.now();
+        
+        // Считаем активные IP (в пределах grace period)
+        const activeIPs = new Set();
+        for (const [ip, timestamp] of Object.entries(deviceIPs)) {
+            if (now - parseInt(timestamp) < gracePeriodMs) {
+                activeIPs.add(ip);
             }
-        }));
+        }
         
-        // Сохраняем в Redis
-        await cache.setOnlineSessions(onlineData);
+        // Добавляем текущий IP
+        activeIPs.add(clientIP);
         
-        return onlineData[userId] || 0;
+        const activeCount = activeIPs.size;
+        
+        // Проверяем лимит
+        if (activeCount > maxDevices) {
+            return { allowed: false, activeCount };
+        }
+        
+        // Разрешено — обновляем timestamp для этого IP
+        await cache.updateDeviceIP(userId, clientIP);
+        
+        // Периодически чистим старые IP (не при каждом запросе)
+        if (Math.random() < 0.1) { // 10% запросов
+            await cache.cleanupOldDeviceIPs(userId, gracePeriodMs);
+        }
+        
+        return { allowed: true, activeCount };
     } catch (err) {
-        logger.error(`[Auth] Ошибка получения онлайн сессий: ${err.message}`);
-        return 0; // В случае ошибки разрешаем подключение
+        logger.error(`[Auth] Ошибка проверки устройств: ${err.message}`);
+        // В случае ошибки — разрешаем (fail open)
+        return { allowed: true, activeCount: 0 };
     }
 }
 
@@ -164,10 +205,13 @@ router.post('/', async (req, res) => {
         
         // -1 = безлимит, 0 = без ограничений (нет настроек)
         if (maxDevices > 0) {
-            const currentSessions = await getOnlineSessions(userId);
+            // Извлекаем IP из addr (поддержка IPv4 и IPv6)
+            const clientIP = extractIP(addr);
             
-            if (currentSessions >= maxDevices) {
-                logger.warn(`[Auth] Превышен лимит устройств (${currentSessions}/${maxDevices}): ${userId} (${addr})`);
+            const { allowed, activeCount } = await checkDeviceLimit(userId, clientIP, maxDevices);
+            
+            if (!allowed) {
+                logger.warn(`[Auth] Превышен лимит устройств (${activeCount}/${maxDevices} IP): ${userId} (${addr})`);
                 return res.json({ ok: false });
             }
         }

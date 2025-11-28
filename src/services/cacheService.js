@@ -26,7 +26,8 @@ const DEFAULT_TTL = {
 const PREFIX = {
     SUB: 'sub:',             // sub:{token}:{format}
     USER: 'user:',           // user:{userId}
-    ONLINE: 'online',        // online (хранит все сессии)
+    DEVICES: 'devices:',     // devices:{userId} - Hash с IP устройств
+    ONLINE: 'online',        // online (хранит все сессии) - legacy
     NODES: 'nodes:active',   // nodes:active
     SETTINGS: 'settings',    // settings
 };
@@ -229,10 +230,94 @@ class CacheService {
         }
     }
 
-    // ==================== ОНЛАЙН-СЕССИИ ====================
+    // ==================== УСТРОЙСТВА (IP) ====================
 
     /**
-     * Получить онлайн-сессии
+     * Получить все IP устройств пользователя с timestamps
+     * @param {string} userId 
+     * @returns {Object} { ip: timestamp, ... } или пустой объект
+     */
+    async getDeviceIPs(userId) {
+        if (!this.isConnected()) return {};
+        
+        try {
+            const key = `${PREFIX.DEVICES}${userId}`;
+            const data = await this.redis.hgetall(key);
+            return data || {};
+        } catch (err) {
+            logger.error(`[Cache] Ошибка getDeviceIPs: ${err.message}`);
+            return {};
+        }
+    }
+
+    /**
+     * Обновить timestamp для IP устройства
+     * @param {string} userId 
+     * @param {string} ip 
+     */
+    async updateDeviceIP(userId, ip) {
+        if (!this.isConnected()) return;
+        
+        try {
+            const key = `${PREFIX.DEVICES}${userId}`;
+            await this.redis.hset(key, ip, Date.now().toString());
+            // Устанавливаем TTL на весь ключ (автоочистка неактивных юзеров)
+            await this.redis.expire(key, 86400); // 24 часа
+        } catch (err) {
+            logger.error(`[Cache] Ошибка updateDeviceIP: ${err.message}`);
+        }
+    }
+
+    /**
+     * Удалить устаревшие IP устройств
+     * @param {string} userId 
+     * @param {number} gracePeriodMs - период в миллисекундах
+     */
+    async cleanupOldDeviceIPs(userId, gracePeriodMs) {
+        if (!this.isConnected()) return;
+        
+        try {
+            const key = `${PREFIX.DEVICES}${userId}`;
+            const devices = await this.redis.hgetall(key);
+            const now = Date.now();
+            
+            const toDelete = [];
+            for (const [ip, timestamp] of Object.entries(devices)) {
+                if (now - parseInt(timestamp) > gracePeriodMs) {
+                    toDelete.push(ip);
+                }
+            }
+            
+            if (toDelete.length > 0) {
+                await this.redis.hdel(key, ...toDelete);
+                logger.debug(`[Cache] Cleaned ${toDelete.length} old IPs for ${userId}`);
+            }
+        } catch (err) {
+            logger.error(`[Cache] Ошибка cleanupOldDeviceIPs: ${err.message}`);
+        }
+    }
+
+    /**
+     * Сбросить все устройства пользователя (при отключении/кике)
+     * @param {string} userId 
+     */
+    async clearDeviceIPs(userId) {
+        if (!this.isConnected()) return;
+        
+        try {
+            const key = `${PREFIX.DEVICES}${userId}`;
+            await this.redis.del(key);
+            logger.debug(`[Cache] Cleared devices for ${userId}`);
+        } catch (err) {
+            logger.error(`[Cache] Ошибка clearDeviceIPs: ${err.message}`);
+        }
+    }
+
+    // ==================== ОНЛАЙН-СЕССИИ (legacy, для совместимости) ====================
+
+    /**
+     * Получить онлайн-сессии (legacy)
+     * @deprecated Используйте getDeviceIPs для подсчёта устройств
      */
     async getOnlineSessions() {
         if (!this.isConnected()) return null;
@@ -250,7 +335,8 @@ class CacheService {
     }
 
     /**
-     * Сохранить онлайн-сессии
+     * Сохранить онлайн-сессии (legacy)
+     * @deprecated Используйте updateDeviceIP для обновления устройств
      */
     async setOnlineSessions(data) {
         if (!this.isConnected()) return;

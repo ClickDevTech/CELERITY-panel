@@ -20,6 +20,11 @@ const settingsSchema = new mongoose.Schema({
         hideOverloaded: { type: Boolean, default: false },
     },
     
+    // Лимит устройств
+    // Grace period — как долго помнить IP после отключения (минуты)
+    // Защищает от ложных срабатываний при смене WiFi↔LTE
+    deviceGracePeriod: { type: Number, default: 15 },
+    
     // TTL кэша (в секундах)
     cache: {
         // Подписки (готовые конфиги Clash/Singbox/URI)

@@ -59,6 +59,23 @@
                     
                     <hr style="margin: 1rem 0; border-color: var(--border);">
                     
+                    <h4 style="margin-bottom: 0.75rem;">📱 Лимит устройств</h4>
+                    <div class="settings-grid" style="margin-bottom: 1rem;">
+                        <div class="form-group">
+                            <label for="deviceGracePeriod">Grace Period (мин)</label>
+                            <input type="number" name="deviceGracePeriod" id="deviceGracePeriod" 
+                                   value="<%= settings?.deviceGracePeriod ?? 15 %>" min="1" max="60">
+                            <small class="hint">Как долго помнить IP после отключения. Защищает от ложных срабатываний при смене WiFi↔LTE</small>
+                        </div>
+                    </div>
+                    <div class="alert" style="background: var(--bg-tertiary); border: 1px solid var(--border); padding: 12px; font-size: 13px;">
+                        <strong>ℹ️ Как работает:</strong> Устройства считаются по уникальным IP-адресам. 
+                        Если пользователь подключается с нового IP, а старый был активен менее <%= settings?.deviceGracePeriod ?? 15 %> минут назад — 
+                        оба IP учитываются в лимите.
+                    </div>
+                    
+                    <hr style="margin: 1rem 0; border-color: var(--border);">
+                    
                     <h4 style="margin-bottom: 0.75rem;">🚀 Кэширование (Redis)</h4>
                     <div class="settings-grid" style="margin-bottom: 1rem;">
                         <div class="form-group">

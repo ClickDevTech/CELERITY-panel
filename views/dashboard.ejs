@@ -26,13 +26,15 @@
         <div class="stat-label">подключений</div>
     </div>
     
-    <div class="stat-card stat-sync">
+    <div class="stat-card stat-traffic">
         <div class="stat-header">
-            <span class="stat-icon">⏱️</span>
-            <span class="stat-trend">sync</span>
+            <span class="stat-icon">📊</span>
+            <span class="stat-trend">всего</span>
         </div>
-        <div class="stat-value"><%= stats.lastSync ? new Date(stats.lastSync).toLocaleTimeString('ru', {hour: '2-digit', minute: '2-digit'}) : '—' %></div>
-        <div class="stat-label">последняя проверка</div>
+        <div class="stat-value"><%= ((stats.traffic?.total || 0) / (1024 * 1024 * 1024)).toFixed(1) %> GB</div>
+        <div class="stat-label" title="↑ <%= ((stats.traffic?.tx || 0) / (1024 * 1024 * 1024)).toFixed(2) %> GB / ↓ <%= ((stats.traffic?.rx || 0) / (1024 * 1024 * 1024)).toFixed(2) %> GB">
+            ↑ <%= ((stats.traffic?.tx || 0) / (1024 * 1024 * 1024)).toFixed(1) %> / ↓ <%= ((stats.traffic?.rx || 0) / (1024 * 1024 * 1024)).toFixed(1) %>
+        </div>
     </div>
 </div>
 
@@ -54,13 +56,14 @@
                     <th>Статус</th>
                     <th>Онлайн</th>
                             <th>Загрузка</th>
+                            <th>Трафик</th>
                             <th>Действия</th>
                 </tr>
             </thead>
             <tbody>
                 <% if (nodes.length === 0) { %>
                 <tr>
-                            <td colspan="5" class="text-center text-muted">
+                            <td colspan="6" class="text-center text-muted">
                                 <a href="/panel/nodes/add" class="btn btn-primary btn-sm mt-2">Добавить ноду</a>
                             </td>
                 </tr>
@@ -82,6 +85,16 @@
                             <td class="online-count"><%= node.onlineUsers || 0 %></td>
                             <td class="node-load" data-nodeid="<%= node._id %>">
                                 <span class="load-placeholder">—</span>
+                            </td>
+                            <td class="node-traffic">
+                                <% 
+                                const nodeTx = (node.traffic?.tx || 0) / (1024 * 1024 * 1024);
+                                const nodeRx = (node.traffic?.rx || 0) / (1024 * 1024 * 1024);
+                                const nodeTotal = nodeTx + nodeRx;
+                                %>
+                                <span style="font-size: 13px;" title="↑ <%= nodeTx.toFixed(2) %> GB / ↓ <%= nodeRx.toFixed(2) %> GB">
+                                    <%= nodeTotal.toFixed(1) %> GB
+                                </span>
                             </td>
                             <td>
                                 <div class="node-actions">
@@ -287,11 +300,17 @@ async function loadNodesStats() {
             const data = await res.json();
             
             if (data.success) {
-                const cpuLoad = data.cpu.load1.toFixed(1);
+                // Конвертируем load average в проценты: (load / cores) * 100
+                const cpuPercent = Math.min(Math.round((data.cpu.load1 / data.cpu.cores) * 100), 100);
                 const memPercent = data.mem.percent;
                 
+                // Цветовая индикация для CPU
+                let cpuColor = 'var(--text-primary)';
+                if (cpuPercent >= 80) cpuColor = '#ef4444';
+                else if (cpuPercent >= 60) cpuColor = '#f59e0b';
+                
                 loadCell.innerHTML = `
-                    <span class="cpu">CPU: ${cpuLoad}</span>
+                    <span class="cpu" style="color: ${cpuColor}">CPU: ${cpuPercent}%</span>
                     <span class="mem">RAM: ${memPercent}%</span>
                 `;
             } else {
