@@ -1,4 +1,6 @@
-# Hysteria Panel
+# C³ CELERITY
+
+⚡ **Быстро, просто и надолго**
 
 [English](README.md) | **[Русский](README.ru.md)**
 
@@ -7,7 +9,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)](package.json)
 [![Hysteria](https://img.shields.io/badge/Hysteria-2.x-9B59B6)](https://v2.hysteria.network/)
 
-Веб-панель для управления серверами [Hysteria 2](https://v2.hysteria.network/) с централизованной HTTP-авторизацией, автоматической настройкой нод и гибким распределением пользователей по группам.
+**C³ CELERITY** by Click Connect — современная веб-панель для управления серверами [Hysteria 2](https://v2.hysteria.network/) с централизованной HTTP-авторизацией, автоматической настройкой нод и гибким распределением пользователей по группам.
 
 ## ⚡ Быстрый старт
 

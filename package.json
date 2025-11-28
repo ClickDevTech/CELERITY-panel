@@ -1,7 +1,7 @@
 {
-  "name": "hysteria-backend",
+  "name": "c3-celerity",
   "version": "1.0.0",
-  "description": "Backend для управления Hysteria 2 нодами и пользователями",
+  "description": "C³ CELERITY - Management panel for Hysteria 2 nodes by Click Connect",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",

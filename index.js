@@ -1,5 +1,6 @@
 /**
- * Hysteria Backend - управление Hysteria 2 нодами и пользователями
+ * C³ CELERITY - Management panel for Hysteria 2 nodes
+ * by Click Connect
  * 
  * Включает:
  * - REST API для интеграции
