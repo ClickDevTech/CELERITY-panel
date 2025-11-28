@@ -161,45 +161,7 @@ function generateNodeConfigACME(node, authUrl, domain, email) {
     return yaml.stringify(config);
 }
 
-/**
- * Генерирует iptables правила для port hopping
- * 
- * @param {number} mainPort - Основной порт Hysteria
- * @param {string} portRange - Диапазон портов (например: "20000-50000")
- * @returns {string} Bash скрипт
- */
-function generatePortHoppingScript(mainPort, portRange) {
-    const [startPort, endPort] = portRange.split('-').map(Number);
-    
-    return `#!/bin/bash
-# Port hopping setup for Hysteria 2
-# Main port: ${mainPort}
-# Port range: ${portRange}
-
-# Очищаем старые правила
-iptables -t nat -D PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort} 2>/dev/null
-ip6tables -t nat -D PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort} 2>/dev/null
-
-# Добавляем новые правила
-iptables -t nat -A PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort}
-ip6tables -t nat -A PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort}
-
-# Открываем порты в firewall (если используется ufw)
-if command -v ufw &> /dev/null; then
-    ufw allow ${startPort}:${endPort}/udp
-fi
-
-# Сохраняем правила
-if command -v netfilter-persistent &> /dev/null; then
-    netfilter-persistent save
-elif command -v iptables-save &> /dev/null; then
-    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
-    ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true
-fi
-
-echo "Port hopping configured: ${portRange} -> ${mainPort}"
-`;
-}
+// generatePortHoppingScript удалён - используйте nodeSetup.js или nodeSSH.js
 
 /**
  * Генерирует systemd service файл для Hysteria
@@ -224,6 +186,5 @@ WantedBy=multi-user.target
 module.exports = {
     generateNodeConfig,
     generateNodeConfigACME,
-    generatePortHoppingScript,
     generateSystemdService,
 };

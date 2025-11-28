@@ -264,26 +264,47 @@ class NodeSSH {
 
     /**
      * Настраивает port hopping через iptables
+     * Унифицированная версия (без привязки к интерфейсу)
      */
     async setupPortHopping(portRange) {
         try {
             const mainPort = this.node.port || 443;
             const [startPort, endPort] = portRange.split('-').map(Number);
             
-            const commands = [
-                // Очищаем старые правила
-                `iptables -t nat -D PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true`,
-                `ip6tables -t nat -D PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true`,
-                // Добавляем новые
-                `iptables -t nat -A PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort}`,
-                `ip6tables -t nat -A PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort}`,
-                // Сохраняем
-                `netfilter-persistent save 2>/dev/null || iptables-save > /etc/iptables/rules.v4 2>/dev/null || true`,
-            ];
+            // Скрипт полной очистки и настройки
+            const script = `
+# Очищаем ВСЕ старые правила (разные варианты)
+iptables -t nat -D PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true
+ip6tables -t nat -D PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true
+
+# Очищаем legacy правила с привязкой к интерфейсу
+for iface in eth0 eth1 ens3 ens5 enp0s3 eno1; do
+    iptables -t nat -D PREROUTING -i $iface -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true
+    ip6tables -t nat -D PREROUTING -i $iface -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true
+done
+
+# Добавляем новые правила (БЕЗ привязки к интерфейсу)
+iptables -t nat -A PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort}
+ip6tables -t nat -A PREROUTING -p udp --dport ${startPort}:${endPort} -j REDIRECT --to-port ${mainPort}
+
+# Открываем порты в UFW
+if command -v ufw &> /dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    ufw allow ${startPort}:${endPort}/udp 2>/dev/null || true
+fi
+
+# Сохраняем правила
+if command -v netfilter-persistent &> /dev/null; then
+    netfilter-persistent save 2>/dev/null
+elif command -v iptables-save &> /dev/null; then
+    mkdir -p /etc/iptables
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+    ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true
+fi
+
+echo "Port hopping: ${startPort}-${endPort} -> ${mainPort}"
+`;
             
-            for (const cmd of commands) {
-                await this.exec(cmd);
-            }
+            await this.exec(script);
             
             logger.info(`[SSH] Port hopping настроен на ${this.node.name}: ${portRange} -> ${mainPort}`);
             return true;

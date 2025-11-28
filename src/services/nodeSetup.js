@@ -112,29 +112,44 @@ function getPortHoppingScript(portRange, mainPort) {
     return `
 echo "=== [4/5] Setting up port hopping ${start}-${end} -> ${mainPort} ==="
 
-# Определяем интерфейс
-IFACE=$(ip route | grep default | awk '{print $5}' | head -1)
-[ -z "$IFACE" ] && IFACE="eth0"
-echo "Using interface: $IFACE"
+# Очищаем старые правила (все варианты - с интерфейсом и без)
+iptables -t nat -D PREROUTING -p udp --dport ${start}:${end} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true
+ip6tables -t nat -D PREROUTING -p udp --dport ${start}:${end} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true
 
-# Удаляем старые правила если есть
-iptables -t nat -D PREROUTING -i $IFACE -p udp --dport ${start}:${end} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true
+# Очищаем старые правила с привязкой к интерфейсу (legacy)
+for iface in eth0 eth1 ens3 ens5 enp0s3 eno1; do
+    iptables -t nat -D PREROUTING -i $iface -p udp --dport ${start}:${end} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true
+    ip6tables -t nat -D PREROUTING -i $iface -p udp --dport ${start}:${end} -j REDIRECT --to-port ${mainPort} 2>/dev/null || true
+done
 
-# Добавляем новое правило
-iptables -t nat -A PREROUTING -i $IFACE -p udp --dport ${start}:${end} -j REDIRECT --to-port ${mainPort}
-echo "✓ iptables rule added"
+# Добавляем новые правила (БЕЗ привязки к интерфейсу - работает на всех)
+iptables -t nat -A PREROUTING -p udp --dport ${start}:${end} -j REDIRECT --to-port ${mainPort}
+ip6tables -t nat -A PREROUTING -p udp --dport ${start}:${end} -j REDIRECT --to-port ${mainPort}
+echo "✓ iptables NAT rules added"
+
+# Открываем порты в firewall (ufw)
+if command -v ufw &> /dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    ufw allow ${start}:${end}/udp 2>/dev/null || true
+    echo "✓ UFW rules added"
+fi
 
 # Сохраняем правила
 if command -v netfilter-persistent &> /dev/null; then
-    netfilter-persistent save
+    netfilter-persistent save 2>/dev/null
     echo "✓ Rules saved with netfilter-persistent"
 elif [ -f /etc/debian_version ]; then
+    # Пытаемся установить iptables-persistent
     apt-get install -y iptables-persistent 2>/dev/null || true
     netfilter-persistent save 2>/dev/null || true
-    echo "✓ Attempted to save rules"
+elif command -v iptables-save &> /dev/null; then
+    # Fallback для других систем
+    mkdir -p /etc/iptables
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+    ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true
+    echo "✓ Rules saved with iptables-save"
 fi
 
-echo "✓ Port hopping configured!"
+echo "✓ Port hopping configured: ${start}-${end} -> ${mainPort}"
 `;
 }
 

@@ -186,7 +186,7 @@ function getNodeConfigs(node) {
         });
     } else {
         configs.push({ name: 'TLS', host, port: 443, portRange: '', domain: node.domain });
-        configs.push({ name: 'HTTP', host, port: 80, portRange: '', domain: node.domain });
+        // Порт 80 убран (используется для ACME)
         if (node.portRange) {
             configs.push({ name: 'Hopping', host, port: node.port || 443, portRange: node.portRange, domain: node.domain });
         }
