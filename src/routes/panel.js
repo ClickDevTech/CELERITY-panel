@@ -27,8 +27,19 @@ const Settings = require('../models/settingsModel');
 const Admin = require('../models/adminModel');
 const syncService = require('../services/syncService');
 const cryptoService = require('../services/cryptoService');
+const cache = require('../services/cacheService');
+const nodeSetup = require('../services/nodeSetup');
+const NodeSSH = require('../services/nodeSSH');
+const { getActiveGroups, invalidateGroupsCache, invalidateSettingsCache } = require('../utils/helpers');
 const config = require('../../config');
 const logger = require('../utils/logger');
+const path = require('path');
+const fs = require('fs');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
+const ejs = require('ejs');
+const os = require('os');
 
 // Rate limiter для защиты от brute-force
 const loginLimiter = rateLimit({
@@ -122,10 +133,6 @@ const requireAuth = (req, res, next) => {
 
 // Хелпер для рендера с layout
 const render = (res, template, data = {}) => {
-    const ejs = require('ejs');
-    const path = require('path');
-    const fs = require('fs');
-    
     // Рендерим контент
     const templatePath = path.join(__dirname, '../../views', template + '.ejs');
     const templateContent = fs.readFileSync(templatePath, 'utf8');
@@ -240,19 +247,34 @@ router.get('/logout', (req, res) => {
 // GET /panel - Dashboard
 router.get('/', requireAuth, async (req, res) => {
     try {
-        const [usersTotal, usersEnabled, nodesTotal, nodesOnline, trafficAgg] = await Promise.all([
-            HyUser.countDocuments(),
-            HyUser.countDocuments({ enabled: true }),
-            HyNode.countDocuments(),
-            HyNode.countDocuments({ status: 'online' }),
-            // Агрегация общего трафика
-            HyUser.aggregate([
+        // Получаем статистику трафика из кэша
+        const statsStartTime = Date.now();
+        let trafficStats = await cache.getTrafficStats();
+        
+        if (!trafficStats) {
+            // Если кэша нет — считаем aggregate
+            const trafficAgg = await HyUser.aggregate([
                 { $group: { 
                     _id: null, 
                     tx: { $sum: '$traffic.tx' }, 
                     rx: { $sum: '$traffic.rx' } 
                 }}
-            ]),
+            ]);
+            
+            trafficStats = trafficAgg[0] || { tx: 0, rx: 0 };
+            
+            // Сохраняем в кэш на 5 минут
+            await cache.setTrafficStats(trafficStats);
+            logger.debug(`[Dashboard] Cache MISS traffic - aggregate ${Date.now() - statsStartTime}ms`);
+        } else {
+            logger.debug(`[Dashboard] Cache HIT traffic (${Date.now() - statsStartTime}ms)`);
+        }
+        
+        const [usersTotal, usersEnabled, nodesTotal, nodesOnline] = await Promise.all([
+            HyUser.countDocuments(),
+            HyUser.countDocuments({ enabled: true }),
+            HyNode.countDocuments(),
+            HyNode.countDocuments({ status: 'online' }),
         ]);
         
         const nodes = await HyNode.find({ active: true })
@@ -263,8 +285,7 @@ router.get('/', requireAuth, async (req, res) => {
         const totalOnline = nodes.reduce((sum, n) => sum + (n.onlineUsers || 0), 0);
         
         // Общий трафик в байтах
-        const totalTraffic = trafficAgg[0] || { tx: 0, rx: 0 };
-        const totalTrafficBytes = (totalTraffic.tx || 0) + (totalTraffic.rx || 0);
+        const totalTrafficBytes = (trafficStats.tx || 0) + (trafficStats.rx || 0);
         
         render(res, 'dashboard', {
             title: 'Dashboard',
@@ -275,8 +296,8 @@ router.get('/', requireAuth, async (req, res) => {
                 onlineUsers: totalOnline,
                 lastSync: syncService.lastSyncTime,
                 traffic: {
-                    tx: totalTraffic.tx || 0,
-                    rx: totalTraffic.rx || 0,
+                    tx: trafficStats.tx || 0,
+                    rx: trafficStats.rx || 0,
                     total: totalTrafficBytes,
                 },
             },
@@ -294,7 +315,7 @@ router.get('/nodes', requireAuth, async (req, res) => {
     try {
         const [nodes, groups] = await Promise.all([
             HyNode.find().populate('groups', 'name color').sort({ name: 1 }),
-            ServerGroup.find({ active: true }).sort({ name: 1 }),
+            getActiveGroups(),
         ]);
         
         render(res, 'nodes', {
@@ -310,7 +331,7 @@ router.get('/nodes', requireAuth, async (req, res) => {
 
 // GET /panel/nodes/add - Форма добавления ноды
 router.get('/nodes/add', requireAuth, async (req, res) => {
-    const groups = await ServerGroup.find({ active: true }).sort({ name: 1 });
+    const groups = await getActiveGroups();
     render(res, 'node-form', {
         title: 'Новая нода',
         page: 'nodes',
@@ -365,7 +386,7 @@ router.get('/nodes/:id', requireAuth, async (req, res) => {
     try {
         const [node, groups] = await Promise.all([
             HyNode.findById(req.params.id).populate('groups', 'name color'),
-            ServerGroup.find({ active: true }).sort({ name: 1 }),
+            getActiveGroups(),
         ]);
         
         if (!node) {
@@ -427,7 +448,6 @@ router.post('/nodes/:id', requireAuth, async (req, res) => {
 // POST /panel/nodes/:id/setup - Автонастройка ноды через SSH
 router.post('/nodes/:id/setup', requireAuth, async (req, res) => {
     try {
-        const nodeSetup = require('../services/nodeSetup');
         const node = await HyNode.findById(req.params.id);
         
         if (!node) {
@@ -465,7 +485,6 @@ router.post('/nodes/:id/setup', requireAuth, async (req, res) => {
 // GET /panel/nodes/:id/stats - Получение системной статистики ноды
 router.get('/nodes/:id/stats', requireAuth, async (req, res) => {
     try {
-        const NodeSSH = require('../services/nodeSSH');
         const node = await HyNode.findById(req.params.id);
         
         if (!node) {
@@ -490,7 +509,6 @@ router.get('/nodes/:id/stats', requireAuth, async (req, res) => {
 // GET /panel/nodes/:id/speed - Получение текущей скорости сети
 router.get('/nodes/:id/speed', requireAuth, async (req, res) => {
     try {
-        const NodeSSH = require('../services/nodeSSH');
         const node = await HyNode.findById(req.params.id);
         
         if (!node) {
@@ -515,7 +533,6 @@ router.get('/nodes/:id/speed', requireAuth, async (req, res) => {
 // GET /panel/nodes/:id/get-config - Получение текущего конфига с ноды
 router.get('/nodes/:id/get-config', requireAuth, async (req, res) => {
     try {
-        const nodeSetup = require('../services/nodeSetup');
         const node = await HyNode.findById(req.params.id);
         
         if (!node) {
@@ -544,7 +561,6 @@ router.get('/nodes/:id/get-config', requireAuth, async (req, res) => {
 // GET /panel/nodes/:id/logs - Получение логов ноды
 router.get('/nodes/:id/logs', requireAuth, async (req, res) => {
     try {
-        const nodeSetup = require('../services/nodeSetup');
         const node = await HyNode.findById(req.params.id);
         
         if (!node) {
@@ -591,7 +607,7 @@ router.get('/users', requireAuth, async (req, res) => {
                 .populate('groups', 'name color')
                 .lean(),
             HyUser.countDocuments(filter),
-            ServerGroup.find({ active: true }).sort({ name: 1 }),
+            getActiveGroups(),
         ]);
         
         render(res, 'users', {
@@ -614,7 +630,7 @@ router.get('/users', requireAuth, async (req, res) => {
 
 // GET /panel/users/add - Форма создания пользователя
 router.get('/users/add', requireAuth, async (req, res) => {
-    const groups = await ServerGroup.find({ active: true }).sort({ name: 1 });
+    const groups = await getActiveGroups();
     render(res, 'user-form', {
         title: 'Новый пользователь',
         page: 'users',
@@ -625,8 +641,6 @@ router.get('/users/add', requireAuth, async (req, res) => {
 // POST /panel/users - Создание пользователя
 router.post('/users', requireAuth, async (req, res) => {
     try {
-        const cryptoService = require('../services/cryptoService');
-        
         const { userId, username, trafficLimitGB, expireDays, enabled, maxDevices } = req.body;
         
         if (!userId) {
@@ -686,7 +700,7 @@ router.get('/users/:userId', requireAuth, async (req, res) => {
             HyUser.findOne({ userId: req.params.userId })
                 .populate('nodes', 'name ip domain')
                 .populate('groups', 'name color'),
-            ServerGroup.find({ active: true }).sort({ name: 1 }),
+            getActiveGroups(),
         ]);
         
         if (!user) {
@@ -751,6 +765,9 @@ router.post('/groups', requireAuth, async (req, res) => {
             subscriptionTitle: subscriptionTitle?.trim() || '',
         });
         
+        // Инвалидируем кэш групп
+        await invalidateGroupsCache();
+        
         res.redirect('/panel/groups');
     } catch (error) {
         if (error.code === 11000) {
@@ -776,6 +793,9 @@ router.post('/groups/:id', requireAuth, async (req, res) => {
             }
         });
         
+        // Инвалидируем кэш групп
+        await invalidateGroupsCache();
+        
         res.redirect('/panel/groups');
     } catch (error) {
         res.status(500).send('Error: ' + error.message);
@@ -791,6 +811,9 @@ router.post('/groups/:id/delete', requireAuth, async (req, res) => {
             HyUser.updateMany({ groups: req.params.id }, { $pull: { groups: req.params.id } }),
             ServerGroup.findByIdAndDelete(req.params.id),
         ]);
+        
+        // Инвалидируем кэш групп
+        await invalidateGroupsCache();
         
         res.redirect('/panel/groups');
     } catch (error) {
@@ -827,7 +850,6 @@ router.get('/settings', requireAuth, async (req, res) => {
 // POST /panel/settings - Сохранение настроек
 router.post('/settings', requireAuth, async (req, res) => {
     try {
-        const { invalidateSettingsCache } = require('../utils/helpers');
         const { reloadSettings } = require('../../index');
         
         const updates = {
@@ -898,7 +920,6 @@ router.post('/settings/password', requireAuth, async (req, res) => {
 // POST /panel/nodes/:id/restart - Перезапуск Hysteria на ноде
 router.post('/nodes/:id/restart', requireAuth, async (req, res) => {
     try {
-        const nodeSetup = require('../services/nodeSetup');
         const node = await HyNode.findById(req.params.id);
         
         if (!node) {
@@ -928,8 +949,6 @@ router.post('/nodes/:id/restart', requireAuth, async (req, res) => {
 // GET /panel/system-stats - Статистика системы панели
 router.get('/system-stats', requireAuth, async (req, res) => {
     try {
-        const os = require('os');
-        
         const cpus = os.cpus();
         const loadAvg = os.loadavg();
         const totalMem = os.totalmem();
@@ -969,8 +988,6 @@ router.get('/system-stats', requireAuth, async (req, res) => {
 // GET /panel/logs - Последние логи приложения
 router.get('/logs', requireAuth, async (req, res) => {
     try {
-        const fs = require('fs');
-        const path = require('path');
         const logPath = path.join(__dirname, '../../logs/combined.log');
         
         let logs = [];
@@ -989,12 +1006,6 @@ router.get('/logs', requireAuth, async (req, res) => {
 // POST /panel/backup - Backup MongoDB и скачать
 router.post('/backup', requireAuth, async (req, res) => {
     try {
-        const { exec } = require('child_process');
-        const { promisify } = require('util');
-        const execAsync = promisify(exec);
-        const path = require('path');
-        const fs = require('fs');
-        
         const backupDir = path.join(__dirname, '../../backups');
         if (!fs.existsSync(backupDir)) {
             fs.mkdirSync(backupDir, { recursive: true });
@@ -1033,12 +1044,6 @@ router.post('/backup', requireAuth, async (req, res) => {
 
 // POST /panel/restore - Восстановление из backup
 router.post('/restore', requireAuth, backupUpload.single('backup'), async (req, res) => {
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
-    const execAsync = promisify(exec);
-    const path = require('path');
-    const fs = require('fs');
-    
     if (!req.file) {
         return res.status(400).json({ error: 'Файл backup не загружен' });
     }

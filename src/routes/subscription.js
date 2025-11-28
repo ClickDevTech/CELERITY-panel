@@ -12,10 +12,9 @@ const express = require('express');
 const router = express.Router();
 const HyUser = require('../models/hyUserModel');
 const HyNode = require('../models/hyNodeModel');
-const Settings = require('../models/settingsModel');
 const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
-const { getNodesByGroups } = require('../utils/helpers');
+const { getNodesByGroups, getSettings } = require('../utils/helpers');
 
 // ==================== HELPERS ====================
 
@@ -68,26 +67,20 @@ function encodeTitle(text) {
 }
 
 /**
- * Получить настройки (с кэшированием)
- */
-async function getSettingsWithCache() {
-    const cached = await cache.getSettings();
-    if (cached) return cached;
-    
-    const settings = await Settings.get();
-    await cache.setSettings(settings);
-    return settings;
-}
-
-/**
  * Получить активные ноды (с кэшированием)
  */
 async function getActiveNodesWithCache() {
+    const startTime = Date.now();
     const cached = await cache.getActiveNodes();
-    if (cached) return cached;
+    
+    if (cached) {
+        logger.debug(`[Sub] Cache HIT nodes (${Date.now() - startTime}ms)`);
+        return cached;
+    }
     
     const nodes = await HyNode.find({ active: true }).lean();
     await cache.setActiveNodes(nodes);
+    logger.debug(`[Sub] Cache MISS nodes - MongoDB query (${Date.now() - startTime}ms)`);
     return nodes;
 }
 
@@ -116,7 +109,7 @@ async function getActiveNodes(user) {
     }
     
     // Получаем настройки из кэша
-    const settings = await getSettingsWithCache();
+    const settings = await getSettings();
     const lb = settings.loadBalancing || {};
     
     // Фильтрация перегруженных нод (если включено)
@@ -518,14 +511,16 @@ router.get('/files/:token', async (req, res) => {
         }
         
         // Проверяем кэш
+        const startTime = Date.now();
         const cached = await cache.getSubscription(token, format);
         if (cached) {
-            logger.debug(`[Sub] Cache HIT: ${token}:${format}`);
+            const cacheTime = Date.now() - startTime;
+            logger.info(`[Sub] Cache HIT: ${token.substring(0,8)}:${format} (${cacheTime}ms)`);
             return sendCachedSubscription(res, cached, format, userAgent);
         }
         
         // Кэша нет — генерируем
-        logger.info(`[Sub] Request: token=${token.substring(0,8)}..., format=${format}`);
+        logger.info(`[Sub] Cache MISS: ${token.substring(0,8)}:${format} - generating...`);
         
         const user = await getUserByToken(token);
         

@@ -20,6 +20,8 @@ const DEFAULT_TTL = {
     ONLINE_SESSIONS: 10,     // 10 секунд
     ACTIVE_NODES: 30,        // 30 секунд
     SETTINGS: 60,            // 1 минута (фиксированный)
+    TRAFFIC_STATS: 300,      // 5 минут
+    GROUPS: 300,             // 5 минут
 };
 
 // Префиксы ключей
@@ -30,6 +32,8 @@ const PREFIX = {
     ONLINE: 'online',        // online (хранит все сессии) - legacy
     NODES: 'nodes:active',   // nodes:active
     SETTINGS: 'settings',    // settings
+    TRAFFIC_STATS: 'traffic:stats', // Общая статистика трафика
+    GROUPS: 'groups:active', // Активные группы
 };
 
 class CacheService {
@@ -54,6 +58,8 @@ class CacheService {
             ONLINE_SESSIONS: c.onlineSessionsTTL || DEFAULT_TTL.ONLINE_SESSIONS,
             ACTIVE_NODES: c.activeNodesTTL || DEFAULT_TTL.ACTIVE_NODES,
             SETTINGS: DEFAULT_TTL.SETTINGS, // Всегда фиксированный
+            TRAFFIC_STATS: DEFAULT_TTL.TRAFFIC_STATS, // Всегда фиксированный
+            GROUPS: DEFAULT_TTL.GROUPS, // Всегда фиксированный
         };
         logger.info(`[Cache] TTL обновлены: sub=${this.ttl.SUBSCRIPTION}s, user=${this.ttl.USER}s`);
     }
@@ -62,7 +68,17 @@ class CacheService {
      * Подключение к Redis
      */
     async connect() {
-        const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+        const config = require('../../config');
+        
+        // Проверяем настройку USE_REDIS
+        if (!config.USE_REDIS) {
+            logger.warn('⚠️  Redis отключен (USE_REDIS=false). Кэширование не работает.');
+            logger.warn('⚠️  Производительность будет ниже. Лимит устройств не будет работать корректно.');
+            this.connected = false;
+            return;
+        }
+        
+        const redisUrl = config.REDIS_URL;
         
         try {
             this.redis = new Redis(redisUrl, {
@@ -90,6 +106,7 @@ class CacheService {
             
         } catch (err) {
             logger.error(`[Redis] Не удалось подключиться: ${err.message}`);
+            logger.warn('⚠️  Работаем без кэширования. Производительность снижена.');
             this.connected = false;
         }
     }
@@ -440,6 +457,104 @@ class CacheService {
             await this.redis.del(PREFIX.SETTINGS);
         } catch (err) {
             logger.error(`[Cache] Ошибка invalidateSettings: ${err.message}`);
+        }
+    }
+
+    // ==================== СТАТИСТИКА ТРАФИКА ====================
+
+    /**
+     * Получить статистику трафика
+     */
+    async getTrafficStats() {
+        if (!this.isConnected()) return null;
+        
+        try {
+            const data = await this.redis.get(PREFIX.TRAFFIC_STATS);
+            if (data) {
+                logger.debug('[Cache] HIT traffic stats');
+                return JSON.parse(data);
+            }
+            return null;
+        } catch (err) {
+            logger.error(`[Cache] Ошибка getTrafficStats: ${err.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Сохранить статистику трафика
+     */
+    async setTrafficStats(stats) {
+        if (!this.isConnected()) return;
+        
+        try {
+            await this.redis.setex(PREFIX.TRAFFIC_STATS, this.ttl.TRAFFIC_STATS, JSON.stringify(stats));
+            logger.debug('[Cache] SET traffic stats');
+        } catch (err) {
+            logger.error(`[Cache] Ошибка setTrafficStats: ${err.message}`);
+        }
+    }
+
+    /**
+     * Инвалидировать статистику трафика
+     */
+    async invalidateTrafficStats() {
+        if (!this.isConnected()) return;
+        
+        try {
+            await this.redis.del(PREFIX.TRAFFIC_STATS);
+            logger.debug('[Cache] INVALIDATE traffic stats');
+        } catch (err) {
+            logger.error(`[Cache] Ошибка invalidateTrafficStats: ${err.message}`);
+        }
+    }
+
+    // ==================== ГРУППЫ ====================
+
+    /**
+     * Получить активные группы
+     */
+    async getGroups() {
+        if (!this.isConnected()) return null;
+        
+        try {
+            const data = await this.redis.get(PREFIX.GROUPS);
+            if (data) {
+                logger.debug('[Cache] HIT groups');
+                return JSON.parse(data);
+            }
+            return null;
+        } catch (err) {
+            logger.error(`[Cache] Ошибка getGroups: ${err.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * Сохранить активные группы
+     */
+    async setGroups(groups) {
+        if (!this.isConnected()) return;
+        
+        try {
+            await this.redis.setex(PREFIX.GROUPS, this.ttl.GROUPS, JSON.stringify(groups));
+            logger.debug('[Cache] SET groups');
+        } catch (err) {
+            logger.error(`[Cache] Ошибка setGroups: ${err.message}`);
+        }
+    }
+
+    /**
+     * Инвалидировать группы
+     */
+    async invalidateGroups() {
+        if (!this.isConnected()) return;
+        
+        try {
+            await this.redis.del(PREFIX.GROUPS);
+            logger.debug('[Cache] INVALIDATE groups');
+        } catch (err) {
+            logger.error(`[Cache] Ошибка invalidateGroups: ${err.message}`);
         }
     }
 

@@ -20,6 +20,8 @@ async function invalidateUserCache(userId, subscriptionToken) {
     if (subscriptionToken) {
         await cache.invalidateSubscription(subscriptionToken);
     }
+    // Очищаем устройства пользователя
+    await cache.clearDeviceIPs(userId);
 }
 
 /**

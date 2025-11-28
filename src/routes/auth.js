@@ -57,7 +57,8 @@ async function checkDeviceLimit(userId, clientIP, maxDevices) {
         const gracePeriodMinutes = settings?.deviceGracePeriod ?? 15;
         const gracePeriodMs = gracePeriodMinutes * 60 * 1000;
         
-        // Получаем все IP этого пользователя
+        // Получаем все IP этого пользователя из Redis
+        // Если Redis недоступен - вернет {} (fallback: лимит не работает корректно)
         const deviceIPs = await cache.getDeviceIPs(userId);
         const now = Date.now();
         
@@ -99,18 +100,23 @@ async function checkDeviceLimit(userId, clientIP, maxDevices) {
  * Получить пользователя (с кэшированием)
  */
 async function getUserWithCache(userId) {
+    const startTime = Date.now();
+    
     // Сначала проверяем Redis кэш
     const cached = await cache.getUser(userId);
     if (cached) {
+        logger.debug(`[Auth] Cache HIT user:${userId} (${Date.now() - startTime}ms)`);
         return cached;
     }
     
     // Если кэша нет — запрашиваем из MongoDB
     const user = await HyUser.findOne({ userId }).populate('groups').lean();
+    const queryTime = Date.now() - startTime;
     
     if (user) {
         // Сохраняем в Redis (без пароля)
         await cache.setUser(userId, user);
+        logger.debug(`[Auth] Cache MISS user:${userId} - MongoDB query ${queryTime}ms`);
     }
     
     return user;

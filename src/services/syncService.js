@@ -14,6 +14,7 @@ const HyUser = require('../models/hyUserModel');
 const HyNode = require('../models/hyNodeModel');
 const NodeSSH = require('./nodeSSH');
 const configGenerator = require('./configGenerator');
+const cache = require('./cacheService');
 const logger = require('../utils/logger');
 const axios = require('axios');
 const config = require('../../config');
@@ -277,6 +278,9 @@ class SyncService {
         
         // Обновляем время последнего сбора статистики
         this.lastSyncTime = new Date();
+        
+        // Инвалидируем кэш статистики трафика (данные обновились)
+        await cache.invalidateTrafficStats();
     }
 
     /**

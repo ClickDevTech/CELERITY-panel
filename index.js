@@ -67,11 +67,43 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// Логирование запросов (кроме статики)
+// Логирование запросов с временем ответа
 app.use((req, res, next) => {
-    if (!req.path.startsWith('/css') && !req.path.startsWith('/js')) {
-        logger.info(`${req.method} ${req.path}`);
-    }
+    const startTime = Date.now();
+    
+    // Перехватываем завершение ответа
+    const originalSend = res.send;
+    const originalJson = res.json;
+    
+    const logResponse = () => {
+        const duration = Date.now() - startTime;
+        const path = req.path;
+        
+        // Пропускаем статику
+        if (path.startsWith('/css') || path.startsWith('/js')) {
+            return;
+        }
+        
+        // Цвет для времени
+        let timeColor = '';
+        if (duration < 50) timeColor = '⚡'; // Быстро
+        else if (duration < 200) timeColor = '✓'; // Норм
+        else if (duration < 1000) timeColor = '⚠'; // Медленно
+        else timeColor = '❌'; // Очень медленно
+        
+        logger.info(`${req.method} ${path} - ${timeColor} ${duration}ms - ${res.statusCode}`);
+    };
+    
+    res.send = function(data) {
+        logResponse();
+        return originalSend.call(this, data);
+    };
+    
+    res.json = function(data) {
+        logResponse();
+        return originalJson.call(this, data);
+    };
+    
     next();
 });
 
@@ -188,9 +220,10 @@ app.use('/api/nodes', requireAuth, nodesRoutes);
 // Группы API
 app.get('/api/groups', requireAuth, async (req, res) => {
     try {
-        const ServerGroup = require('./src/models/serverGroupModel');
-        const groups = await ServerGroup.find({ active: true }).select('_id name').sort({ name: 1 });
-        res.json(groups);
+        const { getActiveGroups } = require('./src/utils/helpers');
+        const groups = await getActiveGroups();
+        // Возвращаем только нужные поля
+        res.json(groups.map(g => ({ _id: g._id, name: g.name })));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -241,6 +274,8 @@ app.post('/api/sync', requireAuth, async (req, res) => {
 app.post('/api/kick/:userId', requireAuth, async (req, res) => {
     try {
         await syncService.kickUser(req.params.userId);
+        // Очищаем устройства пользователя из кэша
+        await cacheService.clearDeviceIPs(req.params.userId);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
