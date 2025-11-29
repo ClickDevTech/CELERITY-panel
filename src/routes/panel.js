@@ -984,17 +984,33 @@ router.get('/system-stats', requireAuth, async (req, res) => {
 // GET /panel/logs - Последние логи приложения
 router.get('/logs', requireAuth, async (req, res) => {
     try {
-        const logPath = path.join(__dirname, '../../logs/combined.log');
-        
+        const logsDir = path.join(__dirname, '../../logs');
         let logs = [];
-        if (fs.existsSync(logPath)) {
-            const content = fs.readFileSync(logPath, 'utf8');
-            // Берём последние 100 строк как массив, новые сверху
-            logs = content.split('\n').filter(Boolean).slice(-100).reverse();
+        
+        // Winston с maxFiles создаёт файлы combined1.log, combined2.log и т.д.
+        // Ищем все combined*.log файлы
+        if (fs.existsSync(logsDir)) {
+            const files = fs.readdirSync(logsDir)
+                .filter(f => f.startsWith('combined') && f.endsWith('.log'))
+                .map(f => ({
+                    name: f,
+                    path: path.join(logsDir, f),
+                    mtime: fs.statSync(path.join(logsDir, f)).mtime
+                }))
+                .sort((a, b) => b.mtime - a.mtime); // Сортируем по времени изменения
+            
+            // Берём самый свежий файл
+            if (files.length > 0) {
+                const latestFile = files[0].path;
+                const content = fs.readFileSync(latestFile, 'utf8');
+                // Берём последние 100 строк, новые сверху
+                logs = content.split('\n').filter(Boolean).slice(-100).reverse();
+            }
         }
         
         res.json({ logs });
     } catch (error) {
+        logger.error(`[Panel] Ошибка чтения логов: ${error.message}`);
         res.json({ logs: [], error: error.message });
     }
 });
