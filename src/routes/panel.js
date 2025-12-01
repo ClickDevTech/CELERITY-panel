@@ -40,15 +40,10 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const ejs = require('ejs');
 const os = require('os');
+const rpsCounter = require('../middleware/rpsCounter');
 
 // Кэш скомпилированных шаблонов (для production)
 const templateCache = new Map();
-
-// Счетчик запросов для RPS (оптимизированный)
-let rpsCounter = 0;
-let rpmCounter = 0;
-let lastRpsReset = Date.now();
-let lastRpmReset = Date.now();
 
 // Rate limiter для защиты от brute-force
 const loginLimiter = rateLimit({
@@ -131,29 +126,6 @@ const checkIpWhitelist = (req, res, next) => {
 
 // Применяем IP whitelist ко всем роутам панели
 router.use(checkIpWhitelist);
-
-// Middleware: подсчет RPS (оптимизированный - O(1))
-router.use((req, res, next) => {
-    const now = Date.now();
-    
-    // Сброс счетчика RPS каждую секунду
-    if (now - lastRpsReset >= 1000) {
-        rpsCounter = 1;
-        lastRpsReset = now;
-    } else {
-        rpsCounter++;
-    }
-    
-    // Сброс счетчика RPM каждую минуту
-    if (now - lastRpmReset >= 60000) {
-        rpmCounter = 1;
-        lastRpmReset = now;
-    } else {
-        rpmCounter++;
-    }
-    
-    next();
-});
 
 // Middleware: проверка авторизации
 const requireAuth = (req, res, next) => {
@@ -1092,8 +1064,9 @@ router.get('/system-stats', requireAuth, async (req, res) => {
         const cpuPercent = Math.min(Math.round((loadAvg[0] / cpus.length) * 100), 100);
         
         // RPS/RPM из счетчиков (O(1) операция!)
-        const rps = rpsCounter;
-        const rpm = rpmCounter;
+        const requestStats = rpsCounter.getStats();
+        const rps = requestStats.rps;
+        const rpm = requestStats.rpm;
         
         // Cache stats (Redis быстрый)
         const cacheStats = await cache.getStats();

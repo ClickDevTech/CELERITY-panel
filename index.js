@@ -24,6 +24,7 @@ const config = require('./config');
 const logger = require('./src/utils/logger');
 const requireAuth = require('./src/middleware/auth');
 const { i18nMiddleware } = require('./src/middleware/i18n');
+const { countRequest } = require('./src/middleware/rpsCounter');
 const syncService = require('./src/services/syncService');
 const cacheService = require('./src/services/cacheService');
 
@@ -92,6 +93,9 @@ app.use((req, res, next) => {
 
 // Интернационализация (i18n)
 app.use(i18nMiddleware);
+
+// Подсчет RPS/RPM для всех запросов (O(1), очень быстро)
+app.use(countRequest);
 
 // Статика
 app.use(express.static(path.join(__dirname, 'public')));
