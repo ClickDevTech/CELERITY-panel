@@ -148,11 +148,11 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 
 <script>
-const userId = '<%= user.userId %>';
+const userId = <%- JSON.stringify(user.userId) %>;
 const i18n = {
-    error: '<%= t("common.error") %>',
-    confirmDelete: '<%= t("users.confirmDelete") %> ' + userId + '?',
-    linkCopied: '<%= t("users.linkCopied") %>'
+    error: <%- JSON.stringify(t("common.error")) %>,
+    confirmDelete: <%- JSON.stringify(t("users.confirmDelete")) %> + ' ' + userId + '?',
+    linkCopied: <%- JSON.stringify(t("users.linkCopied")) %>
 };
 
 async function toggleUser(enabled) {

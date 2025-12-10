@@ -227,12 +227,12 @@ ACME_EMAIL=admin@example.com</pre>
 
 <script>
 const i18n = {
-    resetConfirm: '<%= t("settings.resetConfirm").replace(/\n/g, "\\n") %>',
-    resetConfirmFinal: '<%= t("settings.resetConfirmFinal").replace(/\n/g, "\\n") %>',
-    resetting: '<%= t("settings.resetting") %>',
-    resetAllTraffic: '<%= t("settings.resetAllTraffic") %>',
-    trafficReset: '<%= t("settings.trafficReset") %>',
-    error: '<%= t("common.error") %>'
+    resetConfirm: <%- JSON.stringify(t("settings.resetConfirm")) %>,
+    resetConfirmFinal: <%- JSON.stringify(t("settings.resetConfirmFinal")) %>,
+    resetting: <%- JSON.stringify(t("settings.resetting")) %>,
+    resetAllTraffic: <%- JSON.stringify(t("settings.resetAllTraffic")) %>,
+    trafficReset: <%- JSON.stringify(t("settings.trafficReset")) %>,
+    error: <%- JSON.stringify(t("common.error")) %>
 };
 
 async function resetTraffic() {

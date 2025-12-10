@@ -244,15 +244,15 @@ function getSortIcon(field) {
 %>
 
 <script>
-const baseUrl = '<%= baseUrl %>';
-const currentSortBy = '<%= query.sortBy || "createdAt" %>';
-const currentSortOrder = '<%= query.sortOrder || "desc" %>';
+const baseUrl = <%- JSON.stringify(baseUrl) %>;
+const currentSortBy = <%- JSON.stringify(query.sortBy || "createdAt") %>;
+const currentSortOrder = <%- JSON.stringify(query.sortOrder || "desc") %>;
 const i18n = {
-    turnedOn: '<%= t("users.turnedOn") %>',
-    turnedOff: '<%= t("users.turnedOff") %>',
-    error: '<%= t("common.error") %>',
-    linkCopied: '<%= t("users.linkCopied") %>',
-    copyError: '<%= t("users.copyError") %>'
+    turnedOn: <%- JSON.stringify(t("users.turnedOn")) %>,
+    turnedOff: <%- JSON.stringify(t("users.turnedOff")) %>,
+    error: <%- JSON.stringify(t("common.error")) %>,
+    linkCopied: <%- JSON.stringify(t("users.linkCopied")) %>,
+    copyError: <%- JSON.stringify(t("users.copyError")) %>
 };
 
 // Debounced search

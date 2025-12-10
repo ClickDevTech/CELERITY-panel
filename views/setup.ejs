@@ -56,7 +56,7 @@
     </div>
     
     <script>
-    const passwordsMismatch = '<%= typeof t !== "undefined" ? t("setup.passwordsMismatch") : "Passwords don\'t match!" %>';
+    const passwordsMismatch = <%- JSON.stringify(typeof t !== "undefined" ? t("setup.passwordsMismatch") : "Passwords don't match!") %>;
     
     document.querySelector('form').addEventListener('submit', function(e) {
         const pass = document.getElementById('password').value;

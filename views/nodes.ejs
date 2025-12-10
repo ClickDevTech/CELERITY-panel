@@ -88,8 +88,8 @@
 
 <script>
 const i18n = {
-    confirmDelete: '<%= t("nodes.confirmDelete") %>',
-    deleteError: '<%= t("nodes.deleteError") %>'
+    confirmDelete: <%- JSON.stringify(t("nodes.confirmDelete")) %>,
+    deleteError: <%- JSON.stringify(t("nodes.deleteError")) %>
 };
 
 async function deleteNode(id) {

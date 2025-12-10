@@ -306,19 +306,19 @@
 
 <script>
 const i18n = {
-    noLogs: '<%= t("dashboard.noLogs") %>',
-    loadError: '<%= t("dashboard.loadError") %>',
-    syncStarted: '<%= t("dashboard.syncStarted") %>',
-    syncSuccess: '<%= t("dashboard.syncSuccess") %>',
-    error: '<%= t("common.error") %>',
-    nodeRestarted: '<%= t("dashboard.nodeRestarted") %>',
-    restartError: '<%= t("dashboard.restartError") %>',
-    creatingBackup: '<%= t("dashboard.creatingBackup") %>',
-    backupDownloaded: '<%= t("dashboard.backupDownloaded") %>',
-    backupError: '<%= t("dashboard.backupError") %>',
-    restoringDb: '<%= t("dashboard.restoringDb") %>',
-    dbRestored: '<%= t("dashboard.dbRestored") %>',
-    restoreConfirm: '<%= t("dashboard.restoreConfirm") %>'
+    noLogs: <%- JSON.stringify(t("dashboard.noLogs")) %>,
+    loadError: <%- JSON.stringify(t("dashboard.loadError")) %>,
+    syncStarted: <%- JSON.stringify(t("dashboard.syncStarted")) %>,
+    syncSuccess: <%- JSON.stringify(t("dashboard.syncSuccess")) %>,
+    error: <%- JSON.stringify(t("common.error")) %>,
+    nodeRestarted: <%- JSON.stringify(t("dashboard.nodeRestarted")) %>,
+    restartError: <%- JSON.stringify(t("dashboard.restartError")) %>,
+    creatingBackup: <%- JSON.stringify(t("dashboard.creatingBackup")) %>,
+    backupDownloaded: <%- JSON.stringify(t("dashboard.backupDownloaded")) %>,
+    backupError: <%- JSON.stringify(t("dashboard.backupError")) %>,
+    restoringDb: <%- JSON.stringify(t("dashboard.restoringDb")) %>,
+    dbRestored: <%- JSON.stringify(t("dashboard.dbRestored")) %>,
+    restoreConfirm: <%- JSON.stringify(t("dashboard.restoreConfirm")) %>
 };
 
 // Load on page load

@@ -232,14 +232,14 @@
 
 <script>
 const i18n = {
-    autoSetupConfirm: '<%= t("nodes.autoSetupConfirm").replace(/\n/g, "\\n") %>',
-    setupRunning: '<%= t("nodes.setupRunning") %>',
-    loadingLogs: '<%= t("nodes.loadingLogs") %>',
-    checking: '<%= t("nodes.checking") %>',
-    resettingStatus: '<%= t("nodes.resettingStatus") %>',
-    statusReset: '<%= t("nodes.statusReset") %>',
-    autoSetup: '<%= t("nodes.autoSetup") %>',
-    error: '<%= t("common.error") %>'
+    autoSetupConfirm: <%- JSON.stringify(t("nodes.autoSetupConfirm")) %>,
+    setupRunning: <%- JSON.stringify(t("nodes.setupRunning")) %>,
+    loadingLogs: <%- JSON.stringify(t("nodes.loadingLogs")) %>,
+    checking: <%- JSON.stringify(t("nodes.checking")) %>,
+    resettingStatus: <%- JSON.stringify(t("nodes.resettingStatus")) %>,
+    statusReset: <%- JSON.stringify(t("nodes.statusReset")) %>,
+    autoSetup: <%- JSON.stringify(t("nodes.autoSetup")) %>,
+    error: <%- JSON.stringify(t("common.error")) %>
 };
 
 function showLogs(logs) {
@@ -429,12 +429,12 @@ acl:
 
 <script>
 const i18nConfig = {
-    copied: '<%= t("common.copied") %>',
-    loadConfigConfirm: '<%= t("nodes.loadConfigConfirm") %>',
-    configLoaded: '<%= t("nodes.configLoaded") %>',
-    saveFirst: '<%= t("nodes.saveFirst") %>',
-    error: '<%= t("common.error") %>',
-    baseUrl: '<%= baseUrl %>'
+    copied: <%- JSON.stringify(t("common.copied")) %>,
+    loadConfigConfirm: <%- JSON.stringify(t("nodes.loadConfigConfirm")) %>,
+    configLoaded: <%- JSON.stringify(t("nodes.configLoaded")) %>,
+    saveFirst: <%- JSON.stringify(t("nodes.saveFirst")) %>,
+    error: <%- JSON.stringify(t("common.error")) %>,
+    baseUrl: <%- JSON.stringify(baseUrl) %>
 };
 
 function copyConfig() {
