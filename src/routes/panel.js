@@ -309,7 +309,7 @@ router.get('/', requireAuth, async (req, res) => {
         const { usersTotal, usersEnabled, nodesTotal, nodesOnline, trafficStats } = counts;
         
         const nodes = await HyNode.find({ active: true })
-            .select('name ip status onlineUsers groups traffic')
+            .select('name ip status onlineUsers maxOnlineUsers groups traffic')
             .populate('groups', 'name color')
             .sort({ name: 1 });
         
