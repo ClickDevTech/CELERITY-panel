@@ -349,7 +349,14 @@
     "lastBackup": "Last Backup",
     "saved": "Settings saved",
     "hintLoadBalancing": "Sort nodes by current load in subscriptions",
-    "hintHideOverloaded": "Don't show nodes that reached max online users"
+    "hintHideOverloaded": "Don't show nodes that reached max online users",
+    "cacheManagement": "🗄️ Cache Management",
+    "flushCache": "Flush Cache",
+    "flushCacheDesc": "Clears all cached data in Redis (subscriptions, users, sessions). May temporarily increase server load.",
+    "flushCacheBtn": "🧹 Flush Cache",
+    "flushCacheConfirm": "Clear all cached data?\n\nThis will temporarily increase server load as cache rebuilds.",
+    "flushing": "⏳ Flushing...",
+    "cacheFlushed": "✓ Cache cleared successfully"
   },
   "setup": {
     "title": "Initial Setup",

@@ -626,10 +626,30 @@ class CacheService {
         }
     }
 
-    // ==================== СТАТИСТИКА ====================
+    // ==================== FLUSH ALL ====================
 
     /**
-     * Получить статистику кэша
+     * Clear all cache data
+     */
+    async flushAll() {
+        if (!this.isConnected()) {
+            return { success: false, error: 'Redis not connected' };
+        }
+        
+        try {
+            await this.redis.flushdb();
+            logger.info('[Cache] All cache data flushed');
+            return { success: true };
+        } catch (err) {
+            logger.error(`[Cache] flushAll error: ${err.message}`);
+            return { success: false, error: err.message };
+        }
+    }
+
+    // ==================== STATS ====================
+
+    /**
+     * Get cache statistics
      */
     async getStats() {
         if (!this.isConnected()) {

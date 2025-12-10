@@ -208,6 +208,21 @@ ACME_EMAIL=admin@example.com</pre>
         
         <div class="card mt-2">
             <div class="card-header">
+                <h2><%= t('settings.cacheManagement') %></h2>
+            </div>
+            <div class="card-body">
+                <h4 style="margin-bottom: 0.5rem;"><%= t('settings.flushCache') %></h4>
+                <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 1rem;">
+                    <%= t('settings.flushCacheDesc') %>
+                </p>
+                <button class="btn btn-warning btn-sm" onclick="flushCache()">
+                    <%= t('settings.flushCacheBtn') %>
+                </button>
+            </div>
+        </div>
+        
+        <div class="card mt-2">
+            <div class="card-header">
                 <h2><%= t('settings.dangerZone') %></h2>
             </div>
             <div class="card-body">
@@ -232,8 +247,45 @@ const i18n = {
     resetting: <%- JSON.stringify(t("settings.resetting")) %>,
     resetAllTraffic: <%- JSON.stringify(t("settings.resetAllTraffic")) %>,
     trafficReset: <%- JSON.stringify(t("settings.trafficReset")) %>,
-    error: <%- JSON.stringify(t("common.error")) %>
+    error: <%- JSON.stringify(t("common.error")) %>,
+    flushCacheConfirm: <%- JSON.stringify(t("settings.flushCacheConfirm")) %>,
+    flushing: <%- JSON.stringify(t("settings.flushing")) %>,
+    flushCacheBtn: <%- JSON.stringify(t("settings.flushCacheBtn")) %>,
+    cacheFlushed: <%- JSON.stringify(t("settings.cacheFlushed")) %>
 };
+
+async function flushCache() {
+    if (!confirm(i18n.flushCacheConfirm)) {
+        return;
+    }
+    
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = i18n.flushing;
+    
+    try {
+        const res = await fetch('/panel/settings/flush-cache', {
+            method: 'POST',
+            credentials: 'include'
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast(i18n.cacheFlushed, 'success');
+            btn.disabled = false;
+            btn.textContent = i18n.flushCacheBtn;
+        } else {
+            showToast(i18n.error + ': ' + (data.error || 'unknown'), 'error');
+            btn.disabled = false;
+            btn.textContent = i18n.flushCacheBtn;
+        }
+    } catch (e) {
+        showToast(i18n.error, 'error');
+        btn.disabled = false;
+        btn.textContent = i18n.flushCacheBtn;
+    }
+}
 
 async function resetTraffic() {
     if (!confirm(i18n.resetConfirm)) {

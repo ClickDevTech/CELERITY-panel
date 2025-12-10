@@ -1030,6 +1030,23 @@ router.post('/settings/reset-traffic', requireAuth, async (req, res) => {
     }
 });
 
+// POST /panel/settings/flush-cache - Flush all Redis cache
+router.post('/settings/flush-cache', requireAuth, async (req, res) => {
+    try {
+        const result = await cache.flushAll();
+        
+        if (result.success) {
+            logger.info(`[Panel] Cache flushed by admin: ${req.session.adminUsername}`);
+            res.json({ success: true, message: 'Cache cleared' });
+        } else {
+            res.status(500).json({ success: false, error: result.error || 'Failed to flush cache' });
+        }
+    } catch (error) {
+        logger.error('[Panel] Cache flush error:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // POST /panel/nodes/:id/restart - Перезапуск Hysteria на ноде
 router.post('/nodes/:id/restart', requireAuth, async (req, res) => {
     try {
