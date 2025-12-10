@@ -96,7 +96,7 @@
                             <%= node.status %>
                         </span>
                     </td>
-                            <td class="online-count"><%= node.onlineUsers || 0 %></td>
+                            <td class="online-count"><%= node.onlineUsers || 0 %><% if (node.maxOnlineUsers > 0) { %><span class="online-limit">/<%= node.maxOnlineUsers %></span><% } %></td>
                             <td class="node-load" data-nodeid="<%= node._id %>">
                                 <span class="load-placeholder">—</span>
                             </td>
@@ -139,7 +139,7 @@
                             <div class="mobile-node-stats">
                                 <div class="mobile-stat-item">
                                     <span class="mobile-stat-label"><%= t('common.online') %></span>
-                                    <span class="mobile-stat-value online-count"><%= node.onlineUsers || 0 %></span>
+                                    <span class="mobile-stat-value online-count"><%= node.onlineUsers || 0 %><% if (node.maxOnlineUsers > 0) { %><span class="online-limit">/<%= node.maxOnlineUsers %></span><% } %></span>
                                 </div>
                                 <div class="mobile-stat-item">
                                     <span class="mobile-stat-label"><%= t('common.status') %></span>
@@ -301,6 +301,10 @@
 }
 .load-placeholder {
     color: var(--muted);
+}
+.online-limit {
+    color: var(--text-muted);
+    font-size: 0.85em;
 }
 </style>
 

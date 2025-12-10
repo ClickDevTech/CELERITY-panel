@@ -224,6 +224,34 @@ html {
     color: white;
 }
 
+.github-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px;
+    text-align: center;
+    color: var(--text-muted);
+    text-decoration: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: all var(--transition);
+    font-weight: 500;
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.github-link:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--primary);
+    color: var(--text-primary);
+}
+
+.github-link svg {
+    flex-shrink: 0;
+}
+
 /* Content */
 .content {
     flex: 1;
