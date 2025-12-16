@@ -1,23 +1,47 @@
 /**
  * SSH service for Hysteria node management
+ * 
+ * Использует SSHPool для переиспользования соединений.
+ * Падает назад к прямому соединению если пул недоступен.
  */
 
 const { Client } = require('ssh2');
+const sshPool = require('./sshPoolService');
 const logger = require('../utils/logger');
 const cryptoService = require('./cryptoService');
 
 class NodeSSH {
     constructor(node) {
         this.node = node;
-        this.client = null;
+        this.usePool = true;  // Использовать пул по умолчанию
+        this.directClient = null;  // Для legacy режима
     }
 
     /**
-     * Connect to node via SSH
+     * Connect to node via SSH (через пул или напрямую)
      */
     async connect() {
+        if (this.usePool) {
+            // Пул сам управляет соединениями - просто проверяем что можем подключиться
+            try {
+                await sshPool.getConnection(this.node);
+                return;
+            } catch (error) {
+                logger.warn(`[SSH] Pool failed for ${this.node.name}, falling back to direct`);
+                this.usePool = false;
+            }
+        }
+        
+        // Fallback: прямое соединение
+        return this.connectDirect();
+    }
+    
+    /**
+     * Прямое соединение (legacy, для особых случаев)
+     */
+    async connectDirect() {
         return new Promise((resolve, reject) => {
-            this.client = new Client();
+            this.directClient = new Client();
             
             const config = {
                 host: this.node.ip,
@@ -35,9 +59,9 @@ class NodeSSH {
                 return;
             }
             
-            this.client
+            this.directClient
                 .on('ready', () => {
-                    logger.info(`[SSH] Connected to ${this.node.name} (${this.node.ip})`);
+                    logger.info(`[SSH] Connected (direct) to ${this.node.name} (${this.node.ip})`);
                     resolve();
                 })
                 .on('error', (err) => {
@@ -52,23 +76,29 @@ class NodeSSH {
      * Close connection
      */
     disconnect() {
-        if (this.client) {
-            this.client.end();
-            this.client = null;
+        if (this.directClient) {
+            this.directClient.end();
+            this.directClient = null;
         }
+        // Пул соединения НЕ закрываем - они переиспользуются
     }
 
     /**
      * Execute command on remote server
      */
     async exec(command) {
+        if (this.usePool) {
+            return sshPool.exec(this.node, command);
+        }
+        
+        // Legacy direct execution
         return new Promise((resolve, reject) => {
-            if (!this.client) {
+            if (!this.directClient) {
                 reject(new Error('SSH not connected'));
                 return;
             }
             
-            this.client.exec(command, (err, stream) => {
+            this.directClient.exec(command, (err, stream) => {
                 if (err) {
                     reject(err);
                     return;
@@ -95,13 +125,18 @@ class NodeSSH {
      * Write file to remote server
      */
     async writeFile(remotePath, content) {
+        if (this.usePool) {
+            return sshPool.writeFile(this.node, remotePath, content);
+        }
+        
+        // Legacy direct write
         return new Promise((resolve, reject) => {
-            if (!this.client) {
+            if (!this.directClient) {
                 reject(new Error('SSH not connected'));
                 return;
             }
             
-            this.client.sftp((err, sftp) => {
+            this.directClient.sftp((err, sftp) => {
                 if (err) {
                     reject(err);
                     return;
@@ -128,13 +163,18 @@ class NodeSSH {
      * Read file from remote server
      */
     async readFile(remotePath) {
+        if (this.usePool) {
+            return sshPool.readFile(this.node, remotePath);
+        }
+        
+        // Legacy direct read
         return new Promise((resolve, reject) => {
-            if (!this.client) {
+            if (!this.directClient) {
                 reject(new Error('SSH not connected'));
                 return;
             }
             
-            this.client.sftp((err, sftp) => {
+            this.directClient.sftp((err, sftp) => {
                 if (err) {
                     reject(err);
                     return;
@@ -435,4 +475,3 @@ cat /proc/uptime | cut -d' ' -f1
 }
 
 module.exports = NodeSSH;
-

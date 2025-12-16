@@ -1,23 +1,11 @@
-/**
- * Stats Service - сбор, агрегация и хранение статистики
- * 
- * Оптимизации:
- * - Кэширование API ответов в Redis (TTL 60-300 сек)
- * - Один агрегированный запрос вместо нескольких countDocuments
- * - Upsert вместо create для предотвращения дубликатов
- * - Компактный формат хранения данных
- */
-
 const StatsSnapshot = require('../models/statsSnapshotModel');
 const HyNode = require('../models/hyNodeModel');
 const HyUser = require('../models/hyUserModel');
 const cache = require('./cacheService');
 const logger = require('../utils/logger');
 
-// Предыдущие значения трафика для вычисления дельты
 let previousTraffic = new Map();
 
-// Ключи кэша
 const CACHE_KEYS = {
     SUMMARY: 'stats:summary',
     ONLINE: 'stats:online:',
@@ -25,10 +13,9 @@ const CACHE_KEYS = {
     NODES: 'stats:nodes:',
 };
 
-// TTL кэша (в секундах)
 const CACHE_TTL = {
-    SUMMARY: 60,      // 1 минута
-    CHARTS: 120,      // 2 минуты (данные обновляются раз в 5 мин)
+    SUMMARY: 60,
+    CHARTS: 120,
 };
 
 class StatsService {
@@ -36,8 +23,6 @@ class StatsService {
         this.lastHourlySnapshot = null;
         this.lastDailySnapshot = null;
     }
-    
-    // ==================== УТИЛИТЫ ====================
     
     roundTo5Minutes(date) {
         const ms = date.getTime();
@@ -55,26 +40,18 @@ class StatsService {
         d.setHours(0, 0, 0, 0);
         return d;
     }
-    
-    // ==================== СБОР ДАННЫХ ====================
-    
-    /**
-     * Собрать текущий снапшот (ОПТИМИЗИРОВАННЫЙ - 2 запроса вместо 3+)
-     */
+
     async collectSnapshot() {
         try {
-            // 1. Получаем ноды (один запрос)
             const nodes = await HyNode.find({ active: true })
                 .select('name domain onlineUsers status traffic')
                 .lean();
             
-            // Определяем дубликаты имён
             const nameCount = {};
             for (const node of nodes) {
                 nameCount[node.name] = (nameCount[node.name] || 0) + 1;
             }
             
-            // 2. Агрегируем счётчики пользователей (один запрос вместо двух)
             const userStats = await HyUser.aggregate([
                 {
                     $group: {
@@ -87,7 +64,6 @@ class StatsService {
             
             const users = userStats[0] || { total: 0, active: 0 };
             
-            // Вычисляем агрегаты из нод
             let totalOnline = 0;
             let nodesOnline = 0;
             let trafficTx = 0;
@@ -98,7 +74,6 @@ class StatsService {
                 totalOnline += node.onlineUsers || 0;
                 if (node.status === 'online') nodesOnline++;
                 
-                // Дельта трафика
                 const nodeId = node._id.toString();
                 const prev = previousTraffic.get(nodeId) || { tx: 0, rx: 0 };
                 const currTx = node.traffic?.tx || 0;
@@ -109,14 +84,12 @@ class StatsService {
                 
                 previousTraffic.set(nodeId, { tx: currTx, rx: currRx });
                 
-                // Компактный формат для хранения (с уникальным ID)
-                // Добавляем домен к имени если есть дубликаты
                 const displayName = nameCount[node.name] > 1 && node.domain
                     ? `${node.name} (${node.domain.split('.')[0]})`
                     : node.name;
                 
                 nodeStats.push({
-                    i: node._id.toString(),  // уникальный ID ноды
+                    i: node._id.toString(),
                     n: displayName,
                     o: node.onlineUsers || 0,
                     s: node.status,
@@ -139,9 +112,6 @@ class StatsService {
         }
     }
     
-    /**
-     * Сохранить hourly снапшот (каждые 5 минут)
-     */
     async saveHourlySnapshot() {
         try {
             const snapshot = await this.collectSnapshot();
@@ -149,32 +119,25 @@ class StatsService {
             
             const timestamp = this.roundTo5Minutes(new Date());
             
-            // Проверка дубликата в памяти (быстрая)
             if (this.lastHourlySnapshot?.getTime() === timestamp.getTime()) {
                 return;
             }
             
-            // Upsert предотвращает дубликаты на уровне БД
             await StatsSnapshot.upsertSnapshot('hourly', timestamp, snapshot);
             
             this.lastHourlySnapshot = timestamp;
             
-            // Инвалидируем кэш
             await this.invalidateCache();
             
             logger.debug(`[Stats] Hourly snapshot: online=${snapshot.online}, traffic=${((snapshot.tx + snapshot.rx) / 1024 / 1024).toFixed(1)}MB`);
             
         } catch (error) {
-            // Игнорируем duplicate key errors (E11000)
             if (error.code !== 11000) {
                 logger.error(`[Stats] Save hourly error: ${error.message}`);
             }
         }
     }
-    
-    /**
-     * Сохранить daily снапшот (каждый час) - агрегация hourly
-     */
+
     async saveDailySnapshot() {
         try {
             const currentHour = this.roundToHour(new Date());
@@ -185,7 +148,6 @@ class StatsService {
             
             const hourAgo = new Date(currentHour.getTime() - 60 * 60 * 1000);
             
-            // Агрегируем hourly данные за последний час
             const agg = await StatsSnapshot.aggregate([
                 {
                     $match: {
@@ -210,7 +172,6 @@ class StatsService {
             ]);
             
             if (!agg.length || agg[0].count === 0) {
-                // Нет данных - собираем текущие
                 const snapshot = await this.collectSnapshot();
                 if (snapshot) {
                     await StatsSnapshot.upsertSnapshot('daily', currentHour, snapshot);
@@ -239,9 +200,6 @@ class StatsService {
         }
     }
     
-    /**
-     * Сохранить monthly снапшот (каждый день)
-     */
     async saveMonthlySnapshot() {
         try {
             const currentDay = this.roundToDay(new Date());
@@ -293,11 +251,6 @@ class StatsService {
         }
     }
     
-    // ==================== API ДЛЯ ГРАФИКОВ ====================
-    
-    /**
-     * Инвалидация кэша статистики
-     */
     async invalidateCache() {
         if (!cache.isConnected()) return;
         
@@ -311,9 +264,6 @@ class StatsService {
         }
     }
     
-    /**
-     * Получить период и тип для запроса
-     */
     getPeriodParams(period) {
         const endDate = new Date();
         let type, startDate;
@@ -350,14 +300,10 @@ class StatsService {
         
         return { type, startDate, endDate };
     }
-    
-    /**
-     * Получить данные для графика онлайна (с кэшем)
-     */
+
     async getOnlineChart(period = '24h') {
         const cacheKey = CACHE_KEYS.ONLINE + period;
         
-        // Пробуем кэш
         if (cache.isConnected()) {
             try {
                 const cached = await cache.redis.get(cacheKey);
@@ -380,7 +326,6 @@ class StatsService {
             }
         };
         
-        // Кэшируем
         if (cache.isConnected()) {
             try {
                 await cache.redis.setex(cacheKey, CACHE_TTL.CHARTS, JSON.stringify(result));
@@ -389,10 +334,7 @@ class StatsService {
         
         return result;
     }
-    
-    /**
-     * Получить данные для графика трафика (с кэшем)
-     */
+
     async getTrafficChart(period = '24h') {
         const cacheKey = CACHE_KEYS.TRAFFIC + period;
         
@@ -435,10 +377,7 @@ class StatsService {
         
         return result;
     }
-    
-    /**
-     * Получить статистику по нодам (с кэшем)
-     */
+
     async getNodesChart(period = '24h') {
         const cacheKey = CACHE_KEYS.NODES + period;
         
@@ -453,7 +392,6 @@ class StatsService {
         
         const { type, startDate, endDate } = this.getPeriodParams(period);
         
-        // Запрашиваем только ts и nodes (projection)
         const data = await StatsSnapshot.getRangeWithNodes(type, startDate, endDate);
         
         const nodesMap = new Map();
@@ -465,7 +403,6 @@ class StatsService {
             if (!snapshot.nodes) continue;
             
             for (const node of snapshot.nodes) {
-                // Используем ID для уникальности (поддержка старых данных без ID)
                 const nodeKey = node.i || node.n;
                 if (!nodesMap.has(nodeKey)) {
                     nodesMap.set(nodeKey, { id: nodeKey, name: node.n, data: [] });
@@ -492,10 +429,7 @@ class StatsService {
         
         return result;
     }
-    
-    /**
-     * Получить сводную статистику (ОПТИМИЗИРОВАННЫЙ - 1 агрегация вместо 5 запросов)
-     */
+
     async getSummary() {
         const cacheKey = CACHE_KEYS.SUMMARY;
         
@@ -508,16 +442,13 @@ class StatsService {
             } catch (e) {}
         }
         
-        // Один агрегированный запрос за 24ч
         const stats24h = await StatsSnapshot.get24hStats();
         
-        // Получаем последний снапшот отдельно (для текущих значений)
         const latest = await StatsSnapshot.findOne({ type: 'hourly' })
             .sort({ ts: -1 })
             .select({ online: 1, nodesOn: 1, nodesTotal: 1, users: 1, activeUsers: 1, ts: 1 })
             .lean();
-        
-        // Данные час назад для тренда
+
         const hourAgo = await StatsSnapshot.findOne({
             type: 'hourly',
             ts: { $lte: new Date(Date.now() - 60 * 60 * 1000) }
@@ -561,9 +492,6 @@ class StatsService {
         return result;
     }
     
-    /**
-     * Очистка старых данных
-     */
     async cleanup() {
         try {
             const result = await StatsSnapshot.cleanup();

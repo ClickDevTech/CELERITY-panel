@@ -1408,5 +1408,15 @@ router.post('/stats/cleanup', requireAuth, async (req, res) => {
     }
 });
 
+// GET /panel/stats/api/ssh-pool - Статистика SSH пула
+router.get('/stats/api/ssh-pool', requireAuth, async (req, res) => {
+    try {
+        const sshPool = require('../services/sshPoolService');
+        res.json(sshPool.getStats());
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = router;
 
