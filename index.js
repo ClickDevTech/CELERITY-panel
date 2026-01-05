@@ -22,6 +22,7 @@ const { countRequest } = require('./src/middleware/rpsCounter');
 const syncService = require('./src/services/syncService');
 const cacheService = require('./src/services/cacheService');
 const statsService = require('./src/services/statsService');
+const backupService = require('./src/services/backupService');
 
 const usersRoutes = require('./src/routes/users');
 const nodesRoutes = require('./src/routes/nodes');
@@ -499,6 +500,11 @@ function setupCronJobs() {
     cron.schedule('0 3 * * *', () => {
         logger.info('[Cron] Cleaning old logs');
         cleanOldLogs(30);
+    });
+    
+    // Check for scheduled backup every hour
+    cron.schedule('0 * * * *', async () => {
+        await backupService.scheduledBackup();
     });
     
     // Initial health check and stats snapshot after 5 seconds

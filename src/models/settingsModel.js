@@ -37,6 +37,25 @@ const settingsSchema = new mongoose.Schema({
         maxRetries: { type: Number, default: 2 },
     },
     
+    backup: {
+        enabled: { type: Boolean, default: false },
+        intervalHours: { type: Number, default: 24 },       // интервал в часах
+        keepLast: { type: Number, default: 7 },             // сколько хранить локально
+        lastBackup: { type: Date, default: null },          // время последнего бэкапа
+        
+        // S3 настройки (опционально)
+        s3: {
+            enabled: { type: Boolean, default: false },
+            endpoint: { type: String, default: '' },        // для MinIO и подобных
+            region: { type: String, default: 'us-east-1' },
+            bucket: { type: String, default: '' },
+            prefix: { type: String, default: 'backups' },   // префикс в bucket
+            accessKeyId: { type: String, default: '' },
+            secretAccessKey: { type: String, default: '' },
+            keepLast: { type: Number, default: 30 },        // сколько хранить в S3
+        },
+    },
+    
 }, { timestamps: true });
 
 settingsSchema.statics.get = async function() {

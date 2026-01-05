@@ -251,6 +251,137 @@ ACME_EMAIL=admin@example.com</pre>
         
         <div class="card mt-2">
             <div class="card-header">
+                <h2><%= t('settings.backup') %></h2>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/panel/settings" id="backupSettingsForm">
+                    <input type="hidden" name="_backupSettings" value="1">
+                    
+                    <div class="settings-list" style="margin-bottom: 1rem;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="backup.enabled" id="backupEnabled"
+                                   <%= settings?.backup?.enabled ? 'checked' : '' %>>
+                            <span><%= t('settings.autoBackup') %></span>
+                        </label>
+                        <small class="hint" style="display: block; margin-top: 0.25rem;">
+                            <%= t('settings.autoBackupHint') %>
+                        </small>
+                    </div>
+                    
+                    <div id="backupSettings" style="<%= settings?.backup?.enabled ? '' : 'display: none;' %>">
+                        <div class="settings-grid" style="margin-bottom: 1rem;">
+                            <div class="form-group">
+                                <label for="backup.intervalHours"><%= t('settings.backupInterval') %></label>
+                                <input type="number" name="backup.intervalHours" id="backup.intervalHours" 
+                                       value="<%= settings?.backup?.intervalHours || 24 %>" min="1" max="168">
+                                <small class="hint"><%= t('settings.backupIntervalHint') %></small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="backup.keepLast"><%= t('settings.keepLast') %></label>
+                                <input type="number" name="backup.keepLast" id="backup.keepLast" 
+                                       value="<%= settings?.backup?.keepLast || 7 %>" min="1" max="30">
+                                <small class="hint"><%= t('settings.keepLastHint') %></small>
+                            </div>
+                        </div>
+                        
+                        <div class="setting-item" style="margin-bottom: 1rem; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
+                            <label><%= t('settings.lastBackup') %></label>
+                            <span id="lastBackupTime">
+                                <%= settings?.backup?.lastBackup 
+                                    ? new Date(settings.backup.lastBackup).toLocaleString(lang === 'en' ? 'en-US' : 'ru-RU') 
+                                    : t('settings.never') %>
+                            </span>
+                        </div>
+                        
+                        <hr style="margin: 1rem 0; border-color: var(--border);">
+                        
+                        <h4 style="margin-bottom: 0.75rem;"><%= t('settings.s3Settings') %></h4>
+                        
+                        <div class="settings-list" style="margin-bottom: 1rem;">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="backup.s3.enabled" id="s3Enabled"
+                                       <%= settings?.backup?.s3?.enabled ? 'checked' : '' %>>
+                                <span><%= t('settings.s3Enabled') %></span>
+                            </label>
+                            <small class="hint" style="display: block; margin-top: 0.25rem;">
+                                <%= t('settings.s3EnabledHint') %>
+                            </small>
+                        </div>
+                        
+                        <div id="s3Settings" style="<%= settings?.backup?.s3?.enabled ? '' : 'display: none;' %>">
+                            <div class="settings-grid" style="margin-bottom: 1rem;">
+                                <div class="form-group">
+                                    <label for="backup.s3.endpoint"><%= t('settings.s3Endpoint') %></label>
+                                    <input type="text" name="backup.s3.endpoint" id="backup.s3.endpoint" 
+                                           value="<%= settings?.backup?.s3?.endpoint || '' %>" 
+                                           placeholder="https://minio.example.com">
+                                    <small class="hint"><%= t('settings.s3EndpointHint') %></small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="backup.s3.region"><%= t('settings.s3Region') %></label>
+                                    <input type="text" name="backup.s3.region" id="backup.s3.region" 
+                                           value="<%= settings?.backup?.s3?.region || 'us-east-1' %>">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="backup.s3.bucket"><%= t('settings.s3Bucket') %> *</label>
+                                    <input type="text" name="backup.s3.bucket" id="backup.s3.bucket" 
+                                           value="<%= settings?.backup?.s3?.bucket || '' %>" 
+                                           placeholder="my-backups">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="backup.s3.prefix"><%= t('settings.s3Prefix') %></label>
+                                    <input type="text" name="backup.s3.prefix" id="backup.s3.prefix" 
+                                           value="<%= settings?.backup?.s3?.prefix || 'backups' %>">
+                                    <small class="hint"><%= t('settings.s3PrefixHint') %></small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="backup.s3.accessKeyId"><%= t('settings.s3AccessKey') %> *</label>
+                                    <input type="text" name="backup.s3.accessKeyId" id="backup.s3.accessKeyId" 
+                                           value="<%= settings?.backup?.s3?.accessKeyId || '' %>" 
+                                           placeholder="AKIAIOSFODNN7EXAMPLE">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="backup.s3.secretAccessKey"><%= t('settings.s3SecretKey') %> *</label>
+                                    <input type="password" name="backup.s3.secretAccessKey" id="backup.s3.secretAccessKey" 
+                                           value="<%= settings?.backup?.s3?.secretAccessKey || '' %>" 
+                                           placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="backup.s3.keepLast"><%= t('settings.s3KeepLast') %></label>
+                                    <input type="number" name="backup.s3.keepLast" id="backup.s3.keepLast" 
+                                           value="<%= settings?.backup?.s3?.keepLast || 30 %>" min="1" max="365">
+                                    <small class="hint"><%= t('settings.s3KeepLastHint') %></small>
+                                </div>
+                            </div>
+                            
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="testS3Connection()" id="testS3Btn">
+                                <%= t('settings.testS3') %>
+                            </button>
+                            <span id="s3TestResult" style="margin-left: 0.5rem;"></span>
+                        </div>
+                    </div>
+                    
+                    <hr style="margin: 1rem 0; border-color: var(--border);">
+                    
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button type="submit" class="btn btn-primary btn-sm">💾 <%= t('common.save') %></button>
+                        <button type="button" class="btn btn-success btn-sm" onclick="createBackupNow()" id="createBackupBtn">
+                            <%= t('settings.createBackupNow') %>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-2">
+            <div class="card-header">
                 <h2><%= t('settings.cacheManagement') %></h2>
             </div>
             <div class="card-body">
@@ -307,8 +438,96 @@ const i18n = {
     cacheFlushed: <%- JSON.stringify(t("settings.cacheFlushed")) %>,
     resetStatsConfirm: <%- JSON.stringify(t("settings.resetStatsConfirm") || "Удалить всю историю статистики?") %>,
     resetStatsBtn: <%- JSON.stringify(t("settings.resetStatsBtn") || "Очистить статистику") %>,
-    statsReset: <%- JSON.stringify(t("settings.statsReset") || "Статистика очищена ({count} записей)") %>
+    statsReset: <%- JSON.stringify(t("settings.statsReset") || "Статистика очищена ({count} записей)") %>,
+    testS3: <%- JSON.stringify(t("settings.testS3")) %>,
+    testingS3: <%- JSON.stringify(t("settings.testingS3")) %>,
+    s3TestSuccess: <%- JSON.stringify(t("settings.s3TestSuccess")) %>,
+    s3TestError: <%- JSON.stringify(t("settings.s3TestError")) %>,
+    createBackupNow: <%- JSON.stringify(t("settings.createBackupNow")) %>,
+    creatingBackup: <%- JSON.stringify(t("settings.creatingBackup")) %>,
+    backupCreated: <%- JSON.stringify(t("settings.backupCreated")) %>,
+    backupError: <%- JSON.stringify(t("settings.backupError")) %>
 };
+
+// Toggle backup settings visibility
+document.getElementById('backupEnabled')?.addEventListener('change', function() {
+    document.getElementById('backupSettings').style.display = this.checked ? '' : 'none';
+});
+
+// Toggle S3 settings visibility
+document.getElementById('s3Enabled')?.addEventListener('change', function() {
+    document.getElementById('s3Settings').style.display = this.checked ? '' : 'none';
+});
+
+// Test S3 connection
+async function testS3Connection() {
+    const btn = document.getElementById('testS3Btn');
+    const result = document.getElementById('s3TestResult');
+    
+    btn.disabled = true;
+    btn.textContent = i18n.testingS3;
+    result.textContent = '';
+    
+    try {
+        const res = await fetch('/panel/settings/test-s3', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                endpoint: document.getElementById('backup.s3.endpoint').value,
+                region: document.getElementById('backup.s3.region').value,
+                bucket: document.getElementById('backup.s3.bucket').value,
+                accessKeyId: document.getElementById('backup.s3.accessKeyId').value,
+                secretAccessKey: document.getElementById('backup.s3.secretAccessKey').value,
+            })
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            result.textContent = i18n.s3TestSuccess;
+            result.style.color = 'var(--success)';
+        } else {
+            result.textContent = i18n.s3TestError.replace('{error}', data.error);
+            result.style.color = 'var(--danger)';
+        }
+    } catch (e) {
+        result.textContent = i18n.s3TestError.replace('{error}', e.message);
+        result.style.color = 'var(--danger)';
+    }
+    
+    btn.disabled = false;
+    btn.textContent = i18n.testS3;
+}
+
+// Create backup now
+async function createBackupNow() {
+    const btn = document.getElementById('createBackupBtn');
+    btn.disabled = true;
+    btn.textContent = i18n.creatingBackup;
+    
+    try {
+        const res = await fetch('/panel/settings/create-backup', {
+            method: 'POST',
+            credentials: 'include'
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            showToast(i18n.backupCreated.replace('{filename}', data.filename).replace('{size}', data.size), 'success');
+            // Update last backup time
+            document.getElementById('lastBackupTime').textContent = new Date().toLocaleString();
+        } else {
+            showToast(i18n.backupError + ': ' + (data.error || 'unknown'), 'error');
+        }
+    } catch (e) {
+        showToast(i18n.backupError + ': ' + e.message, 'error');
+    }
+    
+    btn.disabled = false;
+    btn.textContent = i18n.createBackupNow;
+}
 
 async function resetStats() {
     if (!confirm(i18n.resetStatsConfirm)) {

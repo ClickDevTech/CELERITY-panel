@@ -945,6 +945,25 @@ router.post('/settings', requireAuth, async (req, res) => {
             'sshPool.maxRetries': parseInt(req.body['sshPool.maxRetries']) || 2,
         };
         
+        // Backup settings (если форма бэкапов)
+        if (req.body['_backupSettings'] || req.body['backup.enabled'] !== undefined) {
+            updates['backup.enabled'] = req.body['backup.enabled'] === 'on';
+            updates['backup.intervalHours'] = parseInt(req.body['backup.intervalHours']) || 24;
+            updates['backup.keepLast'] = parseInt(req.body['backup.keepLast']) || 7;
+            // S3
+            updates['backup.s3.enabled'] = req.body['backup.s3.enabled'] === 'on';
+            updates['backup.s3.endpoint'] = req.body['backup.s3.endpoint'] || '';
+            updates['backup.s3.region'] = req.body['backup.s3.region'] || 'us-east-1';
+            updates['backup.s3.bucket'] = req.body['backup.s3.bucket'] || '';
+            updates['backup.s3.prefix'] = req.body['backup.s3.prefix'] || 'backups';
+            updates['backup.s3.accessKeyId'] = req.body['backup.s3.accessKeyId'] || '';
+            // Secret key: только обновляем если введён новый
+            if (req.body['backup.s3.secretAccessKey']) {
+                updates['backup.s3.secretAccessKey'] = req.body['backup.s3.secretAccessKey'];
+            }
+            updates['backup.s3.keepLast'] = parseInt(req.body['backup.s3.keepLast']) || 30;
+        }
+        
         await Settings.update(updates);
         
         // Invalidate settings cache and reload
@@ -1423,6 +1442,66 @@ router.get('/stats/api/ssh-pool', requireAuth, async (req, res) => {
     try {
         const sshPool = require('../services/sshPoolService');
         res.json(sshPool.getStats());
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== BACKUP SETTINGS ====================
+
+// POST /panel/settings/create-backup - Создать бэкап сейчас
+router.post('/settings/create-backup', requireAuth, async (req, res) => {
+    try {
+        const backupService = require('../services/backupService');
+        const settings = await Settings.get();
+        
+        const result = await backupService.createBackup(settings);
+        
+        res.json({
+            success: true,
+            filename: result.filename,
+            size: result.sizeMB,
+        });
+    } catch (error) {
+        logger.error(`[Backup] Manual backup error: ${error.message}`);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /panel/settings/test-s3 - Проверить подключение к S3
+router.post('/settings/test-s3', requireAuth, async (req, res) => {
+    try {
+        const backupService = require('../services/backupService');
+        const { endpoint, region, bucket, accessKeyId, secretAccessKey } = req.body;
+        
+        if (!bucket || !accessKeyId || !secretAccessKey) {
+            return res.status(400).json({ error: 'Bucket, Access Key и Secret Key обязательны' });
+        }
+        
+        const result = await backupService.testS3Connection({
+            endpoint,
+            region: region || 'us-east-1',
+            bucket,
+            accessKeyId,
+            secretAccessKey,
+        });
+        
+        if (result.success) {
+            res.json({ success: true });
+        } else {
+            res.status(400).json({ error: result.error });
+        }
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /panel/settings/backups - Список локальных бэкапов
+router.get('/settings/backups', requireAuth, async (req, res) => {
+    try {
+        const backupService = require('../services/backupService');
+        const backups = backupService.listBackups();
+        res.json({ backups });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
