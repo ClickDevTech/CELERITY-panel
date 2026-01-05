@@ -294,9 +294,9 @@
 
 <!-- ==================== TAB: BACKUP ==================== -->
 <div class="tab-content" id="tab-backup">
-    <div class="row">
-        <div class="col-6">
-            <div class="card">
+    <div class="row" style="align-items: stretch;">
+        <div class="col-6" style="display: flex;">
+            <div class="card" style="flex: 1; display: flex; flex-direction: column;">
                 <div class="card-header">
                     <h2><%= t('settings.autoBackup') %></h2>
                 </div>
@@ -415,16 +415,16 @@
             </div>
         </div>
         
-        <div class="col-6">
-            <div class="card">
+        <div class="col-6" style="display: flex;">
+            <div class="card" style="flex: 1; display: flex; flex-direction: column;">
                 <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
                     <h2>📋 <%= t('settings.backupsList') || 'Доступные бэкапы' %></h2>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="loadBackupsList()" id="refreshBackupsBtn">
                         🔄 <%= t('common.refresh') %>
                     </button>
                 </div>
-                <div class="card-body">
-                    <div id="backupsList" style="max-height: 400px; overflow-y: auto;">
+                <div class="card-body" style="flex: 1; overflow-y: auto;">
+                    <div id="backupsList">
                         <p style="color: var(--text-muted); font-size: 13px;"><%= t('settings.clickRefresh') || 'Нажмите "Обновить" для загрузки списка' %></p>
                     </div>
                 </div>

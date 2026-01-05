@@ -533,9 +533,53 @@ html {
     transform: translateY(0);
 }
 
-.btn-success { background: var(--success); border-color: var(--success); color: white; }
-.btn-warning { background: var(--warning); border-color: var(--warning); color: black; }
-.btn-danger { background: var(--danger); border-color: var(--danger); color: white; }
+.btn-success { 
+    background: var(--success); 
+    border-color: var(--success); 
+    color: white; 
+}
+.btn-success:hover { 
+    background: #16a34a; 
+    border-color: #16a34a;
+    box-shadow: 0 6px 20px rgba(34, 197, 94, 0.3);
+    transform: translateY(-2px);
+}
+
+.btn-warning { 
+    background: var(--warning); 
+    border-color: var(--warning); 
+    color: black; 
+}
+.btn-warning:hover { 
+    background: #ca8a04; 
+    border-color: #ca8a04;
+    box-shadow: 0 6px 20px rgba(234, 179, 8, 0.3);
+    transform: translateY(-2px);
+}
+
+.btn-danger { 
+    background: var(--danger); 
+    border-color: var(--danger); 
+    color: white; 
+}
+.btn-danger:hover { 
+    background: #dc2626; 
+    border-color: #dc2626;
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.3);
+    transform: translateY(-2px);
+}
+
+.btn-secondary {
+    background: var(--bg-tertiary);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+.btn-secondary:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+    transform: translateY(-2px);
+}
 
 .btn-sm {
     padding: 8px 14px;
@@ -1510,32 +1554,40 @@ html {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 12px;
+    padding: 8px 14px;
     border: 2px solid var(--border);
     border-radius: 20px;
     cursor: pointer;
-    transition: var(--transition);
+    transition: all 0.2s ease;
     font-size: 13px;
+    background: var(--bg-tertiary);
 }
 
 .checkbox-tag:hover {
     background: var(--bg-hover);
+    border-color: var(--border-light);
+    transform: translateY(-1px);
 }
 
 .checkbox-tag input {
     display: none;
 }
 
-.checkbox-tag input:checked + .tag-dot + span {
+.checkbox-tag:has(input:checked) {
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 4px 12px var(--accent-glow);
+    transform: scale(1.02);
+}
+
+.checkbox-tag:has(input:checked) span {
+    color: white;
     font-weight: 600;
 }
 
-.checkbox-tag input:checked ~ * {
-    opacity: 1;
-}
-
-.checkbox-tag:has(input:checked) {
-    background: var(--bg-elevated);
+.checkbox-tag:has(input:checked) .tag-dot {
+    background: white !important;
+    box-shadow: 0 0 8px rgba(255,255,255,0.5);
 }
 
 .tag-dot {
