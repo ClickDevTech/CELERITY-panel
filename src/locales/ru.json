@@ -291,6 +291,11 @@
   },
   "settings": {
     "title": "Настройки",
+    "tabGeneral": "Общие",
+    "tabSystem": "Система",
+    "tabSecurity": "Безопасность",
+    "tabBackup": "Бэкапы",
+    "tabMaintenance": "Обслуживание",
     "general": "Общие настройки",
     "baseUrl": "Base URL",
     "port": "Порт",

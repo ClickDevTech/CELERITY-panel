@@ -291,6 +291,11 @@
   },
   "settings": {
     "title": "Settings",
+    "tabGeneral": "General",
+    "tabSystem": "System",
+    "tabSecurity": "Security",
+    "tabBackup": "Backups",
+    "tabMaintenance": "Maintenance",
     "general": "General Settings",
     "baseUrl": "Base URL",
     "port": "Port",

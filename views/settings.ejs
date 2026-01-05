@@ -5,293 +5,366 @@
 <div class="alert alert-error"><%= error %></div>
 <% } %>
 
-<div class="row">
-    <div class="col-6">
-        <div class="card">
-            <div class="card-header">
-                <h2><%= t('settings.general') %></h2>
+<style>
+.settings-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 1.5rem;
+    overflow-x: auto;
+}
+.settings-tab {
+    padding: 0.75rem 1.25rem;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+}
+.settings-tab:hover {
+    color: var(--text);
+    background: var(--bg-tertiary);
+}
+.settings-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+.tab-content {
+    display: none;
+}
+.tab-content.active {
+    display: block;
+}
+.settings-section {
+    margin-bottom: 1.5rem;
+}
+.settings-section:last-child {
+    margin-bottom: 0;
+}
+.section-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+</style>
+
+<div class="settings-tabs">
+    <button class="settings-tab active" data-tab="general">🏠 <%= t('settings.tabGeneral') || 'Общие' %></button>
+    <button class="settings-tab" data-tab="system">⚙️ <%= t('settings.tabSystem') || 'Система' %></button>
+    <button class="settings-tab" data-tab="security">🔐 <%= t('settings.tabSecurity') || 'Безопасность' %></button>
+    <button class="settings-tab" data-tab="backup">💾 <%= t('settings.tabBackup') || 'Бэкапы' %></button>
+    <button class="settings-tab" data-tab="maintenance">🔧 <%= t('settings.tabMaintenance') || 'Обслуживание' %></button>
+</div>
+
+<!-- ==================== TAB: GENERAL ==================== -->
+<div class="tab-content active" id="tab-general">
+    <div class="row">
+        <div class="col-6">
+            <div class="card">
+                <div class="card-header">
+                    <h2><%= t('settings.general') %></h2>
+                </div>
+                <div class="card-body">
+                    <div class="settings-list">
+                        <div class="setting-item">
+                            <label><%= t('settings.baseUrl') %></label>
+                            <code><%= config.BASE_URL %></code>
+                        </div>
+                        <div class="setting-item">
+                            <label><%= t('settings.port') %></label>
+                            <code><%= config.PORT %></code>
+                        </div>
+                        <div class="setting-item">
+                            <label><%= t('settings.mongodb') %></label>
+                            <code><%= config.MONGO_URI.replace(/\/\/.*@/, '//***@') %></code>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="card-body">
-                <div class="settings-list">
-                    <div class="setting-item">
-                        <label><%= t('settings.baseUrl') %></label>
-                        <code><%= config.BASE_URL %></code>
-                    </div>
-                    <div class="setting-item">
-                        <label><%= t('settings.port') %></label>
-                        <code><%= config.PORT %></code>
-                    </div>
-                    <div class="setting-item">
-                        <label><%= t('settings.mongodb') %></label>
-                        <code><%= config.MONGO_URI.replace(/\/\/.*@/, '//***@') %></code>
+            
+            <div class="card mt-2">
+                <div class="card-header">
+                    <h2><%= t('settings.systemStatus') %></h2>
+                </div>
+                <div class="card-body">
+                    <div class="settings-list">
+                        <div class="setting-item">
+                            <label>Uptime</label>
+                            <span><%= Math.floor(process.uptime() / 3600) %>h <%= Math.floor((process.uptime() % 3600) / 60) %>m</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>Memory</label>
+                            <span><%= Math.round(process.memoryUsage().heapUsed / 1024 / 1024) %> MB</span>
+                        </div>
+                        <div class="setting-item">
+                            <label>Node.js</label>
+                            <span><%= process.version %></span>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
         
-        <div class="card mt-2">
-            <div class="card-header">
-                <h2><%= t('settings.systemSettings') %></h2>
-            </div>
-            <div class="card-body">
-                <form method="POST" action="/panel/settings">
-                    
-                    <h4 style="margin-bottom: 0.75rem;"><%= t('settings.loadBalancing') %></h4>
-                    <div class="settings-list" style="margin-bottom: 1.5rem;">
-                        <label class="checkbox-label">
-                            <input type="checkbox" name="loadBalancing.enabled" 
-                                   <%= settings?.loadBalancing?.enabled ? 'checked' : '' %>>
-                            <span><%= t('settings.loadBalancingEnabled') %></span>
-                        </label>
-                        <small class="hint" style="display: block; margin-top: 0.25rem;">
-                            <%= t('settings.loadBalancingHint') %>
-                        </small>
-                        
-                        <label class="checkbox-label" style="margin-top: 0.75rem;">
-                            <input type="checkbox" name="loadBalancing.hideOverloaded" 
-                                   <%= settings?.loadBalancing?.hideOverloaded ? 'checked' : '' %>>
-                            <span><%= t('settings.hideOverloaded') %></span>
-                        </label>
-                        <small class="hint" style="display: block; margin-top: 0.25rem;">
-                            <%= t('settings.hideOverloadedHint') %>
-                        </small>
+        <div class="col-6">
+            <div class="card">
+                <div class="card-header">
+                    <h2><%= t('settings.sslCertificate') %></h2>
+                </div>
+                <div class="card-body">
+                    <% if (ssl.enabled) { %>
+                    <div class="alert alert-success">
+                        <strong><%= t('settings.httpsActive') %></strong>
+                        <p>Domain: <%= ssl.domain %></p>
+                        <p><%= t('settings.letsEncryptAuto') %></p>
                     </div>
-                    
-                    <hr style="margin: 1rem 0; border-color: var(--border);">
-                    
-                    <h4 style="margin-bottom: 0.75rem;"><%= t('settings.deviceLimit') %></h4>
-                    <div class="settings-grid" style="margin-bottom: 1rem;">
-                        <div class="form-group">
-                            <label for="deviceGracePeriod"><%= t('settings.gracePeriod') %></label>
-                            <input type="number" name="deviceGracePeriod" id="deviceGracePeriod" 
-                                   value="<%= settings?.deviceGracePeriod ?? 15 %>" min="1" max="60">
-                            <small class="hint"><%= t('settings.gracePeriodHint') %></small>
-                        </div>
+                    <% } else { %>
+                    <div class="alert alert-warning">
+                        <strong><%= t('settings.httpMode') %></strong>
+                        <p><%= t('settings.httpModeHint') %></p>
+                        <pre>PANEL_DOMAIN=panel.example.com
+ACME_EMAIL=admin@example.com</pre>
                     </div>
-                    <div class="alert" style="background: var(--bg-tertiary); border: 1px solid var(--border); padding: 12px; font-size: 13px;">
-                        <strong><%= t('settings.howItWorks') %></strong> <%= t('settings.howItWorksDesc').replace('{minutes}', settings?.deviceGracePeriod ?? 15) %>
-                    </div>
-                    
-                    <hr style="margin: 1rem 0; border-color: var(--border);">
-                    
-                    <h4 style="margin-bottom: 0.75rem;"><%= t('settings.caching') %></h4>
-                    <div class="settings-grid" style="margin-bottom: 1rem;">
-                        <div class="form-group">
-                            <label for="cache.subscriptionTTL"><%= t('settings.subscriptionsTTL') %></label>
-                            <input type="number" name="cache.subscriptionTTL" id="cache.subscriptionTTL" 
-                                   value="<%= settings?.cache?.subscriptionTTL || 3600 %>" min="60" max="86400">
-                            <small class="hint"><%= t('settings.subscriptionsTTLHint') %></small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="cache.userTTL"><%= t('settings.usersTTL') %></label>
-                            <input type="number" name="cache.userTTL" id="cache.userTTL" 
-                                   value="<%= settings?.cache?.userTTL || 900 %>" min="60" max="3600">
-                            <small class="hint"><%= t('settings.usersTTLHint') %></small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="cache.onlineSessionsTTL"><%= t('settings.onlineSessionsTTL') %></label>
-                            <input type="number" name="cache.onlineSessionsTTL" id="cache.onlineSessionsTTL" 
-                                   value="<%= settings?.cache?.onlineSessionsTTL || 10 %>" min="5" max="60">
-                            <small class="hint"><%= t('settings.onlineSessionsTTLHint') %></small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="cache.activeNodesTTL"><%= t('settings.activeNodesTTL') %></label>
-                            <input type="number" name="cache.activeNodesTTL" id="cache.activeNodesTTL" 
-                                   value="<%= settings?.cache?.activeNodesTTL || 30 %>" min="10" max="300">
-                            <small class="hint"><%= t('settings.activeNodesTTLHint') %></small>
-                        </div>
-                    </div>
-                    
-                    <hr style="margin: 1rem 0; border-color: var(--border);">
-                    
-                    <h4 style="margin-bottom: 0.75rem;"><%= t('settings.rateLimiting') %></h4>
-                    <div class="settings-grid" style="margin-bottom: 1rem;">
-                        <div class="form-group">
-                            <label for="rateLimit.subscriptionPerMinute"><%= t('settings.subscriptionsPerMinute') %></label>
-                            <input type="number" name="rateLimit.subscriptionPerMinute" id="rateLimit.subscriptionPerMinute" 
-                                   value="<%= settings?.rateLimit?.subscriptionPerMinute || 100 %>" min="10" max="1000">
-                            <small class="hint"><%= t('settings.subscriptionsPerMinuteHint') %></small>
-                        </div>
-                    </div>
-                    
-                    <hr style="margin: 1rem 0; border-color: var(--border);">
-                    
-                    <h4 style="margin-bottom: 0.75rem;"><%= t('settings.sshPool') %></h4>
-                    <div class="settings-list" style="margin-bottom: 1rem;">
-                        <label class="checkbox-label">
-                            <input type="checkbox" name="sshPool.enabled" 
-                                   <%= settings?.sshPool?.enabled !== false ? 'checked' : '' %>>
-                            <span><%= t('settings.sshPoolEnabled') %></span>
-                        </label>
-                        <small class="hint" style="display: block; margin-top: 0.25rem;">
-                            <%= t('settings.sshPoolHint') %>
-                        </small>
-                    </div>
-                    <div class="settings-grid" style="margin-bottom: 1rem;">
-                        <div class="form-group">
-                            <label for="sshPool.maxIdleTime"><%= t('settings.sshPoolIdleTime') %></label>
-                            <input type="number" name="sshPool.maxIdleTime" id="sshPool.maxIdleTime" 
-                                   value="<%= settings?.sshPool?.maxIdleTime || 120 %>" min="30" max="600">
-                            <small class="hint"><%= t('settings.sshPoolIdleTimeHint') %></small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="sshPool.connectTimeout"><%= t('settings.sshPoolTimeout') %></label>
-                            <input type="number" name="sshPool.connectTimeout" id="sshPool.connectTimeout" 
-                                   value="<%= settings?.sshPool?.connectTimeout || 15 %>" min="5" max="60">
-                            <small class="hint"><%= t('settings.sshPoolTimeoutHint') %></small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="sshPool.keepAliveInterval"><%= t('settings.sshPoolKeepalive') %></label>
-                            <input type="number" name="sshPool.keepAliveInterval" id="sshPool.keepAliveInterval" 
-                                   value="<%= settings?.sshPool?.keepAliveInterval || 30 %>" min="10" max="120">
-                            <small class="hint"><%= t('settings.sshPoolKeepaliveHint') %></small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="sshPool.maxRetries"><%= t('settings.sshPoolRetries') %></label>
-                            <input type="number" name="sshPool.maxRetries" id="sshPool.maxRetries" 
-                                   value="<%= settings?.sshPool?.maxRetries || 2 %>" min="0" max="5">
-                            <small class="hint"><%= t('settings.sshPoolRetriesHint') %></small>
-                        </div>
-                    </div>
-                    
-                    <button type="submit" class="btn btn-primary"><%= t('settings.saveAllSettings') %></button>
-                </form>
+                    <% } %>
+                </div>
             </div>
         </div>
     </div>
-    
-    <div class="col-6">
-        <div class="card">
-            <div class="card-header">
-                <h2><%= t('settings.security') %></h2>
-            </div>
-            <div class="card-body">
-                <div class="settings-list">
-                    <div class="setting-item">
-                        <label><%= t('settings.administrator') %></label>
-                        <span><%= admin?.username || 'N/A' %></span>
-                    </div>
-                    <div class="setting-item">
-                        <label><%= t('settings.lastLogin') %></label>
-                        <span><%= admin?.lastLogin ? new Date(admin.lastLogin).toLocaleString(lang === 'en' ? 'en-US' : 'ru-RU') : t('settings.never') %></span>
-                    </div>
-                    <div class="setting-item">
-                        <label><%= t('settings.ipWhitelist') %></label>
-                        <span><%= config.PANEL_IP_WHITELIST || t('settings.ipWhitelistDisabled') %></span>
-                    </div>
-                </div>
-                
-                <hr style="margin: 1rem 0; border-color: var(--border);">
-                
-                <h4 style="margin-bottom: 0.5rem;"><%= t('settings.changePassword') %></h4>
-                <form method="POST" action="/panel/settings/password" class="compact-form">
-                    <div class="form-group">
-                        <input type="password" name="currentPassword" placeholder="<%= t('settings.currentPassword') %>" required>
-                    </div>
-                    <div class="form-group">
-                        <input type="password" name="newPassword" placeholder="<%= t('settings.newPassword') %>" minlength="6" required>
-                    </div>
-                    <div class="form-group">
-                        <input type="password" name="confirmPassword" placeholder="<%= t('settings.confirmPassword') %>" minlength="6" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary btn-sm"><%= t('settings.changePasswordBtn') %></button>
-                </form>
-            </div>
+</div>
+
+<!-- ==================== TAB: SYSTEM ==================== -->
+<div class="tab-content" id="tab-system">
+    <div class="card">
+        <div class="card-header">
+            <h2><%= t('settings.systemSettings') %></h2>
         </div>
-        
-        <div class="card mt-2">
-            <div class="card-header">
-                <h2><%= t('settings.sslCertificate') %></h2>
-            </div>
-            <div class="card-body">
-                <% if (ssl.enabled) { %>
-                <div class="alert alert-success">
-                    <strong><%= t('settings.httpsActive') %></strong>
-                    <p>Domain: <%= ssl.domain %></p>
-                    <p><%= t('settings.letsEncryptAuto') %></p>
-                </div>
-                <% } else { %>
-                <div class="alert alert-warning">
-                    <strong><%= t('settings.httpMode') %></strong>
-                    <p><%= t('settings.httpModeHint') %></p>
-                    <pre>PANEL_DOMAIN=panel.example.com
-ACME_EMAIL=admin@example.com</pre>
-                </div>
-                <% } %>
-            </div>
-        </div>
-        
-        <div class="card mt-2">
-            <div class="card-header">
-                <h2><%= t('settings.systemStatus') %></h2>
-            </div>
-            <div class="card-body">
-                <div class="settings-list">
-                    <div class="setting-item">
-                        <label>Uptime</label>
-                        <span><%= Math.floor(process.uptime() / 3600) %>h <%= Math.floor((process.uptime() % 3600) / 60) %>m</span>
-                    </div>
-                    <div class="setting-item">
-                        <label>Memory</label>
-                        <span><%= Math.round(process.memoryUsage().heapUsed / 1024 / 1024) %> MB</span>
-                    </div>
-                    <div class="setting-item">
-                        <label>Node.js</label>
-                        <span><%= process.version %></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card mt-2">
-            <div class="card-header">
-                <h2><%= t('settings.backup') %></h2>
-            </div>
-            <div class="card-body">
-                <form method="POST" action="/panel/settings" id="backupSettingsForm">
-                    <input type="hidden" name="_backupSettings" value="1">
-                    
-                    <div class="settings-list" style="margin-bottom: 1rem;">
-                        <label class="checkbox-label">
-                            <input type="checkbox" name="backup.enabled" id="backupEnabled"
-                                   <%= settings?.backup?.enabled ? 'checked' : '' %>>
-                            <span><%= t('settings.autoBackup') %></span>
-                        </label>
-                        <small class="hint" style="display: block; margin-top: 0.25rem;">
-                            <%= t('settings.autoBackupHint') %>
-                        </small>
-                    </div>
-                    
-                    <div id="backupSettings" style="<%= settings?.backup?.enabled ? '' : 'display: none;' %>">
-                        <div class="settings-grid" style="margin-bottom: 1rem;">
-                            <div class="form-group">
-                                <label for="backup.intervalHours"><%= t('settings.backupInterval') %></label>
-                                <input type="number" name="backup.intervalHours" id="backup.intervalHours" 
-                                       value="<%= settings?.backup?.intervalHours || 24 %>" min="1" max="168">
-                                <small class="hint"><%= t('settings.backupIntervalHint') %></small>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label for="backup.keepLast"><%= t('settings.keepLast') %></label>
-                                <input type="number" name="backup.keepLast" id="backup.keepLast" 
-                                       value="<%= settings?.backup?.keepLast || 7 %>" min="1" max="30">
-                                <small class="hint"><%= t('settings.keepLastHint') %></small>
+        <div class="card-body">
+            <form method="POST" action="/panel/settings">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="settings-section">
+                            <div class="section-title"><%= t('settings.loadBalancing') %></div>
+                            <div class="settings-list">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" name="loadBalancing.enabled" 
+                                           <%= settings?.loadBalancing?.enabled ? 'checked' : '' %>>
+                                    <span><%= t('settings.loadBalancingEnabled') %></span>
+                                </label>
+                                <small class="hint" style="display: block; margin-top: 0.25rem;">
+                                    <%= t('settings.loadBalancingHint') %>
+                                </small>
+                                
+                                <label class="checkbox-label" style="margin-top: 0.75rem;">
+                                    <input type="checkbox" name="loadBalancing.hideOverloaded" 
+                                           <%= settings?.loadBalancing?.hideOverloaded ? 'checked' : '' %>>
+                                    <span><%= t('settings.hideOverloaded') %></span>
+                                </label>
+                                <small class="hint" style="display: block; margin-top: 0.25rem;">
+                                    <%= t('settings.hideOverloadedHint') %>
+                                </small>
                             </div>
                         </div>
                         
-                        <div class="setting-item" style="margin-bottom: 1rem; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
-                            <label><%= t('settings.lastBackup') %></label>
-                            <span id="lastBackupTime">
-                                <%= settings?.backup?.lastBackup 
-                                    ? new Date(settings.backup.lastBackup).toLocaleString(lang === 'en' ? 'en-US' : 'ru-RU') 
-                                    : t('settings.never') %>
-                            </span>
+                        <div class="settings-section">
+                            <div class="section-title"><%= t('settings.deviceLimit') %></div>
+                            <div class="form-group">
+                                <label for="deviceGracePeriod"><%= t('settings.gracePeriod') %></label>
+                                <input type="number" name="deviceGracePeriod" id="deviceGracePeriod" 
+                                       value="<%= settings?.deviceGracePeriod ?? 15 %>" min="1" max="60">
+                                <small class="hint"><%= t('settings.gracePeriodHint') %></small>
+                            </div>
+                        </div>
+                        
+                        <div class="settings-section">
+                            <div class="section-title"><%= t('settings.rateLimiting') %></div>
+                            <div class="form-group">
+                                <label for="rateLimit.subscriptionPerMinute"><%= t('settings.subscriptionsPerMinute') %></label>
+                                <input type="number" name="rateLimit.subscriptionPerMinute" id="rateLimit.subscriptionPerMinute" 
+                                       value="<%= settings?.rateLimit?.subscriptionPerMinute || 100 %>" min="10" max="1000">
+                                <small class="hint"><%= t('settings.subscriptionsPerMinuteHint') %></small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-6">
+                        <div class="settings-section">
+                            <div class="section-title"><%= t('settings.caching') %></div>
+                            <div class="settings-grid">
+                                <div class="form-group">
+                                    <label for="cache.subscriptionTTL"><%= t('settings.subscriptionsTTL') %></label>
+                                    <input type="number" name="cache.subscriptionTTL" id="cache.subscriptionTTL" 
+                                           value="<%= settings?.cache?.subscriptionTTL || 3600 %>" min="60" max="86400">
+                                    <small class="hint"><%= t('settings.subscriptionsTTLHint') %></small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="cache.userTTL"><%= t('settings.usersTTL') %></label>
+                                    <input type="number" name="cache.userTTL" id="cache.userTTL" 
+                                           value="<%= settings?.cache?.userTTL || 900 %>" min="60" max="3600">
+                                    <small class="hint"><%= t('settings.usersTTLHint') %></small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="cache.onlineSessionsTTL"><%= t('settings.onlineSessionsTTL') %></label>
+                                    <input type="number" name="cache.onlineSessionsTTL" id="cache.onlineSessionsTTL" 
+                                           value="<%= settings?.cache?.onlineSessionsTTL || 10 %>" min="5" max="60">
+                                    <small class="hint"><%= t('settings.onlineSessionsTTLHint') %></small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="cache.activeNodesTTL"><%= t('settings.activeNodesTTL') %></label>
+                                    <input type="number" name="cache.activeNodesTTL" id="cache.activeNodesTTL" 
+                                           value="<%= settings?.cache?.activeNodesTTL || 30 %>" min="10" max="300">
+                                    <small class="hint"><%= t('settings.activeNodesTTLHint') %></small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="settings-section">
+                            <div class="section-title"><%= t('settings.sshPool') %></div>
+                            <label class="checkbox-label" style="margin-bottom: 0.75rem;">
+                                <input type="checkbox" name="sshPool.enabled" 
+                                       <%= settings?.sshPool?.enabled !== false ? 'checked' : '' %>>
+                                <span><%= t('settings.sshPoolEnabled') %></span>
+                            </label>
+                            <div class="settings-grid">
+                                <div class="form-group">
+                                    <label for="sshPool.maxIdleTime"><%= t('settings.sshPoolIdleTime') %></label>
+                                    <input type="number" name="sshPool.maxIdleTime" id="sshPool.maxIdleTime" 
+                                           value="<%= settings?.sshPool?.maxIdleTime || 120 %>" min="30" max="600">
+                                </div>
+                                <div class="form-group">
+                                    <label for="sshPool.connectTimeout"><%= t('settings.sshPoolTimeout') %></label>
+                                    <input type="number" name="sshPool.connectTimeout" id="sshPool.connectTimeout" 
+                                           value="<%= settings?.sshPool?.connectTimeout || 15 %>" min="5" max="60">
+                                </div>
+                                <div class="form-group">
+                                    <label for="sshPool.keepAliveInterval"><%= t('settings.sshPoolKeepalive') %></label>
+                                    <input type="number" name="sshPool.keepAliveInterval" id="sshPool.keepAliveInterval" 
+                                           value="<%= settings?.sshPool?.keepAliveInterval || 30 %>" min="10" max="120">
+                                </div>
+                                <div class="form-group">
+                                    <label for="sshPool.maxRetries"><%= t('settings.sshPoolRetries') %></label>
+                                    <input type="number" name="sshPool.maxRetries" id="sshPool.maxRetries" 
+                                           value="<%= settings?.sshPool?.maxRetries || 2 %>" min="0" max="5">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                    <button type="submit" class="btn btn-primary"><%= t('settings.saveAllSettings') %></button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== TAB: SECURITY ==================== -->
+<div class="tab-content" id="tab-security">
+    <div class="row">
+        <div class="col-6">
+            <div class="card">
+                <div class="card-header">
+                    <h2><%= t('settings.administrator') %></h2>
+                </div>
+                <div class="card-body">
+                    <div class="settings-list">
+                        <div class="setting-item">
+                            <label><%= t('settings.administrator') %></label>
+                            <span><%= admin?.username || 'N/A' %></span>
+                        </div>
+                        <div class="setting-item">
+                            <label><%= t('settings.lastLogin') %></label>
+                            <span><%= admin?.lastLogin ? new Date(admin.lastLogin).toLocaleString(lang === 'en' ? 'en-US' : 'ru-RU') : t('settings.never') %></span>
+                        </div>
+                        <div class="setting-item">
+                            <label><%= t('settings.ipWhitelist') %></label>
+                            <span><%= config.PANEL_IP_WHITELIST || t('settings.ipWhitelistDisabled') %></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-6">
+            <div class="card">
+                <div class="card-header">
+                    <h2><%= t('settings.changePassword') %></h2>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/panel/settings/password">
+                        <div class="form-group">
+                            <label><%= t('settings.currentPassword') %></label>
+                            <input type="password" name="currentPassword" required>
+                        </div>
+                        <div class="form-group">
+                            <label><%= t('settings.newPassword') %></label>
+                            <input type="password" name="newPassword" minlength="6" required>
+                        </div>
+                        <div class="form-group">
+                            <label><%= t('settings.confirmPassword') %></label>
+                            <input type="password" name="confirmPassword" minlength="6" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary"><%= t('settings.changePasswordBtn') %></button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== TAB: BACKUP ==================== -->
+<div class="tab-content" id="tab-backup">
+    <div class="row">
+        <div class="col-6">
+            <div class="card">
+                <div class="card-header">
+                    <h2><%= t('settings.autoBackup') %></h2>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/panel/settings" id="backupSettingsForm">
+                        <input type="hidden" name="_backupSettings" value="1">
+                        
+                        <div class="settings-list" style="margin-bottom: 1rem;">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="backup.enabled" id="backupEnabled"
+                                       <%= settings?.backup?.enabled ? 'checked' : '' %>>
+                                <span><%= t('settings.autoBackup') %></span>
+                            </label>
+                            <small class="hint" style="display: block; margin-top: 0.25rem;">
+                                <%= t('settings.autoBackupHint') %>
+                            </small>
+                        </div>
+                        
+                        <div id="backupSettings" style="<%= settings?.backup?.enabled ? '' : 'display: none;' %>">
+                            <div class="settings-grid" style="margin-bottom: 1rem;">
+                                <div class="form-group">
+                                    <label for="backup.intervalHours"><%= t('settings.backupInterval') %></label>
+                                    <input type="number" name="backup.intervalHours" id="backup.intervalHours" 
+                                           value="<%= settings?.backup?.intervalHours || 24 %>" min="1" max="168">
+                                    <small class="hint"><%= t('settings.backupIntervalHint') %></small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="backup.keepLast"><%= t('settings.keepLast') %></label>
+                                    <input type="number" name="backup.keepLast" id="backup.keepLast" 
+                                           value="<%= settings?.backup?.keepLast || 7 %>" min="1" max="30">
+                                    <small class="hint"><%= t('settings.keepLastHint') %></small>
+                                </div>
+                            </div>
+                            
+                            <div class="setting-item" style="margin-bottom: 1rem; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
+                                <label><%= t('settings.lastBackup') %></label>
+                                <span id="lastBackupTime">
+                                    <%= settings?.backup?.lastBackup 
+                                        ? new Date(settings.backup.lastBackup).toLocaleString(lang === 'en' ? 'en-US' : 'ru-RU') 
+                                        : t('settings.never') %>
+                                </span>
+                            </div>
                         </div>
                         
                         <hr style="margin: 1rem 0; border-color: var(--border);">
@@ -315,49 +388,37 @@ ACME_EMAIL=admin@example.com</pre>
                                     <label for="backup.s3.endpoint"><%= t('settings.s3Endpoint') %></label>
                                     <input type="text" name="backup.s3.endpoint" id="backup.s3.endpoint" 
                                            value="<%= settings?.backup?.s3?.endpoint || '' %>" 
-                                           placeholder="https://minio.example.com">
-                                    <small class="hint"><%= t('settings.s3EndpointHint') %></small>
+                                           placeholder="https://s3.example.com">
                                 </div>
-                                
                                 <div class="form-group">
                                     <label for="backup.s3.region"><%= t('settings.s3Region') %></label>
                                     <input type="text" name="backup.s3.region" id="backup.s3.region" 
                                            value="<%= settings?.backup?.s3?.region || 'us-east-1' %>">
                                 </div>
-                                
                                 <div class="form-group">
                                     <label for="backup.s3.bucket"><%= t('settings.s3Bucket') %> *</label>
                                     <input type="text" name="backup.s3.bucket" id="backup.s3.bucket" 
-                                           value="<%= settings?.backup?.s3?.bucket || '' %>" 
-                                           placeholder="my-backups">
+                                           value="<%= settings?.backup?.s3?.bucket || '' %>">
                                 </div>
-                                
                                 <div class="form-group">
                                     <label for="backup.s3.prefix"><%= t('settings.s3Prefix') %></label>
                                     <input type="text" name="backup.s3.prefix" id="backup.s3.prefix" 
                                            value="<%= settings?.backup?.s3?.prefix || 'backups' %>">
-                                    <small class="hint"><%= t('settings.s3PrefixHint') %></small>
                                 </div>
-                                
                                 <div class="form-group">
                                     <label for="backup.s3.accessKeyId"><%= t('settings.s3AccessKey') %> *</label>
                                     <input type="text" name="backup.s3.accessKeyId" id="backup.s3.accessKeyId" 
-                                           value="<%= settings?.backup?.s3?.accessKeyId || '' %>" 
-                                           placeholder="AKIAIOSFODNN7EXAMPLE">
+                                           value="<%= settings?.backup?.s3?.accessKeyId || '' %>">
                                 </div>
-                                
                                 <div class="form-group">
                                     <label for="backup.s3.secretAccessKey"><%= t('settings.s3SecretKey') %> *</label>
                                     <input type="password" name="backup.s3.secretAccessKey" id="backup.s3.secretAccessKey" 
-                                           value="<%= settings?.backup?.s3?.secretAccessKey || '' %>" 
-                                           placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">
+                                           value="<%= settings?.backup?.s3?.secretAccessKey || '' %>">
                                 </div>
-                                
                                 <div class="form-group">
                                     <label for="backup.s3.keepLast"><%= t('settings.s3KeepLast') %></label>
                                     <input type="number" name="backup.s3.keepLast" id="backup.s3.keepLast" 
                                            value="<%= settings?.backup?.s3?.keepLast || 30 %>" min="1" max="365">
-                                    <small class="hint"><%= t('settings.s3KeepLastHint') %></small>
                                 </div>
                             </div>
                             
@@ -366,69 +427,85 @@ ACME_EMAIL=admin@example.com</pre>
                             </button>
                             <span id="s3TestResult" style="margin-left: 0.5rem;"></span>
                         </div>
-                    </div>
-                    
-                    <hr style="margin: 1rem 0; border-color: var(--border);">
-                    
-                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                        <button type="submit" class="btn btn-primary btn-sm">💾 <%= t('common.save') %></button>
-                        <button type="button" class="btn btn-success btn-sm" onclick="createBackupNow()" id="createBackupBtn">
-                            <%= t('settings.createBackupNow') %>
-                        </button>
-                    </div>
-                </form>
-                
-                <hr style="margin: 1.5rem 0; border-color: var(--border);">
-                
-                <h4 style="margin-bottom: 0.75rem;">📋 <%= t('settings.backupsList') || 'Доступные бэкапы' %></h4>
-                <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                        
+                        <hr style="margin: 1rem 0; border-color: var(--border);">
+                        
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <button type="submit" class="btn btn-primary">💾 <%= t('common.save') %></button>
+                            <button type="button" class="btn btn-success" onclick="createBackupNow()" id="createBackupBtn">
+                                <%= t('settings.createBackupNow') %>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-6">
+            <div class="card">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2>📋 <%= t('settings.backupsList') || 'Доступные бэкапы' %></h2>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="loadBackupsList()" id="refreshBackupsBtn">
                         🔄 <%= t('common.refresh') %>
                     </button>
                 </div>
-                <div id="backupsList" style="max-height: 300px; overflow-y: auto;">
-                    <p style="color: var(--text-muted); font-size: 13px;"><%= t('settings.clickRefresh') || 'Нажмите "Обновить" для загрузки списка' %></p>
+                <div class="card-body">
+                    <div id="backupsList" style="max-height: 400px; overflow-y: auto;">
+                        <p style="color: var(--text-muted); font-size: 13px;"><%= t('settings.clickRefresh') || 'Нажмите "Обновить" для загрузки списка' %></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== TAB: MAINTENANCE ==================== -->
+<div class="tab-content" id="tab-maintenance">
+    <div class="row">
+        <div class="col-6">
+            <div class="card">
+                <div class="card-header">
+                    <h2><%= t('settings.cacheManagement') %></h2>
+                </div>
+                <div class="card-body">
+                    <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 1rem;">
+                        <%= t('settings.flushCacheDesc') %>
+                    </p>
+                    <button class="btn btn-warning" onclick="flushCache()">
+                        <%= t('settings.flushCacheBtn') %>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="card mt-2">
+                <div class="card-header">
+                    <h2><%= t('settings.resetStats') || 'Сброс статистики' %></h2>
+                </div>
+                <div class="card-body">
+                    <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 1rem;">
+                        <%= t('settings.resetStatsDesc') || 'Удалить все исторические данные статистики.' %>
+                    </p>
+                    <button class="btn btn-warning" onclick="resetStats()">
+                        <%= t('settings.resetStatsBtn') || 'Очистить статистику' %>
+                    </button>
                 </div>
             </div>
         </div>
         
-        <div class="card mt-2">
-            <div class="card-header">
-                <h2><%= t('settings.cacheManagement') %></h2>
-            </div>
-            <div class="card-body">
-                <h4 style="margin-bottom: 0.5rem;"><%= t('settings.flushCache') %></h4>
-                <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 1rem;">
-                    <%= t('settings.flushCacheDesc') %>
-                </p>
-                <button class="btn btn-warning btn-sm" onclick="flushCache()">
-                    <%= t('settings.flushCacheBtn') %>
-                </button>
-            </div>
-        </div>
-        
-        <div class="card mt-2">
-            <div class="card-header">
-                <h2><%= t('settings.dangerZone') %></h2>
-            </div>
-            <div class="card-body">
-                <h4 style="margin-bottom: 0.5rem;"><%= t('settings.resetStats') || 'Сброс статистики' %></h4>
-                <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 1rem;">
-                    <%= t('settings.resetStatsDesc') || 'Удалить все исторические данные статистики (графики онлайна, трафика, нод).' %>
-                </p>
-                <button class="btn btn-warning btn-sm" onclick="resetStats()">
-                    <%= t('settings.resetStatsBtn') || 'Очистить статистику' %>
-                </button>
-                
-                <hr style="margin: 1.5rem 0; border-color: var(--border);">
-                
-                <h4 style="margin-bottom: 0.5rem;"><%= t('settings.resetTrafficCounter') %></h4>
-                <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 1rem;">
-                    <%= t('settings.resetTrafficDesc') %>
-                </p>
-                <button class="btn btn-danger btn-sm" onclick="resetTraffic()">
-                    <%= t('settings.resetAllTraffic') %>
-                </button>
+        <div class="col-6">
+            <div class="card" style="border-color: var(--danger);">
+                <div class="card-header" style="background: rgba(239, 68, 68, 0.1);">
+                    <h2 style="color: var(--danger);"><%= t('settings.dangerZone') %></h2>
+                </div>
+                <div class="card-body">
+                    <h4 style="margin-bottom: 0.5rem;"><%= t('settings.resetTrafficCounter') %></h4>
+                    <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 1rem;">
+                        <%= t('settings.resetTrafficDesc') %>
+                    </p>
+                    <button class="btn btn-danger" onclick="resetTraffic()">
+                        <%= t('settings.resetAllTraffic') %>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -468,17 +545,38 @@ const i18n = {
     s3Backups: <%- JSON.stringify(t("settings.s3Backups") || "S3") %>
 };
 
-// Toggle backup settings visibility
+// ==================== TABS ====================
+document.querySelectorAll('.settings-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        // Remove active from all
+        document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        
+        // Add active to clicked
+        tab.classList.add('active');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+        
+        // Save to localStorage
+        localStorage.setItem('settings-tab', tab.dataset.tab);
+    });
+});
+
+// Restore tab from localStorage
+const savedTab = localStorage.getItem('settings-tab');
+if (savedTab) {
+    const tab = document.querySelector(`.settings-tab[data-tab="${savedTab}"]`);
+    if (tab) tab.click();
+}
+
+// ==================== BACKUP ====================
 document.getElementById('backupEnabled')?.addEventListener('change', function() {
     document.getElementById('backupSettings').style.display = this.checked ? '' : 'none';
 });
 
-// Toggle S3 settings visibility
 document.getElementById('s3Enabled')?.addEventListener('change', function() {
     document.getElementById('s3Settings').style.display = this.checked ? '' : 'none';
 });
 
-// Test S3 connection
 async function testS3Connection() {
     const btn = document.getElementById('testS3Btn');
     const result = document.getElementById('s3TestResult');
@@ -519,7 +617,6 @@ async function testS3Connection() {
     btn.textContent = i18n.testS3;
 }
 
-// Create backup now
 async function createBackupNow() {
     const btn = document.getElementById('createBackupBtn');
     btn.disabled = true;
@@ -535,9 +632,7 @@ async function createBackupNow() {
         
         if (data.success) {
             showToast(i18n.backupCreated.replace('{filename}', data.filename).replace('{size}', data.size), 'success');
-            // Update last backup time
             document.getElementById('lastBackupTime').textContent = new Date().toLocaleString();
-            // Reload backups list
             loadBackupsList();
         } else {
             showToast(i18n.backupError + ': ' + (data.error || 'unknown'), 'error');
@@ -550,7 +645,6 @@ async function createBackupNow() {
     btn.textContent = i18n.createBackupNow;
 }
 
-// Load backups list (local + S3)
 async function loadBackupsList() {
     const container = document.getElementById('backupsList');
     const btn = document.getElementById('refreshBackupsBtn');
@@ -559,7 +653,6 @@ async function loadBackupsList() {
     container.innerHTML = '<p style="color: var(--text-muted);">⏳ Загрузка...</p>';
     
     try {
-        // Load local and S3 backups in parallel
         const [localRes, s3Res] = await Promise.all([
             fetch('/panel/settings/backups', { credentials: 'include' }),
             fetch('/panel/settings/backups-s3', { credentials: 'include' })
@@ -579,20 +672,19 @@ async function loadBackupsList() {
         
         let html = '';
         
-        // Local backups
         if (localBackups.length > 0) {
-            html += `<div style="margin-bottom: 1rem;"><strong>💾 ${i18n.localBackups} (${localBackups.length})</strong></div>`;
-            html += '<div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">';
+            html += `<div style="margin-bottom: 0.75rem; font-weight: 600;">💾 ${i18n.localBackups} (${localBackups.length})</div>`;
+            html += '<div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem;">';
             for (const b of localBackups) {
                 const date = new Date(b.created).toLocaleString();
                 html += `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; background: var(--bg-tertiary); border-radius: 6px;">
                         <div>
                             <div style="font-size: 13px; font-weight: 500;">${b.name}</div>
                             <div style="font-size: 11px; color: var(--text-muted);">${date} • ${b.sizeMB} MB</div>
                         </div>
-                        <button class="btn btn-warning btn-sm" onclick="restoreBackup('local', '${b.name}')" style="padding: 4px 8px; font-size: 11px;">
-                            ⬇️ Restore
+                        <button class="btn btn-warning btn-sm" onclick="restoreBackup('local', '${b.name}')" style="padding: 4px 10px; font-size: 11px;">
+                            Restore
                         </button>
                     </div>
                 `;
@@ -600,20 +692,19 @@ async function loadBackupsList() {
             html += '</div>';
         }
         
-        // S3 backups
         if (s3Backups.length > 0) {
-            html += `<div style="margin-bottom: 1rem;"><strong>☁️ ${i18n.s3Backups} (${s3Backups.length})</strong></div>`;
+            html += `<div style="margin-bottom: 0.75rem; font-weight: 600;">☁️ ${i18n.s3Backups} (${s3Backups.length})</div>`;
             html += '<div style="display: flex; flex-direction: column; gap: 0.5rem;">';
             for (const b of s3Backups) {
                 const date = new Date(b.created).toLocaleString();
                 html += `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem; background: var(--bg-tertiary); border-radius: 4px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; background: var(--bg-tertiary); border-radius: 6px;">
                         <div>
                             <div style="font-size: 13px; font-weight: 500;">${b.name}</div>
                             <div style="font-size: 11px; color: var(--text-muted);">${date} • ${b.sizeMB} MB</div>
                         </div>
-                        <button class="btn btn-warning btn-sm" onclick="restoreBackup('s3', '${b.key}')" style="padding: 4px 8px; font-size: 11px;">
-                            ⬇️ Restore
+                        <button class="btn btn-warning btn-sm" onclick="restoreBackup('s3', '${b.key}')" style="padding: 4px 10px; font-size: 11px;">
+                            Restore
                         </button>
                     </div>
                 `;
@@ -630,11 +721,8 @@ async function loadBackupsList() {
     btn.disabled = false;
 }
 
-// Restore from backup
 async function restoreBackup(source, identifier) {
-    if (!confirm(i18n.restoreConfirm)) {
-        return;
-    }
+    if (!confirm(i18n.restoreConfirm)) return;
     
     showToast(i18n.restoring, 'info');
     
@@ -659,91 +747,65 @@ async function restoreBackup(source, identifier) {
     }
 }
 
+// ==================== MAINTENANCE ====================
 async function resetStats() {
-    if (!confirm(i18n.resetStatsConfirm)) {
-        return;
-    }
+    if (!confirm(i18n.resetStatsConfirm)) return;
     
     const btn = event.target;
     btn.disabled = true;
     btn.textContent = i18n.resetting;
     
     try {
-        const res = await fetch('/panel/settings/reset-stats', {
-            method: 'POST',
-            credentials: 'include'
-        });
-        
+        const res = await fetch('/panel/settings/reset-stats', { method: 'POST', credentials: 'include' });
         const data = await res.json();
         
         if (data.success) {
             showToast(i18n.statsReset.replace('{count}', data.count), 'success');
-            btn.disabled = false;
-            btn.textContent = i18n.resetStatsBtn;
         } else {
             showToast(i18n.error + ': ' + (data.error || 'unknown'), 'error');
-            btn.disabled = false;
-            btn.textContent = i18n.resetStatsBtn;
         }
     } catch (e) {
         showToast(i18n.error, 'error');
-        btn.disabled = false;
-        btn.textContent = i18n.resetStatsBtn;
     }
+    
+    btn.disabled = false;
+    btn.textContent = i18n.resetStatsBtn;
 }
 
 async function flushCache() {
-    if (!confirm(i18n.flushCacheConfirm)) {
-        return;
-    }
+    if (!confirm(i18n.flushCacheConfirm)) return;
     
     const btn = event.target;
     btn.disabled = true;
     btn.textContent = i18n.flushing;
     
     try {
-        const res = await fetch('/panel/settings/flush-cache', {
-            method: 'POST',
-            credentials: 'include'
-        });
-        
+        const res = await fetch('/panel/settings/flush-cache', { method: 'POST', credentials: 'include' });
         const data = await res.json();
         
         if (data.success) {
             showToast(i18n.cacheFlushed, 'success');
-            btn.disabled = false;
-            btn.textContent = i18n.flushCacheBtn;
         } else {
             showToast(i18n.error + ': ' + (data.error || 'unknown'), 'error');
-            btn.disabled = false;
-            btn.textContent = i18n.flushCacheBtn;
         }
     } catch (e) {
         showToast(i18n.error, 'error');
-        btn.disabled = false;
-        btn.textContent = i18n.flushCacheBtn;
     }
+    
+    btn.disabled = false;
+    btn.textContent = i18n.flushCacheBtn;
 }
 
 async function resetTraffic() {
-    if (!confirm(i18n.resetConfirm)) {
-        return;
-    }
-    
-    if (!confirm(i18n.resetConfirmFinal)) {
-        return;
-    }
+    if (!confirm(i18n.resetConfirm)) return;
+    if (!confirm(i18n.resetConfirmFinal)) return;
     
     const btn = event.target;
     btn.disabled = true;
     btn.textContent = i18n.resetting;
     
     try {
-        const res = await fetch('/panel/settings/reset-traffic', {
-            method: 'POST',
-            credentials: 'include'
-        });
-        
+        const res = await fetch('/panel/settings/reset-traffic', { method: 'POST', credentials: 'include' });
         const data = await res.json();
         
         if (data.success) {
