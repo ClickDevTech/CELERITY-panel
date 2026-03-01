@@ -713,6 +713,9 @@ router.get('/users/add', requireAuth, async (req, res) => {
         title: 'Новый пользователь',
         page: 'users',
         groups,
+        isEdit: false,
+        user: null,
+        error: null,
     });
 });
 
