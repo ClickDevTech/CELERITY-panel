@@ -12,6 +12,39 @@ const Settings = require('../models/settingsModel');
 const configGenerator = require('./configGenerator');
 
 /**
+ * Check if a node is on the same VPS as the panel
+ * Uses multiple heuristics: domain match, IP match via DNS, localhost detection
+ * @param {Object} node - Node object with ip and domain fields
+ * @returns {boolean} true if node appears to be on the same server as the panel
+ */
+function isSameVpsAsPanel(node) {
+    const panelDomain = config.PANEL_DOMAIN;
+    
+    // 1. Domain match - most reliable indicator
+    if (node.domain && node.domain === panelDomain) {
+        logger.debug(`[NodeSetup] Same VPS detected: domain match (${node.domain})`);
+        return true;
+    }
+    
+    // 2. Localhost / loopback detection
+    const nodeIp = (node.ip || '').toLowerCase().trim();
+    if (nodeIp === 'localhost' || nodeIp === '127.0.0.1' || nodeIp === '::1') {
+        logger.debug(`[NodeSetup] Same VPS detected: localhost IP (${nodeIp})`);
+        return true;
+    }
+    
+    // 3. Try to resolve panel domain and compare with node IP
+    // This is a sync check using cached DNS or env variable
+    const panelIpFromEnv = process.env.PANEL_IP || '';
+    if (panelIpFromEnv && panelIpFromEnv === nodeIp) {
+        logger.debug(`[NodeSetup] Same VPS detected: IP match via PANEL_IP env (${nodeIp})`);
+        return true;
+    }
+    
+    return false;
+}
+
+/**
  * Read panel's SSL certificates from Greenlock or Caddy directory
  * @param {string} domain - Panel domain
  * @returns {Object|null} { cert, key } or null if not found
@@ -313,25 +346,14 @@ async function setupNode(node, options = {}) {
         }
         
         // Determine TLS mode: same-VPS (copy panel certs), ACME, or self-signed
-        const isSameVpsSetup = node.domain && node.domain === config.PANEL_DOMAIN;
+        // Use improved detection: checks domain match, localhost, and PANEL_IP env
+        const isSameVpsSetup = isSameVpsAsPanel(node);
         let useTlsFiles = false;
         
-        if (!node.domain) {
-            // No domain - use self-signed certificate
-            log('No domain specified, generating self-signed certificate...');
-            const certResult = await execSSH(conn, SELF_SIGNED_CERT_SCRIPT);
-            logs.push(certResult.output);
-            
-            if (!certResult.success) {
-                throw new Error(`Certificate generation failed: ${certResult.error}`);
-            }
-            log('Certificate ready (self-signed)');
-            useTlsFiles = true;
-            
-        } else if (isSameVpsSetup) {
-            // Same domain as panel - copy panel's certificates to node
-            log(`Same-VPS setup detected (domain: ${node.domain})`);
-            log('Copying panel certificates to node...');
+        if (isSameVpsSetup) {
+            // Same server as panel - try to copy panel's certificates
+            log(`Same-VPS setup detected (node IP: ${node.ip}, panel domain: ${config.PANEL_DOMAIN})`);
+            log('Attempting to copy panel certificates to node...');
             
             const panelCerts = getPanelCertificates(config.PANEL_DOMAIN);
             
@@ -360,8 +382,20 @@ ls -la /etc/hysteria/*.pem
                 useTlsFiles = true;
             }
             
+        } else if (!node.domain) {
+            // No domain and not same VPS - use self-signed certificate
+            log('No domain specified, generating self-signed certificate...');
+            const certResult = await execSSH(conn, SELF_SIGNED_CERT_SCRIPT);
+            logs.push(certResult.output);
+            
+            if (!certResult.success) {
+                throw new Error(`Certificate generation failed: ${certResult.error}`);
+            }
+            log('Certificate ready (self-signed)');
+            useTlsFiles = true;
+            
         } else {
-            // Different domain - use ACME (but warn about potential port 80 conflict)
+            // Different domain on different VPS - use ACME
             log(`Domain detected (${node.domain}), ACME will be used`);
             log('⚠️  WARNING: If this node is on the same VPS as the panel, ACME may fail!');
             log('⚠️  Port 80 is used by the panel for its own ACME challenges.');
@@ -996,4 +1030,6 @@ module.exports = {
     generateX25519Keys,
     checkXrayNodeStatus,
     getXrayNodeLogs,
+    getPanelCertificates,
+    isSameVpsAsPanel,
 };

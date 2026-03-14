@@ -429,6 +429,107 @@ echo "Port hopping: ${startPort}-${endPort} -> ${mainPort}"
     }
     
     /**
+     * Check if TLS certificate files exist and are valid on the node
+     * @returns {Object} { exists: boolean, valid: boolean, error?: string }
+     */
+    async checkCertificates() {
+        try {
+            const certPath = this.node.paths?.cert || '/etc/hysteria/cert.pem';
+            const keyPath = this.node.paths?.key || '/etc/hysteria/key.pem';
+            
+            const result = await this.exec(`
+if [ -f "${certPath}" ] && [ -s "${certPath}" ] && [ -f "${keyPath}" ] && [ -s "${keyPath}" ]; then
+    if openssl x509 -in "${certPath}" -noout 2>/dev/null; then
+        echo "VALID"
+        openssl x509 -in "${certPath}" -noout -enddate 2>/dev/null | grep notAfter
+    else
+        echo "INVALID"
+    fi
+else
+    echo "MISSING"
+fi
+            `);
+            
+            const output = result.stdout.trim();
+            
+            if (output.includes('VALID')) {
+                return { exists: true, valid: true };
+            } else if (output.includes('INVALID')) {
+                return { exists: true, valid: false, error: 'Certificate is invalid or corrupted' };
+            } else {
+                return { exists: false, valid: false, error: 'Certificate files missing' };
+            }
+        } catch (error) {
+            logger.error(`[SSH] Certificate check error on ${this.node.name}: ${error.message}`);
+            return { exists: false, valid: false, error: error.message };
+        }
+    }
+
+    /**
+     * Upload TLS certificates to the node
+     * @param {string} cert - Certificate content (PEM)
+     * @param {string} key - Private key content (PEM)
+     * @returns {boolean} Success status
+     */
+    async uploadCertificates(cert, key) {
+        try {
+            const certPath = this.node.paths?.cert || '/etc/hysteria/cert.pem';
+            const keyPath = this.node.paths?.key || '/etc/hysteria/key.pem';
+            
+            await this.exec('mkdir -p /etc/hysteria');
+            
+            await this.writeFile(certPath, cert);
+            await this.writeFile(keyPath, key);
+            
+            await this.exec(`
+chmod 644 ${certPath}
+chmod 600 ${keyPath}
+if id "hysteria" &>/dev/null; then
+    chown hysteria:hysteria ${certPath} ${keyPath}
+fi
+            `);
+            
+            logger.info(`[SSH] Certificates uploaded to ${this.node.name}`);
+            return true;
+        } catch (error) {
+            logger.error(`[SSH] Certificate upload error on ${this.node.name}: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * Ensure valid certificates exist on the node
+     * If useTlsFiles is true and certs are missing/invalid, tries to copy from panel
+     * @param {Object} panelCerts - { cert, key } from panel, or null
+     * @returns {Object} { success: boolean, action: string, error?: string }
+     */
+    async ensureCertificates(panelCerts) {
+        const certStatus = await this.checkCertificates();
+        
+        if (certStatus.exists && certStatus.valid) {
+            return { success: true, action: 'existing' };
+        }
+        
+        if (!panelCerts || !panelCerts.cert || !panelCerts.key) {
+            return { 
+                success: false, 
+                action: 'failed', 
+                error: 'Certificates missing on node and panel certs not available' 
+            };
+        }
+        
+        logger.info(`[SSH] ${this.node.name}: certificates ${certStatus.exists ? 'invalid' : 'missing'}, uploading from panel`);
+        
+        const uploaded = await this.uploadCertificates(panelCerts.cert, panelCerts.key);
+        
+        if (uploaded) {
+            return { success: true, action: 'uploaded' };
+        } else {
+            return { success: false, action: 'failed', error: 'Failed to upload certificates' };
+        }
+    }
+
+    /**
      * Get system stats from node
      */
     async getSystemStats() {

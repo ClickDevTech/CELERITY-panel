@@ -23,6 +23,7 @@ const axios = require('axios');
 const https = require('https');
 const config = require('../../config');
 const webhook = require('./webhookService');
+const { getPanelCertificates, isSameVpsAsPanel } = require('./nodeSetup');
 
 // HTTPS agent that ignores self-signed certs (agent uses self-signed cert by default)
 const selfSignedAgent = new https.Agent({ rejectUnauthorized: false });
@@ -445,11 +446,28 @@ class SyncService {
         try {
             await ssh.connect();
             
+            // Determine if this node uses TLS files (not ACME)
+            const useTlsFiles = node.useTlsFiles || !node.domain;
+            
+            // For same-VPS nodes or nodes using TLS files, ensure certificates exist
+            if (useTlsFiles || isSameVpsAsPanel(node)) {
+                const panelCerts = getPanelCertificates(config.PANEL_DOMAIN);
+                const certResult = await ssh.ensureCertificates(panelCerts);
+                
+                if (certResult.success) {
+                    if (certResult.action === 'uploaded') {
+                        logger.info(`[Sync] ${node.name}: certificates uploaded from panel`);
+                    }
+                } else {
+                    logger.warn(`[Sync] ${node.name}: certificate issue - ${certResult.error}`);
+                    logger.warn(`[Sync] ${node.name}: Hysteria may fail to start without valid certificates`);
+                }
+            }
+            
             // Use custom config or generate automatically
             let configContent;
             const customConfig = (node.customConfig || '').trim();
             if (node.useCustomConfig && customConfig && customConfig.length > 50) {
-                // Basic validation: must contain listen and auth/tls/acme
                 if (!customConfig.includes('listen:')) {
                     throw new Error('Custom config invalid: missing listen:');
                 }
@@ -465,7 +483,6 @@ class SyncService {
                 const authUrl = this.getAuthUrl();
                 const settings = await Settings.get();
                 const authInsecure = settings?.nodeAuth?.insecure ?? true;
-                const useTlsFiles = node.useTlsFiles || false;
                 configContent = configGenerator.generateNodeConfig(node, authUrl, { authInsecure, useTlsFiles });
             }
             
