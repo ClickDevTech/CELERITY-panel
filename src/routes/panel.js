@@ -32,6 +32,7 @@ const cryptoService = require('../services/cryptoService');
 const cache = require('../services/cacheService');
 const nodeSetup = require('../services/nodeSetup');
 const NodeSSH = require('../services/nodeSSH');
+const sshKeyService = require('../services/sshKeyService');
 const { getActiveGroups, invalidateGroupsCache, invalidateSettingsCache } = require('../utils/helpers');
 const config = require('../../config');
 const logger = require('../utils/logger');
@@ -48,8 +49,47 @@ const os = require('os');
 const rpsCounter = require('../middleware/rpsCounter');
 const statsService = require('../services/statsService');
 
+const { Client: SSHClient } = require('ssh2');
+
 // Кэш скомпилированных шаблонов (для production)
 const templateCache = new Map();
+
+/**
+ * Decrypt a stored private key (encrypted AES or legacy plaintext).
+ */
+function decryptSshPrivateKey(key) {
+    try {
+        const d = cryptoService.decrypt(key);
+        if (d && d.includes('-----BEGIN')) return d;
+    } catch (_) {}
+    return key;
+}
+
+/**
+ * Open a direct SSH connection to a node using its stored credentials.
+ * @returns {Promise<Client>} connected ssh2 Client
+ */
+function connectNodeSSH(node) {
+    return new Promise((resolve, reject) => {
+        const client = new SSHClient();
+        const connConfig = {
+            host: node.ip,
+            port: node.ssh?.port || 22,
+            username: node.ssh?.username || 'root',
+            readyTimeout: 20000,
+        };
+        if (node.ssh?.privateKey) {
+            connConfig.privateKey = decryptSshPrivateKey(node.ssh.privateKey);
+        } else if (node.ssh?.password) {
+            connConfig.password = cryptoService.decrypt(node.ssh.password);
+        } else {
+            return reject(new Error('SSH credentials not configured'));
+        }
+        client.on('ready', () => resolve(client));
+        client.on('error', (err) => reject(err));
+        client.connect(connConfig);
+    });
+}
 
 /**
  * Parse Xray-related form fields from req.body into an xray sub-document object.
@@ -452,6 +492,16 @@ router.post('/nodes', requireAuth, async (req, res) => {
         const sshPassword = req.body['ssh.password'] || '';
         const encryptedPassword = sshPassword ? cryptoService.encrypt(sshPassword) : '';
 
+        // Encrypt SSH private key
+        const sshPrivateKeyRaw = req.body['ssh.privateKey'] || '';
+        let encryptedPrivateKey = '';
+        if (sshPrivateKeyRaw.trim()) {
+            if (!sshKeyService.isValidPrivateKey(sshPrivateKeyRaw)) {
+                return res.redirect(`/panel/nodes/add?error=${encodeURIComponent('Invalid private key format')}`);
+            }
+            encryptedPrivateKey = cryptoService.encrypt(sshPrivateKeyRaw.trim());
+        }
+
         // Groups (array of IDs)
         let groups = [];
         if (req.body.groups) {
@@ -488,6 +538,7 @@ router.post('/nodes', requireAuth, async (req, res) => {
                 port: parseInt(req.body['ssh.port']) || 22,
                 username: req.body['ssh.username'] || 'root',
                 password: encryptedPassword,
+                privateKey: encryptedPrivateKey,
             },
         };
 
@@ -582,6 +633,19 @@ router.post('/nodes/:id', requireAuth, async (req, res) => {
             updates['ssh.password'] = cryptoService.encrypt(req.body['ssh.password']);
         }
 
+        // Handle private key update
+        if (req.body['ssh.clearPrivateKey'] === '1') {
+            // Explicit clear requested
+            updates['ssh.privateKey'] = '';
+        } else if (req.body['ssh.privateKey'] && req.body['ssh.privateKey'].trim()) {
+            const rawKey = req.body['ssh.privateKey'].trim();
+            if (!sshKeyService.isValidPrivateKey(rawKey)) {
+                return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent('Invalid private key format')}`);
+            }
+            updates['ssh.privateKey'] = cryptoService.encrypt(rawKey);
+        }
+        // If neither provided — keep existing key unchanged
+
         await HyNode.findByIdAndUpdate(nodeId, { $set: updates });
         res.redirect('/panel/nodes');
     } catch (error) {
@@ -631,6 +695,47 @@ router.post('/nodes/:id/setup', requireAuth, async (req, res) => {
     } catch (error) {
         logger.error(`[Panel] Setup error: ${error.message}`);
         res.status(500).json({ success: false, error: error.message, logs: [`Exception: ${error.message}`] });
+    }
+});
+
+// POST /panel/nodes/:id/generate-ssh-key - Generate and install ed25519 SSH key
+const generateSshKeyLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+router.post('/nodes/:id/generate-ssh-key', requireAuth, generateSshKeyLimiter, async (req, res) => {
+    try {
+        const node = await HyNode.findById(req.params.id);
+
+        if (!node) {
+            return res.status(404).json({ success: false, error: 'Node not found' });
+        }
+
+        if (!node.ssh?.password && !node.ssh?.privateKey) {
+            return res.status(400).json({ success: false, error: 'SSH credentials not configured. Add a password or existing key first.' });
+        }
+
+        logger.info(`[Panel] Generating SSH key for node ${node.name}`);
+
+        const conn = await connectNodeSSH(node);
+
+        const { privateKey, publicKey } = sshKeyService.generateEd25519KeyPair();
+        await sshKeyService.installPublicKey(conn, publicKey);
+        conn.end();
+
+        const encryptedKey = cryptoService.encrypt(privateKey);
+        await HyNode.findByIdAndUpdate(req.params.id, {
+            $set: { 'ssh.privateKey': encryptedKey },
+        });
+
+        logger.info(`[Panel] SSH key installed on ${node.name}`);
+        res.json({ success: true, message: 'SSH key generated and installed successfully' });
+    } catch (error) {
+        logger.error(`[Panel] SSH key generation error: ${error.message}`);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

@@ -338,6 +338,35 @@
                            placeholder="<%= node?.ssh?.password ? t('nodes.sshPasswordKeep') : t('nodes.sshPasswordPlaceholder') %>">
                     <small class="hint"><%= t('nodes.sshPasswordEncrypted') %></small>
                 </div>
+                <div class="form-group">
+                    <label for="sshPrivateKey">
+                        <%= t('nodes.sshPrivateKey') %>
+                        <% if (node?.ssh?.privateKey) { %>
+                            <span class="badge badge-success"><%= t('nodes.sshPrivateKeySet') %></span>
+                        <% } %>
+                    </label>
+                    <textarea id="sshPrivateKey" name="ssh.privateKey" rows="5"
+                              placeholder="<%= t('nodes.sshPrivateKeyHint') %>"
+                              style="font-family: monospace; font-size: 12px; resize: vertical;"></textarea>
+                    <small class="hint"><%= t('nodes.sshPrivateKeyEncrypted') %></small>
+                    <% if (node?.ssh?.privateKey) { %>
+                        <div style="margin-top: 6px;">
+                            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                                <input type="checkbox" id="clearPrivateKey" name="ssh.clearPrivateKey" value="1">
+                                <%= t('nodes.sshPrivateKeyClear') %>
+                            </label>
+                        </div>
+                    <% } %>
+                </div>
+                <% if (node?._id) { %>
+                <div class="form-group" id="generateSshKeyGroup">
+                    <small class="hint" style="display: block; margin-bottom: 8px;"><%= t('nodes.generateSshKeyHint') %></small>
+                    <button type="button" id="generateSshKeyBtn" class="btn btn-secondary">
+                        <%= t('nodes.generateSshKey') %>
+                    </button>
+                    <span id="generateSshKeyStatus" style="margin-left: 10px; font-size: 13px;"></span>
+                </div>
+                <% } %>
             </div>
 
             <%# ========== 9. Limits & Priority ========== %>
@@ -1009,4 +1038,50 @@ async function generateXrayKeys() {
         updateXraySecurityUI();
     }
 })();
+
+<% if (node && node._id) { %>
+// Generate & Install SSH Key
+document.getElementById('generateSshKeyBtn')?.addEventListener('click', async function() {
+    const warning = '<%= t('nodes.generateSshKeyWarning').replace(/\n/g, '\\n').replace(/'/g, "\\'") %>';
+    if (!confirm(warning)) return;
+
+    const btn = this;
+    const statusEl = document.getElementById('generateSshKeyStatus');
+    btn.disabled = true;
+    btn.textContent = '<%= t('nodes.sshKeyGenerating') %>';
+    statusEl.textContent = '';
+    statusEl.style.color = '';
+
+    try {
+        const res = await fetch('/panel/nodes/<%= node._id %>/generate-ssh-key', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await res.json();
+        if (data.success) {
+            statusEl.textContent = '<%= t('nodes.sshKeyInstalled') %>';
+            statusEl.style.color = 'var(--color-success, #22c55e)';
+            // Update UI to show key is now set
+            const label = document.querySelector('label[for="sshPrivateKey"]');
+            if (label && !label.querySelector('.badge')) {
+                const badge = document.createElement('span');
+                badge.className = 'badge badge-success';
+                badge.textContent = '<%= t('nodes.sshPrivateKeySet') %>';
+                label.appendChild(document.createTextNode(' '));
+                label.appendChild(badge);
+            }
+        } else {
+            statusEl.textContent = '<%= t('nodes.sshKeyError') %>: ' + (data.error || 'Unknown error');
+            statusEl.style.color = 'var(--color-danger, #ef4444)';
+        }
+    } catch (err) {
+        statusEl.textContent = '<%= t('nodes.sshKeyError') %>: ' + err.message;
+        statusEl.style.color = 'var(--color-danger, #ef4444)';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '<%= t('nodes.generateSshKey') %>';
+    }
+});
+<% } %>
 </script>
