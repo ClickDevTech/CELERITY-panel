@@ -342,21 +342,27 @@
                     <label for="sshPrivateKey">
                         <%= t('nodes.sshPrivateKey') %>
                         <% if (node?.ssh?.privateKey) { %>
-                            <span class="badge badge-success"><%= t('nodes.sshPrivateKeySet') %></span>
+                            <span class="badge badge-success" id="sshPrivateKeyBadge"><%= t('nodes.sshPrivateKeySet') %></span>
+                        <% } else { %>
+                            <span class="badge badge-success" id="sshPrivateKeyBadge" style="display:none"><%= t('nodes.sshPrivateKeySet') %></span>
                         <% } %>
                     </label>
                     <textarea id="sshPrivateKey" name="ssh.privateKey" rows="5"
                               placeholder="<%= t('nodes.sshPrivateKeyHint') %>"
                               style="font-family: monospace; font-size: 12px; resize: vertical;"></textarea>
-                    <small class="hint"><%= t('nodes.sshPrivateKeyEncrypted') %></small>
-                    <% if (node?.ssh?.privateKey) { %>
-                        <div style="margin-top: 6px;">
-                            <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
-                                <input type="checkbox" id="clearPrivateKey" name="ssh.clearPrivateKey" value="1">
-                                <%= t('nodes.sshPrivateKeyClear') %>
-                            </label>
-                        </div>
-                    <% } %>
+                    <input type="hidden" name="ssh.clearPrivateKey" id="clearPrivateKeyInput" value="0">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
+                        <label class="btn btn-sm btn-secondary" for="sshPrivateKeyFile" style="cursor:pointer; margin:0;">
+                            <%= t('nodes.sshPrivateKeyUpload') %>
+                            <input type="file" id="sshPrivateKeyFile" accept=".pem,.key,*" style="display:none">
+                        </label>
+                        <% if (node?.ssh?.privateKey) { %>
+                        <button type="button" id="clearPrivateKeyBtn" class="btn btn-sm btn-danger">
+                            <%= t('nodes.sshPrivateKeyClear') %>
+                        </button>
+                        <% } %>
+                        <small class="hint" style="margin:0"><%= t('nodes.sshPrivateKeyEncrypted') %></small>
+                    </div>
                 </div>
                 <% if (node?._id) { %>
                 <div class="form-group" id="generateSshKeyGroup">
@@ -1038,6 +1044,32 @@ async function generateXrayKeys() {
         updateXraySecurityUI();
     }
 })();
+
+// SSH private key file upload
+document.getElementById('sshPrivateKeyFile')?.addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('sshPrivateKey').value = e.target.result;
+        document.getElementById('sshPrivateKeyBadge').style.display = '';
+    };
+    reader.readAsText(file);
+    this.value = '';
+});
+
+// Clear private key button
+document.getElementById('clearPrivateKeyBtn')?.addEventListener('click', function() {
+    document.getElementById('sshPrivateKey').value = '';
+    document.getElementById('clearPrivateKeyInput').value = '1';
+    document.getElementById('sshPrivateKeyBadge').style.display = 'none';
+    this.style.display = 'none';
+});
+
+// Show badge when user types in textarea
+document.getElementById('sshPrivateKey')?.addEventListener('input', function() {
+    document.getElementById('sshPrivateKeyBadge').style.display = this.value.trim() ? '' : 'none';
+});
 
 <% if (node && node._id) { %>
 // Generate & Install SSH Key
