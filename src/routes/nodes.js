@@ -237,7 +237,7 @@ router.post('/:id/reset-status', requireScope('nodes:write'), async (req, res) =
     try {
         const node = await HyNode.findByIdAndUpdate(
             req.params.id,
-            { $set: { status: 'online', lastError: '' } },
+            { $set: { status: 'online', lastError: '', healthFailures: 0 } },
             { new: true }
         );
         
@@ -544,7 +544,7 @@ router.post('/:id/setup', requireScope('nodes:write'), async (req, res) => {
         }
 
         if (result.success) {
-            const updateFields = { status: 'online', lastSync: new Date(), lastError: '' };
+            const updateFields = { status: 'online', lastSync: new Date(), lastError: '', healthFailures: 0 };
             if (node.type !== 'xray') updateFields.useTlsFiles = result.useTlsFiles;
             await HyNode.findByIdAndUpdate(req.params.id, { $set: updateFields });
             await invalidateNodesCache();
@@ -552,7 +552,7 @@ router.post('/:id/setup', requireScope('nodes:write'), async (req, res) => {
             res.json({ success: true, logs: result.logs });
         } else {
             await HyNode.findByIdAndUpdate(req.params.id, {
-                $set: { status: 'error', lastError: result.error },
+                $set: { status: 'error', lastError: result.error, healthFailures: 0 },
             });
             logger.warn(`[Nodes API] Auto-setup failed for ${node.name}: ${result.error}`);
             res.status(500).json({ success: false, error: result.error, logs: result.logs });

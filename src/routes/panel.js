@@ -684,13 +684,13 @@ router.post('/nodes/:id/setup', requireAuth, async (req, res) => {
         }
         
         if (result.success) {
-            const updateFields = { status: 'online', lastSync: new Date(), lastError: '' };
+            const updateFields = { status: 'online', lastSync: new Date(), lastError: '', healthFailures: 0 };
             if (node.type !== 'xray') updateFields.useTlsFiles = result.useTlsFiles;
             await HyNode.findByIdAndUpdate(req.params.id, { $set: updateFields });
             res.json({ success: true, message: 'Нода успешно настроена', logs: result.logs || [] });
         } else {
             await HyNode.findByIdAndUpdate(req.params.id, { 
-                $set: { status: 'error', lastError: result.error } 
+                $set: { status: 'error', lastError: result.error, healthFailures: 0 } 
             });
             res.status(500).json({ success: false, error: result.error, logs: result.logs || [] });
         }

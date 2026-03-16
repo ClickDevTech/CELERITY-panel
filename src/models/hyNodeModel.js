@@ -119,6 +119,7 @@ const hyNodeSchema = new mongoose.Schema({
     agentLastSeen: { type: Date, default: null },
     onlineUsers: { type: Number, default: 0 },
     maxOnlineUsers: { type: Number, default: 0 },
+    healthFailures: { type: Number, default: 0 },
     
     traffic: {
         tx: { type: Number, default: 0 },

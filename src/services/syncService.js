@@ -28,6 +28,9 @@ const { getPanelCertificates, isSameVpsAsPanel } = require('./nodeSetup');
 // HTTPS agent that ignores self-signed certs (agent uses self-signed cert by default)
 const selfSignedAgent = new https.Agent({ rejectUnauthorized: false });
 
+// Mark node offline after this many consecutive health check failures (1 check/min)
+const HEALTH_FAILURE_THRESHOLD = 3;
+
 class SyncService {
     constructor() {
         this.isSyncing = false;
@@ -110,18 +113,28 @@ class SyncService {
                     agentLastSeen: new Date(),
                     onlineUsers: data.users_count || 0,
                     status: 'online',
+                    healthFailures: 0,
                 },
             });
 
             return { online: true, xrayVersion: data.xray_version, usersCount: data.users_count };
         } catch (error) {
             logger.warn(`[Agent] ${node.name} health check failed: ${error.message}`);
+
             const prevNode = await HyNode.findOneAndUpdate(
                 { _id: node._id },
-                { $set: { agentStatus: 'offline', lastError: `Agent: ${error.message}` } }
+                {
+                    $inc: { healthFailures: 1 },
+                    $set: { agentStatus: 'offline', lastError: `Agent: ${error.message}` },
+                }
             );
-            if (prevNode && prevNode.status === 'online') {
+
+            const failures = (prevNode?.healthFailures || 0) + 1;
+
+            if (failures >= HEALTH_FAILURE_THRESHOLD && prevNode?.status === 'online') {
+                await HyNode.updateOne({ _id: node._id }, { $set: { status: 'offline' } });
                 webhook.emit(webhook.EVENTS.NODE_OFFLINE, { nodeId: node._id, name: node.name, lastError: error.message });
+                logger.warn(`[Agent] ${node.name}: marked offline after ${failures} consecutive failures`);
             }
             return { online: false };
         }
@@ -295,13 +308,13 @@ class SyncService {
         try {
             const health = await this.checkXrayAgentHealth(node);
             if (!health.online && hasAgent) {
-                await HyNode.updateOne({ _id: node._id }, { $set: { status: 'error', lastSync: new Date() } });
+                await HyNode.updateOne({ _id: node._id }, { $set: { status: 'error', lastSync: new Date(), healthFailures: 0 } });
                 return false;
             }
         } catch (_) {}
 
         await HyNode.updateOne({ _id: node._id }, {
-            $set: { status: 'online', lastSync: new Date(), lastError: '' },
+            $set: { status: 'online', lastSync: new Date(), lastError: '', healthFailures: 0 },
         });
 
         logger.info(`[Xray Sync] Node ${node.name}: sync complete, ${users.length} users`);
@@ -392,6 +405,7 @@ class SyncService {
                     $set: {
                         onlineUsers: usersCount,
                         status: 'online',
+                        healthFailures: 0,
                         xrayVersion: data.xray_version || '',
                         agentVersion: data.agent_version || '',
                         agentStatus: 'online',
@@ -407,12 +421,21 @@ class SyncService {
             return usersCount;
         } catch (error) {
             logger.warn(`[Agent] ${node.name}: unavailable - ${error.message}`);
+
             const prevNode = await HyNode.findOneAndUpdate(
                 { _id: node._id },
-                { $set: { agentStatus: 'offline', lastError: `Agent: ${error.message}` } }
+                {
+                    $inc: { healthFailures: 1 },
+                    $set: { agentStatus: 'offline', lastError: `Agent: ${error.message}` },
+                }
             );
-            if (prevNode && prevNode.status === 'online') {
+
+            const failures = (prevNode?.healthFailures || 0) + 1;
+
+            if (failures >= HEALTH_FAILURE_THRESHOLD && prevNode?.status === 'online') {
+                await HyNode.updateOne({ _id: node._id }, { $set: { status: 'offline' } });
                 webhook.emit(webhook.EVENTS.NODE_OFFLINE, { nodeId: node._id, name: node.name, lastError: error.message });
+                logger.warn(`[Agent] ${node.name}: marked offline after ${failures} consecutive failures`);
             }
             return 0;
         }
@@ -499,6 +522,7 @@ class SyncService {
                             status: isRunning ? 'online' : 'error',
                             lastSync: new Date(),
                             lastError: isRunning ? '' : 'Service not running after sync',
+                            healthFailures: 0,
                         }
                     }
                 );
@@ -512,7 +536,7 @@ class SyncService {
             logger.error(`[Sync] Node ${node.name} error: ${error.message}`);
             await HyNode.updateOne(
                 { _id: node._id },
-                { $set: { status: 'error', lastError: error.message } }
+                { $set: { status: 'error', lastError: error.message, healthFailures: 0 } }
             );
             webhook.emit(webhook.EVENTS.NODE_ERROR, { nodeId: node._id, name: node.name, error: error.message });
             return false;
@@ -671,10 +695,9 @@ class SyncService {
             
             const prevNode = await HyNode.findOneAndUpdate(
                 { _id: node._id },
-                { $set: { onlineUsers: online, status: 'online' } }
+                { $set: { onlineUsers: online, status: 'online', healthFailures: 0 } }
             );
 
-            // Fire node.online if it was previously offline/error
             if (prevNode && prevNode.status !== 'online') {
                 webhook.emit(webhook.EVENTS.NODE_ONLINE, { nodeId: node._id, name: node.name });
             }
@@ -684,19 +707,22 @@ class SyncService {
             }
             return online;
         } catch (error) {
-            // Log error but DON'T change status to error
-            // Error status should only be set for real node problems
             logger.warn(`[Stats] ${node.name}: Stats unavailable - ${error.message}`);
-            
-            // Update only lastError, don't touch status
+
             const prevNode = await HyNode.findOneAndUpdate(
                 { _id: node._id },
-                { $set: { lastError: `Stats: ${error.message}` } }
+                {
+                    $inc: { healthFailures: 1 },
+                    $set: { lastError: `Stats: ${error.message}` },
+                }
             );
 
-            // Fire node.offline only if it was online before
-            if (prevNode && prevNode.status === 'online') {
+            const failures = (prevNode?.healthFailures || 0) + 1;
+
+            if (failures >= HEALTH_FAILURE_THRESHOLD && prevNode?.status === 'online') {
+                await HyNode.updateOne({ _id: node._id }, { $set: { status: 'offline' } });
                 webhook.emit(webhook.EVENTS.NODE_OFFLINE, { nodeId: node._id, name: node.name, lastError: error.message });
+                logger.warn(`[Stats] ${node.name}: marked offline after ${failures} consecutive failures`);
             }
             return 0;
         }
