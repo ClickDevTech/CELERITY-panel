@@ -357,7 +357,7 @@ class CascadeService {
 
             // Ensure Xray is installed
             const xrayCheck = await ssh.exec('command -v xray');
-            if (!xrayCheck || !xrayCheck.trim()) {
+            if (!xrayCheck.stdout || !xrayCheck.stdout.trim()) {
                 logger.info(`[Cascade] Installing Xray on bridge ${bridgeNode.name}`);
                 await ssh.exec(
                     'curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh -o /tmp/xray-install.sh ' +
@@ -373,11 +373,11 @@ class CascadeService {
 
             // Verify the service started
             const statusResult = await ssh.exec('sleep 1 && systemctl is-active xray-bridge');
-            const isActive = (statusResult || '').trim() === 'active';
+            const isActive = (statusResult.stdout || '').trim() === 'active';
 
             if (!isActive) {
                 const logs = await ssh.exec('journalctl -u xray-bridge --no-pager -n 20');
-                throw new Error(`Bridge service not active. Logs: ${(logs || '').slice(0, 500)}`);
+                throw new Error(`Bridge service not active. Logs: ${(logs.stdout || logs.stderr || '').slice(0, 500)}`);
             }
 
             logger.info(`[Cascade] Bridge config deployed to ${bridgeNode.name}`);
@@ -420,7 +420,7 @@ class CascadeService {
         try {
             await ssh.connect();
             const result = await ssh.exec(`ss -tn state established '( sport = :${port} )' | grep -c ESTAB || echo 0`);
-            const count = parseInt((result || '0').trim(), 10);
+            const count = parseInt((result.stdout || '0').trim(), 10);
             return count > 0;
         } catch {
             return false;
