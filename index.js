@@ -357,14 +357,28 @@ app.use((err, req, res, next) => {
 
 // ==================== START SERVER ====================
 
+async function connectMongo(retries = 5, delayMs = 3000) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            await mongoose.connect(config.MONGO_URI, {
+                maxPoolSize: 10,
+                minPoolSize: 2,
+                serverSelectionTimeoutMS: 10000,
+                socketTimeoutMS: 45000,
+            });
+            return;
+        } catch (err) {
+            if (attempt === retries) throw err;
+            logger.warn(`[MongoDB] Connection attempt ${attempt}/${retries} failed: ${err.message}. Retrying in ${delayMs / 1000}s...`);
+            await new Promise(r => setTimeout(r, delayMs));
+            delayMs = Math.min(delayMs * 2, 30000);
+        }
+    }
+}
+
 async function startServer() {
     try {
-        await mongoose.connect(config.MONGO_URI, {
-            maxPoolSize: 10,
-            minPoolSize: 2,
-            serverSelectionTimeoutMS: 5000,
-            socketTimeoutMS: 45000,
-        });
+        await connectMongo();
         logger.info('[MongoDB] Connected');
         
         await cacheService.connect();

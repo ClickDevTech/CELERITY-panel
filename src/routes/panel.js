@@ -469,6 +469,7 @@ router.get('/nodes/add', requireAuth, async (req, res) => {
         node: null,
         groups,
         error: req.query.error || null,
+        panelDomain: config.PANEL_DOMAIN || '',
     });
 });
 
@@ -573,6 +574,7 @@ router.get('/nodes/:id', requireAuth, async (req, res) => {
             node,
             groups,
             error: req.query.error || null,
+            panelDomain: config.PANEL_DOMAIN || '',
         });
     } catch (error) {
         res.status(500).send('Error: ' + error.message);

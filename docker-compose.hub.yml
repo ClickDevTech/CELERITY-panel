@@ -9,6 +9,12 @@ services:
     container_name: hysteria-redis
     restart: always
     command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save ""
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     networks:
       - hysteria-net
 
@@ -23,6 +29,12 @@ services:
       MONGO_INITDB_DATABASE: hysteria
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-hysteria}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')", "--quiet"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - hysteria-net
 
@@ -32,8 +44,10 @@ services:
     container_name: hysteria-backend
     restart: always
     depends_on:
-      - mongo
-      - redis
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"

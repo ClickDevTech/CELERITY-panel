@@ -661,6 +661,21 @@ async function setupXrayNode(node, options = {}) {
 
     log(`Starting Xray setup for ${node.name} (${node.ip})`);
 
+    // Detect port conflict: Xray on the same VPS as the panel (Caddy) using port 443/80
+    const sameVps = isSameVpsAsPanel(node);
+    const nodePort = node.port || 443;
+    if (sameVps && (nodePort === 443 || nodePort === 80)) {
+        const msg = `Port conflict detected: Xray port ${nodePort} is already used by the panel (Caddy) on this server. ` +
+            `Use a different port (e.g. 8443) for the Xray node. ` +
+            `After changing the port, save the node and run Auto Setup again.`;
+        log(`ERROR: ${msg}`);
+        return { success: false, error: msg, logs, realityKeys: null };
+    }
+
+    if (sameVps) {
+        log(`Same-VPS setup detected (node port: ${nodePort}, panel domain: ${config.PANEL_DOMAIN})`);
+    }
+
     let conn;
     let generatedKeys = null;
 
@@ -879,7 +894,6 @@ echo "Done: TLS cert generated"
 echo "TLS disabled, skipping cert generation"
 `;
 
-    const panelDownloadBase = `${config.BASE_URL}/downloads`;
     const AGENT_INSTALL = `#!/bin/bash
 # NOTE: set -e is intentionally NOT used here so agent install failure
 # doesn't break the rest of the script (Xray is already set up).
@@ -892,17 +906,30 @@ else
     BIN_NAME="cc-agent-linux-amd64"
 fi
 
-# Try panel (dev), then GitHub releases (prod)
-PANEL_URL="${panelDownloadBase}/$BIN_NAME"
 GITHUB_URL="https://github.com/ClickDevTech/CELERITY-panel/releases/latest/download/$BIN_NAME"
 
-if curl -sSL --max-time 30 "$PANEL_URL" -o /usr/local/bin/cc-agent 2>&1 && [ -s /usr/local/bin/cc-agent ]; then
-    chmod +x /usr/local/bin/cc-agent
-    echo "Done: cc-agent downloaded from panel"
-elif curl -sSL --max-time 60 "$GITHUB_URL" -o /usr/local/bin/cc-agent 2>&1 && [ -s /usr/local/bin/cc-agent ]; then
+# Clean up any previous broken/stale binary before downloading
+rm -f /usr/local/bin/cc-agent
+
+DOWNLOADED=0
+
+# Primary source: GitHub releases (curl -f exits with code 22 on HTTP errors)
+if curl -fsSL --max-time 60 "$GITHUB_URL" -o /usr/local/bin/cc-agent 2>/dev/null && [ -s /usr/local/bin/cc-agent ]; then
     chmod +x /usr/local/bin/cc-agent
     echo "Done: cc-agent downloaded from GitHub"
-else
+    DOWNLOADED=1
+fi
+
+# Validate the downloaded file is a real ELF binary, not an error page
+if [ "$DOWNLOADED" = "1" ]; then
+    if command -v file &>/dev/null && ! file /usr/local/bin/cc-agent 2>/dev/null | grep -q "ELF"; then
+        echo "WARNING: Downloaded file does not appear to be a valid binary (got: $(file /usr/local/bin/cc-agent 2>/dev/null || echo 'unknown'))"
+        rm -f /usr/local/bin/cc-agent
+        DOWNLOADED=0
+    fi
+fi
+
+if [ "$DOWNLOADED" = "0" ]; then
     echo "WARNING: Could not download cc-agent binary."
     echo "Place the binary at /usr/local/bin/cc-agent and restart cc-agent.service"
     echo "Continuing with Xray setup (agent will be missing)..."

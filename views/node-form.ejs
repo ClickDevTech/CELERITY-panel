@@ -86,7 +86,7 @@
                     <div class="form-group">
                         <label for="port"><%= t('nodes.port') %></label>
                         <input type="number" id="port" name="port" value="<%= node?.port || 443 %>"
-                               placeholder="443">
+                               placeholder="443" oninput="checkXrayPortConflict()">
                     </div>
                     <div class="form-group hysteria-only" id="portRangeGroup" style="<%= node?.type === 'xray' ? 'display:none' : '' %>">
                         <label for="portRange"><%= t('nodes.portRange') %></label>
@@ -94,6 +94,13 @@
                                placeholder="20000-50000">
                         <small><%= t('nodes.portRangeHint') %></small>
                     </div>
+                </div>
+
+                <div id="xrayPortConflictWarn" class="alert alert-error" style="display:none;">
+                    <i class="ti ti-alert-triangle"></i>
+                    <strong>Port conflict:</strong>
+                    Port 443/80 is used by the panel (Caddy). Xray on the same server must use a different port (e.g. <strong>8443</strong>).
+                    Otherwise Xray will break the panel after a server reboot.
                 </div>
 
                 <div class="form-group hysteria-only" id="domainGroup" style="<%= node?.type === 'xray' ? 'display:none' : '' %>">
@@ -720,6 +727,20 @@ const i18nConfig = {
 
 // ==================== Protocol switcher ====================
 
+const PANEL_DOMAIN = '<%= panelDomain %>';
+
+function checkXrayPortConflict() {
+    const warn = document.getElementById('xrayPortConflictWarn');
+    if (!warn) return;
+    const proto = document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
+    const ip = (document.getElementById('ip')?.value || '').trim().toLowerCase();
+    const port = parseInt(document.getElementById('port')?.value || '443', 10);
+    const panelHostname = PANEL_DOMAIN.split(':')[0].toLowerCase();
+    const isSameServer = ip === 'localhost' || ip === '127.0.0.1' || ip === '::1' || ip === panelHostname;
+    const isConflictPort = port === 443 || port === 80;
+    warn.style.display = (proto === 'xray' && isSameServer && isConflictPort) ? '' : 'none';
+}
+
 function switchProto(proto) {
     const xraySection = document.getElementById('xraySection');
     const labelHysteria = document.getElementById('protoHysteriaLabel');
@@ -737,6 +758,7 @@ function switchProto(proto) {
         labelXray.classList.remove('active');
         hysteriaOnlyEls.forEach(el => el.style.display = '');
     }
+    checkXrayPortConflict();
 }
 
 // ==================== Xray UI ====================
@@ -1116,4 +1138,11 @@ document.getElementById('generateSshKeyBtn')?.addEventListener('click', async fu
     }
 });
 <% } %>
+
+// Run port conflict check on page load and when IP changes
+(function () {
+    checkXrayPortConflict();
+    const ipInput = document.getElementById('ip');
+    if (ipInput) ipInput.addEventListener('input', checkXrayPortConflict);
+})();
 </script>
