@@ -1,8 +1,17 @@
 <div class="page-header sticky-header">
     <div class="page-header-left">
-        <span class="results-count" id="resultsCount"><%= t('common.total') %>: <%= nodes.length %></span>
+        <div class="view-tabs">
+            <button class="view-tab active" id="tabList" onclick="switchNodesView('list')">
+                <i class="ti ti-list"></i> <%= t('nodes.title') %>
+                <span class="tab-badge"><%= nodes.length %></span>
+            </button>
+            <button class="view-tab" id="tabNetwork" onclick="switchNodesView('network')">
+                <i class="ti ti-topology-star-3"></i> <%= t('network.title') %>
+                <% if (linksCount) { %><span class="tab-badge"><%= linksCount %></span><% } %>
+            </button>
+        </div>
     </div>
-    <div class="page-header-center">
+    <div class="page-header-center" id="listFilters">
         <div class="filters-bar">
             <select id="filterStatus" class="filter-select" onchange="applyFilters()">
                 <option value=""><%= t('nodes.allStatuses') %></option>
@@ -18,11 +27,28 @@
             </select>
         </div>
     </div>
-    <div class="page-header-right">
+    <div class="page-header-center" id="networkToolbar" style="display:none">
+        <div class="filters-bar">
+            <button class="btn btn-sm" id="btnAutoLayout" title="<%= t('network.autoLayout') %>">
+                <i class="ti ti-layout-distribute-horizontal"></i> <%= t('network.autoLayout') %>
+            </button>
+            <button class="btn btn-sm" id="btnFitView" title="<%= t('network.fitView') %>">
+                <i class="ti ti-arrows-maximize"></i>
+            </button>
+            <button class="btn btn-sm" id="btnRefresh" title="<%= t('network.refresh') %>">
+                <i class="ti ti-refresh"></i>
+            </button>
+        </div>
+    </div>
+    <div class="page-header-right" id="listActions">
         <a href="/panel/nodes/add" class="btn btn-primary"><i class="ti ti-server-2"></i> <%= t('nodes.addNode') %></a>
+    </div>
+    <div class="page-header-right" id="networkActions" style="display:none">
+        <button class="btn btn-primary" id="btnAddLink"><i class="ti ti-plus"></i> <%= t('network.addLink') %></button>
     </div>
 </div>
 
+<div id="viewList">
 <div class="card">
     <div class="card-body no-padding">
         <div class="table-wrapper">
@@ -64,6 +90,9 @@
                                     <img src="/img/xray.svg" alt="Xray" title="Xray VLESS" style="width:16px;height:16px;vertical-align:middle;margin-left:6px;opacity:0.7;">
                                     <% } else { %>
                                     <img src="/img/hysteria.svg" alt="Hysteria" title="Hysteria 2" style="width:16px;height:16px;vertical-align:middle;margin-left:6px;opacity:0.7;">
+                                    <% } %>
+                                    <% if (node.cascadeRole && node.cascadeRole !== 'standalone') { %>
+                                    <span class="badge-cascade <%= node.cascadeRole %>"><%= node.cascadeRole.toUpperCase() %></span>
                                     <% } %>
                                     <% if (node.domain) { %>
                                     <br><small class="text-muted"><%= node.domain %></small>
@@ -176,6 +205,86 @@
         </div>
     </div>
 </div>
+</div><!-- /viewList -->
+
+<!-- Network Map View (hidden by default, loaded on demand) -->
+<div id="viewNetwork" style="display:none">
+    <link rel="stylesheet" href="/css/network.css">
+    <div class="network-page" style="height: calc(100vh - 160px);">
+        <div class="network-container">
+            <div id="cy" class="cytoscape-canvas"></div>
+        </div>
+
+        <!-- Node/Edge detail drawer -->
+        <div class="network-drawer" id="nodeDrawer">
+            <div class="drawer-header">
+                <h3 id="drawerTitle"></h3>
+                <button class="drawer-close" id="drawerClose"><i class="ti ti-x"></i></button>
+            </div>
+            <div class="drawer-body" id="drawerBody"></div>
+        </div>
+    </div>
+
+    <!-- Add Link Modal -->
+    <div class="modal-overlay" id="addLinkModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="ti ti-link"></i> <%= t('network.addLink') %></h3>
+                <button class="modal-close" id="modalClose"><i class="ti ti-x"></i></button>
+            </div>
+            <form id="addLinkForm" class="modal-body">
+                <div class="form-group">
+                    <label><%= t('network.linkName') %></label>
+                    <input type="text" name="name" class="form-input" required placeholder="e.g. YandexCloud → France">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label><%= t('network.portalNode') %></label>
+                        <select name="portalNodeId" class="form-input" id="selectPortal" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label><%= t('network.bridgeNode') %></label>
+                        <select name="bridgeNodeId" class="form-input" id="selectBridge" required></select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label><%= t('network.tunnelPort') %></label>
+                        <input type="number" name="tunnelPort" class="form-input" value="10086" min="1" max="65535">
+                    </div>
+                    <div class="form-group">
+                        <label><%= t('network.tunnelProtocol') %></label>
+                        <select name="tunnelProtocol" class="form-input">
+                            <option value="vless">VLESS</option>
+                            <option value="vmess">VMess</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label><%= t('network.tunnelTransport') %></label>
+                        <select name="tunnelTransport" class="form-input">
+                            <option value="tcp">TCP</option>
+                            <option value="ws">WebSocket</option>
+                            <option value="grpc">gRPC</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label><%= t('network.tunnelSecurity') %></label>
+                        <select name="tunnelSecurity" class="form-input">
+                            <option value="none">None</option>
+                            <option value="tls">TLS</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn" id="modalCancel"><%= t('common.cancel') %></button>
+                    <button type="submit" class="btn btn-primary"><%= t('network.createLink') %></button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div><!-- /viewNetwork -->
 
 <div id="toast" class="toast"></div>
 
@@ -235,6 +344,58 @@
     color: var(--warning, #f59e0b);
     background: rgba(245,158,11,0.08);
 }
+/* View tabs */
+.view-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-secondary, rgba(255,255,255,0.03));
+    border-radius: 8px;
+    padding: 3px;
+}
+.view-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: none;
+    background: none;
+    color: var(--text-muted, #64748b);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: inherit;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+.view-tab:hover { color: var(--text-primary, #e2e8f0); }
+.view-tab.active {
+    background: var(--accent, #6366f1);
+    color: #fff;
+}
+.tab-badge {
+    background: rgba(255,255,255,0.15);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+}
+.view-tab.active .tab-badge {
+    background: rgba(255,255,255,0.25);
+}
+/* Cascade role badge in node table */
+.badge-cascade {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+.badge-cascade.entry { background: #6366f120; border: 1px solid #6366f1; color: #818cf8; }
+.badge-cascade.exit { background: #f59e0b20; border: 1px solid #f59e0b; color: #fbbf24; }
+.badge-cascade.relay { background: #8b5cf620; border: 1px solid #8b5cf6; color: #a78bfa; }
 </style>
 
 <script>
@@ -335,5 +496,67 @@ function showToast(message, type = 'success') {
     toast.textContent = message;
     toast.className = 'toast show ' + type;
     setTimeout(() => toast.className = 'toast', 3000);
+}
+
+// ==================== View Tabs ====================
+
+let networkLoaded = false;
+
+function switchNodesView(view) {
+    const viewList = document.getElementById('viewList');
+    const viewNetwork = document.getElementById('viewNetwork');
+    const tabList = document.getElementById('tabList');
+    const tabNetwork = document.getElementById('tabNetwork');
+    const listFilters = document.getElementById('listFilters');
+    const networkToolbar = document.getElementById('networkToolbar');
+    const listActions = document.getElementById('listActions');
+    const networkActions = document.getElementById('networkActions');
+
+    if (view === 'network') {
+        viewList.style.display = 'none';
+        viewNetwork.style.display = '';
+        tabList.classList.remove('active');
+        tabNetwork.classList.add('active');
+        listFilters.style.display = 'none';
+        networkToolbar.style.display = '';
+        listActions.style.display = 'none';
+        networkActions.style.display = '';
+
+        if (!networkLoaded) {
+            loadNetworkScripts();
+            networkLoaded = true;
+        } else if (window._networkResize) {
+            window._networkResize();
+        }
+    } else {
+        viewList.style.display = '';
+        viewNetwork.style.display = 'none';
+        tabList.classList.add('active');
+        tabNetwork.classList.remove('active');
+        listFilters.style.display = '';
+        networkToolbar.style.display = 'none';
+        listActions.style.display = '';
+        networkActions.style.display = 'none';
+    }
+}
+
+function loadNetworkScripts() {
+    const scripts = [
+        'https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.4/cytoscape.min.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js',
+        'https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js',
+        '/js/network.js'
+    ];
+
+    let idx = 0;
+    function next() {
+        if (idx >= scripts.length) return;
+        const s = document.createElement('script');
+        s.src = scripts[idx];
+        s.onload = function() { idx++; next(); };
+        s.onerror = function() { idx++; next(); };
+        document.body.appendChild(s);
+    }
+    next();
 }
 </script>

@@ -79,7 +79,7 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
         const {
             name, ip, domain, sni, port, portRange, statsPort,
             groups, ssh, paths, settings, rankingCoefficient,
-            type, xray,
+            type, xray, cascadeRole, country,
         } = req.body;
         
         if (!name || !ip) {
@@ -114,6 +114,8 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
             paths: paths || {},
             settings: settings || {},
             rankingCoefficient: rankingCoefficient || 1.0,
+            cascadeRole: cascadeRole || 'standalone',
+            country: country || '',
             active: true,
             status: 'offline',
         };
@@ -145,7 +147,7 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         const allowedUpdates = [
             'name', 'domain', 'sni', 'port', 'portRange', 'statsPort',
             'groups', 'ssh', 'paths', 'settings', 'active', 'rankingCoefficient',
-            'type', 'xray',
+            'type', 'xray', 'cascadeRole', 'country',
         ];
         
         const updates = {};

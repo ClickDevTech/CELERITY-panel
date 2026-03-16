@@ -80,9 +80,9 @@ async function getActiveNodesWithCache() {
     const cached = await cache.getActiveNodes();
     if (cached) return cached;
 
-    // Include type, xray, and obfs fields needed for URI generation
+    // Include type, xray, obfs, and cascadeRole fields needed for URI generation and filtering
     const nodes = await HyNode.find({ active: true })
-        .select('name type flag ip domain sni port portRange portConfigs obfs active status onlineUsers maxOnlineUsers rankingCoefficient groups xray')
+        .select('name type flag ip domain sni port portRange portConfigs obfs active status onlineUsers maxOnlineUsers rankingCoefficient groups xray cascadeRole')
         .lean();
     await cache.setActiveNodes(nodes);
     return nodes;
@@ -118,6 +118,16 @@ async function getActiveNodes(user) {
     
     const lb = settings.loadBalancing || {};
     
+    // Exclude exit (bridge) nodes — users connect to entry (portal) nodes,
+    // traffic is routed through the cascade automatically
+    {
+        const beforeCascadeFilter = nodes.length;
+        nodes = nodes.filter(n => n.cascadeRole !== 'exit');
+        if (nodes.length < beforeCascadeFilter) {
+            logger.debug(`[Sub] Filtered out ${beforeCascadeFilter - nodes.length} exit (bridge) nodes from subscription`);
+        }
+    }
+
     // Фильтрация перегруженных нод (если включено)
     if (lb.hideOverloaded) {
         const beforeFilter = nodes.length;

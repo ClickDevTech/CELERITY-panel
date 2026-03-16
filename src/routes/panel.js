@@ -444,16 +444,19 @@ router.get('/', requireAuth, async (req, res) => {
 // GET /panel/nodes - Список нод
 router.get('/nodes', requireAuth, async (req, res) => {
     try {
-        const [nodes, groups] = await Promise.all([
+        const CascadeLink = require('../models/cascadeLinkModel');
+        const [nodes, groups, linksCount] = await Promise.all([
             HyNode.find().populate('groups', 'name color').sort({ name: 1 }),
             getActiveGroups(),
+            CascadeLink.countDocuments({ active: true }),
         ]);
-        
+
         render(res, 'nodes', {
             title: res.locals.locales.nodes.title,
             page: 'nodes',
             nodes,
             groups,
+            linksCount,
         });
     } catch (error) {
         res.status(500).send('Error: ' + error.message);
@@ -468,6 +471,7 @@ router.get('/nodes/add', requireAuth, async (req, res) => {
         page: 'nodes',
         node: null,
         groups,
+        cascadeLinks: [],
         error: req.query.error || null,
         panelDomain: config.PANEL_DOMAIN || '',
     });
@@ -531,6 +535,8 @@ router.post('/nodes', requireAuth, async (req, res) => {
             active: req.body.active === 'on',
             useCustomConfig: req.body.useCustomConfig === 'on',
             customConfig: req.body.customConfig || '',
+            cascadeRole: req.body.cascadeRole || 'standalone',
+            country: req.body.country || '',
             obfs: {
                 type: req.body['obfs.type'] || '',
                 password: req.body['obfs.password'] || '',
@@ -559,9 +565,15 @@ router.post('/nodes', requireAuth, async (req, res) => {
 // GET /panel/nodes/:id - Edit node form
 router.get('/nodes/:id', requireAuth, async (req, res) => {
     try {
-        const [node, groups] = await Promise.all([
+        const CascadeLink = require('../models/cascadeLinkModel');
+        const [node, groups, cascadeLinks] = await Promise.all([
             HyNode.findById(req.params.id).populate('groups', 'name color'),
             getActiveGroups(),
+            CascadeLink.find({
+                $or: [{ portalNode: req.params.id }, { bridgeNode: req.params.id }],
+            }).populate('portalNode', 'name ip flag')
+              .populate('bridgeNode', 'name ip flag')
+              .sort({ createdAt: -1 }),
         ]);
 
         if (!node) {
@@ -573,6 +585,7 @@ router.get('/nodes/:id', requireAuth, async (req, res) => {
             page: 'nodes',
             node,
             groups,
+            cascadeLinks: cascadeLinks || [],
             error: req.query.error || null,
             panelDomain: config.PANEL_DOMAIN || '',
         });
@@ -617,6 +630,8 @@ router.post('/nodes/:id', requireAuth, async (req, res) => {
             'obfs.type': req.body['obfs.type'] || '',
             'obfs.password': req.body['obfs.password'] || '',
             flag: req.body.flag || '',
+            cascadeRole: req.body.cascadeRole || 'standalone',
+            country: req.body.country || '',
             'ssh.port': parseInt(req.body['ssh.port']) || 22,
             'ssh.username': req.body['ssh.username'] || 'root',
         };
@@ -1964,33 +1979,9 @@ router.get('/nodes/:id/terminal', requireAuth, async (req, res) => {
     }
 });
 
-// ==================== NETWORK MAP ====================
-
-// GET /panel/network - Visual network topology map
-router.get('/network', requireAuth, async (req, res) => {
-    try {
-        const CascadeLink = require('../models/cascadeLinkModel');
-
-        const [nodes, links] = await Promise.all([
-            HyNode.find({ active: true })
-                .select('name ip flag type status cascadeRole')
-                .sort({ name: 1 })
-                .lean(),
-            CascadeLink.find({ active: true })
-                .populate('portalNode', 'name ip')
-                .populate('bridgeNode', 'name ip')
-                .lean(),
-        ]);
-
-        render(res, 'network', {
-            title: res.locals.t('network.title'),
-            page: 'network',
-            nodesCount: nodes.length,
-            linksCount: links.length,
-        });
-    } catch (error) {
-        res.status(500).send('Error: ' + error.message);
-    }
+// GET /panel/network - Redirect to nodes page (network map is a tab there)
+router.get('/network', requireAuth, (req, res) => {
+    res.redirect('/panel/nodes');
 });
 
 // ==================== STATS ====================

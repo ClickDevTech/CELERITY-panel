@@ -34,6 +34,42 @@
                 </div>
             </div>
 
+            <%# ========== 1b. Cascade Role & Country (Xray only) ========== %>
+            <div class="form-section xray-only" id="cascadeRoleSection" style="<%= node?.type === 'xray' ? '' : 'display:none' %>">
+                <h3><i class="ti ti-topology-star-3"></i> <%= t('nodes.cascadeRole') %></h3>
+                <small class="section-hint"><%= t('nodes.cascadeRoleHint') %></small>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="cascadeRole"><%= t('nodes.cascadeRole') %></label>
+                        <select id="cascadeRole" name="cascadeRole" onchange="onCascadeRoleChange()">
+                            <option value="standalone" <%= (node?.cascadeRole || 'standalone') === 'standalone' ? 'selected' : '' %>>
+                                Standalone — <%= t('nodes.roleStandalone') %>
+                            </option>
+                            <option value="entry" <%= node?.cascadeRole === 'entry' ? 'selected' : '' %>>
+                                Entry (Portal) — <%= t('nodes.roleEntry') %>
+                            </option>
+                            <option value="exit" <%= node?.cascadeRole === 'exit' ? 'selected' : '' %>>
+                                Exit (Bridge) — <%= t('nodes.roleExit') %>
+                            </option>
+                            <option value="relay" <%= node?.cascadeRole === 'relay' ? 'selected' : '' %>>
+                                Relay — <%= t('nodes.roleRelay') %>
+                            </option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="country"><%= t('nodes.country') %></label>
+                        <input type="text" id="country" name="country"
+                               value="<%= node?.country || '' %>"
+                               placeholder="RU, DE, NL...">
+                        <small><%= t('nodes.countryHint') %></small>
+                    </div>
+                </div>
+                <div class="alert alert-info" id="cascadeExitHint" style="<%= node?.cascadeRole === 'exit' ? '' : 'display:none' %>">
+                    <i class="ti ti-info-circle"></i>
+                    <%= t('nodes.exitNodeHint') %>
+                </div>
+            </div>
+
             <%# ========== 2. Protocol ========== %>
             <div class="form-section">
                 <h3><%= t('nodes.sectionProtocol') %></h3>
@@ -492,6 +528,71 @@
 </div>
 <% } %>
 
+<%# ========== Cascade Links (edit only, xray) ========== %>
+<% if (node && node.type === 'xray' && cascadeLinks && cascadeLinks.length > 0) { %>
+<div class="card mt-3">
+    <div class="card-header">
+        <h2><i class="ti ti-topology-star-3" style="margin-right:6px"></i> <%= t('nodes.cascadeRole') %></h2>
+        <span class="badge badge-secondary"><%= cascadeLinks.length %></span>
+    </div>
+    <div class="card-body no-padding">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th><%= t('common.name') %></th>
+                    <th>Portal</th>
+                    <th>Bridge</th>
+                    <th>Port</th>
+                    <th><%= t('common.status') %></th>
+                    <th><%= t('common.actions') %></th>
+                </tr>
+            </thead>
+            <tbody>
+                <% cascadeLinks.forEach(link => {
+                    const isPortal = link.portalNode && link.portalNode._id.toString() === node._id.toString();
+                %>
+                <tr>
+                    <td><strong><%= link.name %></strong></td>
+                    <td>
+                        <% if (link.portalNode) { %>
+                            <%= link.portalNode.flag || '' %> <%= link.portalNode.name %>
+                            <% if (isPortal) { %><span class="badge badge-info" style="font-size:9px">THIS</span><% } %>
+                        <% } else { %>—<% } %>
+                    </td>
+                    <td>
+                        <% if (link.bridgeNode) { %>
+                            <%= link.bridgeNode.flag || '' %> <%= link.bridgeNode.name %>
+                            <% if (!isPortal) { %><span class="badge badge-info" style="font-size:9px">THIS</span><% } %>
+                        <% } else { %>—<% } %>
+                    </td>
+                    <td><code><%= link.tunnelPort %></code></td>
+                    <td>
+                        <span class="badge badge-<%= link.status === 'online' ? 'success' : (link.status === 'error' ? 'danger' : (link.status === 'deployed' ? 'info' : 'warning')) %>">
+                            <%= link.status %>
+                        </span>
+                    </td>
+                    <td style="white-space:nowrap">
+                        <% if (['pending', 'offline', 'error'].includes(link.status)) { %>
+                        <button class="btn btn-sm" onclick="cascadeAction('<%= link._id %>', 'deploy')" title="Deploy">
+                            <i class="ti ti-upload"></i>
+                        </button>
+                        <% } else { %>
+                        <button class="btn btn-sm" onclick="cascadeAction('<%= link._id %>', 'undeploy')" title="Undeploy">
+                            <i class="ti ti-upload-off"></i>
+                        </button>
+                        <% } %>
+                        <button class="btn btn-sm btn-icon-danger" onclick="cascadeDelete('<%= link._id %>', '<%= link.name %>')" title="Delete">
+                            <i class="ti ti-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                <% }); %>
+            </tbody>
+        </table>
+    </div>
+</div>
+<% } %>
+
 <%# ========== Management (edit only) ========== %>
 <% if (node) { %>
 <div class="card mt-3">
@@ -743,22 +844,32 @@ function checkXrayPortConflict() {
 
 function switchProto(proto) {
     const xraySection = document.getElementById('xraySection');
+    const cascadeSection = document.getElementById('cascadeRoleSection');
     const labelHysteria = document.getElementById('protoHysteriaLabel');
     const labelXray = document.getElementById('protoXrayLabel');
     const hysteriaOnlyEls = document.querySelectorAll('.hysteria-only');
 
     if (proto === 'xray') {
         xraySection.style.display = '';
+        if (cascadeSection) cascadeSection.style.display = '';
         labelXray.classList.add('active');
         labelHysteria.classList.remove('active');
         hysteriaOnlyEls.forEach(el => el.style.display = 'none');
     } else {
         xraySection.style.display = 'none';
+        if (cascadeSection) cascadeSection.style.display = 'none';
         labelHysteria.classList.add('active');
         labelXray.classList.remove('active');
         hysteriaOnlyEls.forEach(el => el.style.display = '');
     }
     checkXrayPortConflict();
+}
+
+function onCascadeRoleChange() {
+    const hint = document.getElementById('cascadeExitHint');
+    if (hint) {
+        hint.style.display = document.getElementById('cascadeRole').value === 'exit' ? '' : 'none';
+    }
 }
 
 // ==================== Xray UI ====================
@@ -1145,4 +1256,36 @@ document.getElementById('generateSshKeyBtn')?.addEventListener('click', async fu
     const ipInput = document.getElementById('ip');
     if (ipInput) ipInput.addEventListener('input', checkXrayPortConflict);
 })();
+
+// ==================== Cascade link actions ====================
+
+async function cascadeAction(linkId, action) {
+    if (!confirm(action === 'deploy' ? 'Deploy this cascade link?' : 'Undeploy this cascade link?')) return;
+    try {
+        const res = await fetch('/api/cascade/links/' + linkId + '/' + action, { method: 'POST' });
+        if (res.ok) {
+            location.reload();
+        } else {
+            const data = await res.json().catch(() => ({}));
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function cascadeDelete(linkId, name) {
+    if (!confirm('Delete cascade link "' + name + '"? This will also undeploy it.')) return;
+    try {
+        const res = await fetch('/api/cascade/links/' + linkId, { method: 'DELETE' });
+        if (res.ok) {
+            location.reload();
+        } else {
+            const data = await res.json().catch(() => ({}));
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
 </script>
