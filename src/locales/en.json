@@ -160,6 +160,8 @@
     "sshKeyGenerating": "Generating and installing key...",
     "sshKeyInstalled": "SSH key generated and installed!",
     "sshKeyError": "Key generation error",
+    "downloadSshKey": "Download SSH Key",
+    "downloadSshKeyMissing": "SSH private key is not configured for this node",
     "maxOnlineUsers": "Online Users Limit",
     "maxOnlineHint": "0 = unlimited. If exceeded, node is hidden from subscription (if enabled).",
     "rankingCoefficient": "Priority (ranking)",

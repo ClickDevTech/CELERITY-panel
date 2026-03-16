@@ -160,6 +160,8 @@
     "sshKeyGenerating": "Генерация и установка ключа...",
     "sshKeyInstalled": "SSH ключ сгенерирован и установлен!",
     "sshKeyError": "Ошибка генерации ключа",
+    "downloadSshKey": "Скачать SSH ключ",
+    "downloadSshKeyMissing": "Для этой ноды не настроен SSH приватный ключ",
     "maxOnlineUsers": "Лимит онлайн пользователей",
     "maxOnlineHint": "0 = без лимита. При превышении нода скрывается из подписки (если включено).",
     "rankingCoefficient": "Приоритет (ranking)",
