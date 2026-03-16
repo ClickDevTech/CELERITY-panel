@@ -65,6 +65,19 @@ function decryptSshPrivateKey(key) {
     return key;
 }
 
+function buildSshKeyFilename(node) {
+    const safe = (value, fallback) => {
+        const normalized = String(value || '')
+            .trim()
+            .replace(/[^a-zA-Z0-9._-]+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+        return normalized || fallback;
+    };
+
+    return `${safe(node.name, 'node')}-${safe(node.ip, 'unknown')}.key`;
+}
+
 /**
  * Open a direct SSH connection to a node using its stored credentials.
  * @returns {Promise<Client>} connected ssh2 Client
@@ -738,6 +751,37 @@ router.post('/nodes/:id/generate-ssh-key', requireAuth, generateSshKeyLimiter, a
     } catch (error) {
         logger.error(`[Panel] SSH key generation error: ${error.message}`);
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /panel/nodes/:id/download-ssh-key - Download stored SSH private key
+router.get('/nodes/:id/download-ssh-key', requireAuth, async (req, res) => {
+    try {
+        const node = await HyNode.findById(req.params.id).select('name ip ssh.privateKey');
+
+        if (!node) {
+            return res.status(404).type('text/plain; charset=utf-8').send('Node not found');
+        }
+
+        if (!node.ssh?.privateKey) {
+            return res.status(404).type('text/plain; charset=utf-8').send('SSH private key not configured');
+        }
+
+        const privateKey = decryptSshPrivateKey(node.ssh.privateKey);
+        const filename = buildSshKeyFilename(node);
+
+        logger.info(`[Panel] SSH private key downloaded for node ${node.name}`);
+
+        res.set({
+            'Content-Type': 'application/x-pem-file; charset=utf-8',
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+        });
+        return res.send(privateKey);
+    } catch (error) {
+        logger.error(`[Panel] SSH key download error: ${error.message}`);
+        return res.status(500).type('text/plain; charset=utf-8').send('Failed to download SSH private key');
     }
 });
 

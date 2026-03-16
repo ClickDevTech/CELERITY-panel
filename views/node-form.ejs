@@ -517,6 +517,17 @@
                 <span class="badge" style="font-size:10px;background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;margin-left:4px;"><%= node.outbounds.length %></span>
                 <% } %>
             </a>
+            <% if (node.ssh?.privateKey) { %>
+            <a href="/panel/nodes/<%= node._id %>/download-ssh-key" class="action-btn" style="text-decoration:none;text-align:center;">
+                <span class="action-icon"><i class="ti ti-download"></i></span>
+                <span><%= t('nodes.downloadSshKey') %></span>
+            </a>
+            <% } else { %>
+            <span class="action-btn is-disabled" style="text-decoration:none;text-align:center;" title="<%= t('nodes.downloadSshKeyMissing') %>" aria-disabled="true">
+                <span class="action-icon"><i class="ti ti-download"></i></span>
+                <span><%= t('nodes.downloadSshKey') %></span>
+            </span>
+            <% } %>
             <button class="action-btn" onclick="openTerminal()">
                 <span class="action-icon"><i class="ti ti-terminal-2"></i></span>
                 <span><%= t('nodes.terminal') %></span>

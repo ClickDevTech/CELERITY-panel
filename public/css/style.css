@@ -1760,6 +1760,11 @@ html {
     cursor: not-allowed;
 }
 
+.action-btn.is-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .action-btn .action-icon {
     font-size: 16px;
 }
