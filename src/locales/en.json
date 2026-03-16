@@ -53,6 +53,7 @@
     "dashboard": "Dashboard",
     "stats": "Statistics",
     "nodes": "Nodes",
+    "network": "Network",
     "users": "Users",
     "groups": "Groups",
     "settings": "Settings",
@@ -675,5 +676,25 @@
     "eventsHint": "empty = all events",
     "test": "Test",
     "urlRequired": "Enter a URL first"
+  },
+  "network": {
+    "title": "Network Map",
+    "nodes": "nodes",
+    "links": "links",
+    "addLink": "Add Link",
+    "createLink": "Create Link",
+    "autoLayout": "Auto Layout",
+    "fitView": "Fit View",
+    "refresh": "Refresh",
+    "linkName": "Link Name",
+    "portalNode": "Portal Node (Entry)",
+    "bridgeNode": "Bridge Node (Exit)",
+    "tunnelPort": "Tunnel Port",
+    "tunnelProtocol": "Protocol",
+    "tunnelTransport": "Transport",
+    "tunnelSecurity": "Security",
+    "deploy": "Deploy",
+    "undeploy": "Undeploy",
+    "status": "Status"
   }
 }

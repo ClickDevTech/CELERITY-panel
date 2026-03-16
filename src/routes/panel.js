@@ -1964,9 +1964,38 @@ router.get('/nodes/:id/terminal', requireAuth, async (req, res) => {
     }
 });
 
+// ==================== NETWORK MAP ====================
+
+// GET /panel/network - Visual network topology map
+router.get('/network', requireAuth, async (req, res) => {
+    try {
+        const CascadeLink = require('../models/cascadeLinkModel');
+
+        const [nodes, links] = await Promise.all([
+            HyNode.find({ active: true })
+                .select('name ip flag type status cascadeRole')
+                .sort({ name: 1 })
+                .lean(),
+            CascadeLink.find({ active: true })
+                .populate('portalNode', 'name ip')
+                .populate('bridgeNode', 'name ip')
+                .lean(),
+        ]);
+
+        render(res, 'network', {
+            title: res.locals.t('network.title'),
+            page: 'network',
+            nodesCount: nodes.length,
+            linksCount: links.length,
+        });
+    } catch (error) {
+        res.status(500).send('Error: ' + error.message);
+    }
+});
+
 // ==================== STATS ====================
 
-// GET /panel/stats - Страница статистики
+// GET /panel/stats - Stats page
 router.get('/stats', requireAuth, async (req, res) => {
     try {
         const summary = await statsService.getSummary();

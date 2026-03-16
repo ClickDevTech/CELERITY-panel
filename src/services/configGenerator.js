@@ -447,6 +447,203 @@ WantedBy=multi-user.target
 `;
 }
 
+// ==================== XRAY CASCADE (Reverse Proxy) ====================
+
+/**
+ * Apply reverse-portal configuration to an existing Xray config object.
+ * Adds portal entries, bridge-connector inbounds, and routing rules for
+ * every active CascadeLink where this node is the Portal (entry).
+ *
+ * @param {Object} config - Parsed Xray config object (mutated in place)
+ * @param {Array} portalLinks - CascadeLink documents where this node is portalNode
+ * @param {string} clientInboundTag - Tag of the client-facing inbound (e.g. 'vless-in')
+ */
+function applyReversePortal(config, portalLinks, clientInboundTag) {
+    if (!portalLinks || portalLinks.length === 0) return;
+
+    config.reverse = config.reverse || {};
+    config.reverse.portals = config.reverse.portals || [];
+
+    for (const link of portalLinks) {
+        const linkIdShort = String(link._id).slice(-8);
+        const portalTag = `portal-${linkIdShort}`;
+        const connectorTag = `bridge-conn-${linkIdShort}`;
+
+        config.reverse.portals.push({
+            tag: portalTag,
+            domain: link.tunnelDomain || 'reverse.tunnel.internal',
+        });
+
+        const protocol = link.tunnelProtocol || 'vless';
+        const inbound = {
+            tag: connectorTag,
+            listen: '0.0.0.0',
+            port: link.tunnelPort || 10086,
+            protocol,
+            settings: {
+                clients: [{ id: link.tunnelUuid }],
+                decryption: 'none',
+            },
+            streamSettings: buildCascadeTunnelStreamSettings(link),
+        };
+
+        config.inbounds = config.inbounds || [];
+        config.inbounds.push(inbound);
+
+        config.routing = config.routing || { rules: [] };
+        config.routing.rules = config.routing.rules || [];
+
+        config.routing.rules.push({
+            type: 'field',
+            domain: [`full:${link.tunnelDomain || 'reverse.tunnel.internal'}`],
+            outboundTag: portalTag,
+        });
+
+        if (clientInboundTag) {
+            config.routing.rules.push({
+                type: 'field',
+                inboundTag: [clientInboundTag],
+                outboundTag: portalTag,
+            });
+        }
+    }
+}
+
+/**
+ * Generate a standalone Xray JSON config for a Bridge (exit) node.
+ * The Bridge initiates a reverse tunnel to the Portal node and releases traffic
+ * to the internet via a freedom outbound.
+ *
+ * @param {Object} link - CascadeLink document
+ * @param {Object} portalNode - HyNode document of the portal node
+ * @returns {string} JSON string ready to write to config.json
+ */
+function generateBridgeConfig(link, portalNode) {
+    const tunnelDomain = link.tunnelDomain || 'reverse.tunnel.internal';
+    const protocol = link.tunnelProtocol || 'vless';
+    const linkIdShort = String(link._id).slice(-8);
+
+    const config = {
+        log: {
+            loglevel: 'warning',
+        },
+        reverse: {
+            bridges: [{
+                tag: 'bridge',
+                domain: tunnelDomain,
+            }],
+        },
+        outbounds: [
+            {
+                tag: 'tunnel',
+                protocol,
+                settings: {
+                    vnext: [{
+                        address: portalNode.ip,
+                        port: link.tunnelPort || 10086,
+                        users: [{
+                            id: link.tunnelUuid,
+                            encryption: 'none',
+                        }],
+                    }],
+                },
+                streamSettings: buildCascadeTunnelStreamSettings(link),
+            },
+            {
+                tag: 'freedom',
+                protocol: 'freedom',
+                settings: { domainStrategy: 'UseIPv4' },
+            },
+            {
+                tag: 'blackhole',
+                protocol: 'blackhole',
+            },
+        ],
+        routing: {
+            domainStrategy: 'IPIfNonMatch',
+            rules: [
+                {
+                    type: 'field',
+                    domain: [`full:${tunnelDomain}`],
+                    outboundTag: 'tunnel',
+                },
+                {
+                    type: 'field',
+                    inboundTag: ['bridge'],
+                    outboundTag: 'freedom',
+                },
+                {
+                    type: 'field',
+                    ip: ['geoip:private'],
+                    outboundTag: 'blackhole',
+                },
+            ],
+        },
+    };
+
+    return JSON.stringify(config, null, 2);
+}
+
+/**
+ * Build streamSettings for the cascade tunnel connection between Portal and Bridge.
+ * Supports tcp/ws/grpc transports and none/tls security.
+ *
+ * @param {Object} link - CascadeLink document
+ * @returns {Object} streamSettings
+ */
+function buildCascadeTunnelStreamSettings(link) {
+    const transport = link.tunnelTransport || 'tcp';
+    const security = link.tunnelSecurity || 'none';
+
+    const stream = {
+        network: transport,
+        security,
+    };
+
+    if (security === 'tls') {
+        stream.tlsSettings = { allowInsecure: true };
+    }
+
+    if (transport === 'tcp') {
+        stream.sockopt = {
+            tcpFastOpen: link.tcpFastOpen !== false,
+            tcpKeepAliveIdle: link.tcpKeepAlive || 100,
+            tcpNoDelay: link.tcpNoDelay !== false,
+        };
+    } else if (transport === 'ws') {
+        stream.wsSettings = { path: '/' };
+    } else if (transport === 'grpc') {
+        stream.grpcSettings = { serviceName: 'cascade' };
+    }
+
+    return stream;
+}
+
+/**
+ * Generate systemd service unit for a bridge Xray instance.
+ * Uses a separate config path to avoid conflicts with a standalone Xray install.
+ */
+function generateBridgeSystemdService() {
+    return `[Unit]
+Description=Xray Bridge (Cascade Tunnel)
+After=network.target nss-lookup.target
+
+[Service]
+User=nobody
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+Type=simple
+ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray-bridge/config.json
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+`;
+}
+
 module.exports = {
     generateNodeConfig,
     generateNodeConfigACME,
@@ -455,4 +652,8 @@ module.exports = {
     generateXrayConfig,
     buildXrayStreamSettings,
     generateXraySystemdService,
+    applyReversePortal,
+    generateBridgeConfig,
+    buildCascadeTunnelStreamSettings,
+    generateBridgeSystemdService,
 };

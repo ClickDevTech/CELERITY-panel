@@ -53,6 +53,7 @@
     "dashboard": "Главная",
     "stats": "Статистика",
     "nodes": "Ноды",
+    "network": "Сеть",
     "users": "Пользователи",
     "groups": "Группы",
     "settings": "Настройки",
@@ -675,5 +676,25 @@
     "eventsHint": "пусто = все события",
     "test": "Тест",
     "urlRequired": "Сначала введите URL"
+  },
+  "network": {
+    "title": "Карта сети",
+    "nodes": "нод",
+    "links": "связей",
+    "addLink": "Добавить связь",
+    "createLink": "Создать связь",
+    "autoLayout": "Авто-расположение",
+    "fitView": "Вписать",
+    "refresh": "Обновить",
+    "linkName": "Название связи",
+    "portalNode": "Portal-нода (вход)",
+    "bridgeNode": "Bridge-нода (выход)",
+    "tunnelPort": "Порт туннеля",
+    "tunnelProtocol": "Протокол",
+    "tunnelTransport": "Транспорт",
+    "tunnelSecurity": "Безопасность",
+    "deploy": "Деплой",
+    "undeploy": "Убрать",
+    "status": "Статус"
   }
 }

@@ -29,6 +29,7 @@ const backupService = require('./src/services/backupService');
 
 const usersRoutes = require('./src/routes/users');
 const nodesRoutes = require('./src/routes/nodes');
+const cascadeRoutes = require('./src/routes/cascade');
 const subscriptionRoutes = require('./src/routes/subscription');
 const authRoutes = require('./src/routes/auth');
 const panelRoutes = require('./src/routes/panel');
@@ -219,6 +220,7 @@ app.use('/api', subscriptionRoutes);
 
 app.use('/api/users', requireAuth, usersRoutes);
 app.use('/api/nodes', requireAuth, nodesRoutes);
+app.use('/api/cascade', requireAuth, cascadeRoutes);
 
 app.get('/api/groups', requireAuth, requireScope('stats:read'), async (req, res) => {
     try {
@@ -628,6 +630,12 @@ function setupCronJobs() {
             await syncService.healthCheck();
         } catch (error) {
             logger.error(`[Cron] Health check failed: ${error.message}`);
+        }
+        try {
+            const cascadeService = require('./src/services/cascadeService');
+            await cascadeService.healthCheckAll();
+        } catch (error) {
+            logger.error(`[Cron] Cascade health check failed: ${error.message}`);
         }
     });
     

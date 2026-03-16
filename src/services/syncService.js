@@ -254,7 +254,23 @@ class SyncService {
             const ssh = new NodeSSH(node);
             try {
                 await ssh.connect();
-                const configContent = configGenerator.generateXrayConfig(node, users);
+                let configContent = configGenerator.generateXrayConfig(node, users);
+
+                // Apply cascade reverse-portal settings if this node is a portal
+                try {
+                    const CascadeLink = require('../models/cascadeLinkModel');
+                    const portalLinks = await CascadeLink.find({ portalNode: node._id, active: true });
+                    if (portalLinks.length > 0) {
+                        const configObj = JSON.parse(configContent);
+                        const inboundTag = node.xray?.inboundTag || 'vless-in';
+                        configGenerator.applyReversePortal(configObj, portalLinks, inboundTag);
+                        configContent = JSON.stringify(configObj, null, 2);
+                        logger.info(`[Xray Sync] Node ${node.name}: applied ${portalLinks.length} cascade portal link(s)`);
+                    }
+                } catch (cascadeErr) {
+                    logger.warn(`[Xray Sync] Node ${node.name}: cascade apply skipped: ${cascadeErr.message}`);
+                }
+
                 await ssh.uploadContent(configContent, node.paths?.config || '/usr/local/etc/xray/config.json');
                 logger.info(`[Xray Sync] Node ${node.name}: config uploaded`);
             } catch (error) {

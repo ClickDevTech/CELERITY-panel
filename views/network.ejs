@@ -1,0 +1,104 @@
+<link rel="stylesheet" href="/css/network.css">
+
+<div class="network-page">
+    <div class="network-toolbar">
+        <div class="toolbar-left">
+            <h2 class="toolbar-title"><i class="ti ti-topology-star-3"></i> <%= t('network.title') %></h2>
+            <span class="toolbar-badge"><%= nodesCount %> <%= t('network.nodes') %></span>
+            <span class="toolbar-badge"><%= linksCount %> <%= t('network.links') %></span>
+        </div>
+        <div class="toolbar-right">
+            <button class="btn btn-sm btn-outline" id="btnAutoLayout" title="<%= t('network.autoLayout') %>">
+                <i class="ti ti-layout-distribute-horizontal"></i> <%= t('network.autoLayout') %>
+            </button>
+            <button class="btn btn-sm btn-outline" id="btnFitView" title="<%= t('network.fitView') %>">
+                <i class="ti ti-arrows-maximize"></i>
+            </button>
+            <button class="btn btn-sm btn-outline" id="btnRefresh" title="<%= t('network.refresh') %>">
+                <i class="ti ti-refresh"></i>
+            </button>
+            <button class="btn btn-sm btn-primary" id="btnAddLink">
+                <i class="ti ti-plus"></i> <%= t('network.addLink') %>
+            </button>
+        </div>
+    </div>
+
+    <div class="network-container">
+        <div id="cy" class="cytoscape-canvas"></div>
+        <div class="network-minimap" id="minimap"></div>
+
+        <!-- Node detail drawer -->
+        <div class="network-drawer" id="nodeDrawer">
+            <div class="drawer-header">
+                <h3 id="drawerTitle"></h3>
+                <button class="drawer-close" id="drawerClose"><i class="ti ti-x"></i></button>
+            </div>
+            <div class="drawer-body" id="drawerBody"></div>
+        </div>
+    </div>
+
+    <!-- Add Link Modal -->
+    <div class="modal-overlay" id="addLinkModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3><i class="ti ti-link"></i> <%= t('network.addLink') %></h3>
+                <button class="modal-close" id="modalClose"><i class="ti ti-x"></i></button>
+            </div>
+            <form id="addLinkForm" class="modal-body">
+                <div class="form-group">
+                    <label><%= t('network.linkName') %></label>
+                    <input type="text" name="name" class="form-input" required placeholder="e.g. YandexCloud → France">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label><%= t('network.portalNode') %></label>
+                        <select name="portalNodeId" class="form-input" id="selectPortal" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label><%= t('network.bridgeNode') %></label>
+                        <select name="bridgeNodeId" class="form-input" id="selectBridge" required></select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label><%= t('network.tunnelPort') %></label>
+                        <input type="number" name="tunnelPort" class="form-input" value="10086" min="1" max="65535">
+                    </div>
+                    <div class="form-group">
+                        <label><%= t('network.tunnelProtocol') %></label>
+                        <select name="tunnelProtocol" class="form-input">
+                            <option value="vless">VLESS</option>
+                            <option value="vmess">VMess</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label><%= t('network.tunnelTransport') %></label>
+                        <select name="tunnelTransport" class="form-input">
+                            <option value="tcp">TCP</option>
+                            <option value="ws">WebSocket</option>
+                            <option value="grpc">gRPC</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label><%= t('network.tunnelSecurity') %></label>
+                        <select name="tunnelSecurity" class="form-input">
+                            <option value="none">None</option>
+                            <option value="tls">TLS</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-outline" id="modalCancel"><%= t('common.cancel') %></button>
+                    <button type="submit" class="btn btn-primary"><%= t('network.createLink') %></button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.4/cytoscape.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js" crossorigin="anonymous"></script>
+<script src="/js/network.js"></script>

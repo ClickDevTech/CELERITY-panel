@@ -41,3 +41,6 @@ mongo_data/
 public/downloads/
 cc-agent/cc-agent-linux-amd64
 cc-agent/cc-agent-linux-arm64
+
+Rules.md
+TODO.md 

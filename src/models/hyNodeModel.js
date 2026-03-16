@@ -1,5 +1,5 @@
 /**
- * Hysteria + Xray node model
+ * Hysteria + Xray node model with cascade topology support
  */
 
 const mongoose = require('mongoose');
@@ -132,6 +132,18 @@ const hyNodeSchema = new mongoose.Schema({
     customConfig: { type: String, default: '' },
     useCustomConfig: { type: Boolean, default: false },
     useTlsFiles: { type: Boolean, default: false },
+
+    // Cascade topology fields
+    cascadeRole: {
+        type: String,
+        enum: ['standalone', 'entry', 'relay', 'exit'],
+        default: 'standalone',
+    },
+    mapPosition: {
+        x: { type: Number, default: null },
+        y: { type: Number, default: null },
+    },
+    country: { type: String, default: '' },
 
 }, { timestamps: true });
 
