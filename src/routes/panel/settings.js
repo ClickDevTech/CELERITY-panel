@@ -92,6 +92,8 @@ router.get('/settings', async (req, res) => {
             hasCustom: homepageService.hasCustom(),
             customSize: homepageService.getCustomSize(),
             maxBytes: homepageService.MAX_CUSTOM_BYTES,
+            templateSlug: homepageService.getTemplateSlug() || settings?.homepage?.templateSlug || '',
+            templates: homepageService.listTemplates(),
         };
 
         render(res, 'settings', {
@@ -293,11 +295,20 @@ router.post('/settings', async (req, res) => {
 
         // Homepage mode (decoy/custom). File upload has its own endpoint.
         let homepageModeChanged = null;
+        let homepageTemplateChanged = '';
         if (req.body['_homepageSettings'] !== undefined) {
-            const VALID_MODES = ['nginx', 'custom'];
+            const VALID_MODES = ['nginx', 'custom', 'template'];
             const mode = String(req.body['homepage.mode'] || 'nginx');
             const safeMode = VALID_MODES.includes(mode) ? mode : 'nginx';
             updates['homepage.mode'] = safeMode;
+            if (safeMode === 'template') {
+                const templateSlug = String(req.body['homepage.templateSlug'] || '').trim();
+                if (!homepageService.isValidTemplateSlug(templateSlug)) {
+                    throw new Error(res.locals.t?.('settings.homepageTemplateInvalid') || 'Selected template is not available');
+                }
+                updates['homepage.templateSlug'] = templateSlug;
+                homepageTemplateChanged = templateSlug;
+            }
             homepageModeChanged = safeMode;
         }
 
@@ -364,7 +375,7 @@ router.post('/settings', async (req, res) => {
         await sshPool.reloadSettings();
 
         if (homepageModeChanged) {
-            await homepageService.setMode(homepageModeChanged);
+            await homepageService.setMode(homepageModeChanged, homepageTemplateChanged);
         }
 
         logger.info(`[Panel] Settings updated`);
@@ -372,7 +383,8 @@ router.post('/settings', async (req, res) => {
         res.redirect('/panel/settings?message=' + encodeURIComponent(res.locals.t?.('settings.saved') || 'Settings saved'));
     } catch (error) {
         logger.error('[Panel] Settings save error:', error.message);
-        res.redirect('/panel/settings?error=' + encodeURIComponent(`${res.locals.t?.('common.error') || 'Error'}: ${error.message}`));
+        const tabParam = req.body?._homepageSettings !== undefined ? 'tab=masking&' : '';
+        res.redirect('/panel/settings?' + tabParam + 'error=' + encodeURIComponent(`${res.locals.t?.('common.error') || 'Error'}: ${error.message}`));
     }
 });
 
@@ -651,20 +663,20 @@ router.post('/settings/homepage/upload', (req, res) => {
             const msg = err.code === 'LIMIT_FILE_SIZE'
                 ? (res.locals.t?.('settings.homepageFileTooLarge') || 'File too large (max {bytes} bytes)').replace('{bytes}', homepageService.MAX_CUSTOM_BYTES)
                 : err.message;
-            return res.redirect('/panel/settings?tab=security&error=' + encodeURIComponent(msg));
+            return res.redirect('/panel/settings?tab=masking&error=' + encodeURIComponent(msg));
         }
         if (!req.file) {
-            return res.redirect('/panel/settings?tab=security&error=' + encodeURIComponent(res.locals.t?.('settings.homepageNoFile') || 'No file uploaded'));
+            return res.redirect('/panel/settings?tab=masking&error=' + encodeURIComponent(res.locals.t?.('settings.homepageNoFile') || 'No file uploaded'));
         }
         try {
             await homepageService.setCustom(req.file.buffer);
             await Settings.update({ 'homepage.mode': 'custom' });
             await homepageService.setMode('custom');
             logger.info(`[Panel] Homepage custom HTML uploaded (${req.file.buffer.length} bytes) by ${req.session.adminUsername}`);
-            return res.redirect('/panel/settings?tab=security&message=' + encodeURIComponent(res.locals.t?.('settings.homepageUpdated') || 'Homepage updated'));
+            return res.redirect('/panel/settings?tab=masking&message=' + encodeURIComponent(res.locals.t?.('settings.homepageUpdated') || 'Homepage updated'));
         } catch (error) {
             logger.error(`[Panel] Homepage upload error: ${error.message}`);
-            return res.redirect('/panel/settings?tab=security&error=' + encodeURIComponent(error.message));
+            return res.redirect('/panel/settings?tab=masking&error=' + encodeURIComponent(error.message));
         }
     });
 });
@@ -675,10 +687,10 @@ router.post('/settings/homepage/reset', async (req, res) => {
         await homepageService.clearCustom();
         await Settings.update({ 'homepage.mode': 'nginx' });
         logger.info(`[Panel] Homepage reset to default by ${req.session.adminUsername}`);
-        return res.redirect('/panel/settings?tab=security&message=' + encodeURIComponent(res.locals.t?.('settings.homepageResetDone') || 'Homepage reset to default'));
+        return res.redirect('/panel/settings?tab=masking&message=' + encodeURIComponent(res.locals.t?.('settings.homepageResetDone') || 'Homepage reset to default'));
     } catch (error) {
         logger.error(`[Panel] Homepage reset error: ${error.message}`);
-        return res.redirect('/panel/settings?tab=security&error=' + encodeURIComponent(error.message));
+        return res.redirect('/panel/settings?tab=masking&error=' + encodeURIComponent(error.message));
     }
 });
 

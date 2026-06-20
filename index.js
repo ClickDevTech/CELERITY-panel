@@ -417,6 +417,17 @@ app.use('/panel', panelRoutes);
 // Hot path is in-memory only; no DB/disk reads per request.
 app.get('/', (req, res) => homepageService.respond(req, res));
 app.head('/', (req, res) => homepageService.respond(req, res));
+app.get([
+    '/assets/*',
+    '/apple-touch-icon.png',
+    '/favicon.ico',
+    '/favicon.svg',
+    '/favicon-96x96.png',
+    '/site.webmanifest',
+    '/vite.svg',
+    '/web-app-manifest-192x192.png',
+    '/web-app-manifest-512x512.png',
+], (req, res, next) => homepageService.serveTemplateAsset(req, res, next));
 
 // ==================== ERROR HANDLING ====================
 

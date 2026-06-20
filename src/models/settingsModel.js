@@ -133,8 +133,9 @@ const settingsSchema = new mongoose.Schema({
     },
 
     homepage: {
-        mode: { type: String, enum: ['nginx', 'custom'], default: 'nginx' },
+        mode: { type: String, enum: ['nginx', 'custom', 'template'], default: 'nginx' },
         customHtml: { type: Buffer, default: null },
+        templateSlug: { type: String, default: '' },
     },
 
     routing: {
