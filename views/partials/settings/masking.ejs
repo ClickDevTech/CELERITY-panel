@@ -1,0 +1,123 @@
+<!-- ==================== TAB: PANEL MASKING ==================== -->
+<%
+    const hp = locals.homepageInfo || { mode: 'nginx', hasCustom: false, customSize: 0, maxBytes: 262144, templateSlug: '', templates: [] };
+    const hpMaxKB = Math.round(hp.maxBytes / 1024);
+    const hpCustomKB = hp.customSize ? (hp.customSize / 1024).toFixed(1) : '0';
+    const hpTemplates = Array.isArray(hp.templates) ? hp.templates : [];
+    const hpSelectedTemplate = hp.templateSlug || (hpTemplates[0] && hpTemplates[0].slug) || '';
+%>
+<div class="tab-content" id="tab-masking">
+    <div class="settings-stat-row">
+        <div class="settings-stat">
+            <div class="settings-stat-icon"><i class="ti ti-mask"></i></div>
+            <div class="settings-stat-content">
+                <div class="settings-stat-label"><%= t('settings.homepageCurrentMode') || 'Текущий режим' %></div>
+                <div class="settings-stat-value"><%= t(`settings.homepageModeValue.${hp.mode}`) || hp.mode %></div>
+            </div>
+        </div>
+        <div class="settings-stat">
+            <div class="settings-stat-icon info"><i class="ti ti-template"></i></div>
+            <div class="settings-stat-content">
+                <div class="settings-stat-label"><%= t('settings.homepageTemplatesFound') || 'Шаблоны' %></div>
+                <div class="settings-stat-value"><%= hpTemplates.length %></div>
+            </div>
+        </div>
+        <div class="settings-stat" title="<%= config.BASE_URL %>">
+            <div class="settings-stat-icon"><i class="ti ti-world"></i></div>
+            <div class="settings-stat-content">
+                <div class="settings-stat-label"><%= t('settings.homepageRootPath') || 'Корень домена' %></div>
+                <div class="settings-stat-value"><code>/</code></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+        <div class="card-header">
+            <h2><i class="ti ti-mask"></i> <%= t('settings.panelMasking') || 'Маскировка панели' %></h2>
+        </div>
+        <div class="card-body">
+            <p class="hint" style="margin-bottom: 16px;">
+                <%= t('settings.homepageHint') || 'Что отдавать по корню домена. Маскирует панель от сканеров: вместо редиректа на /panel посетитель видит обычную страничку.' %>
+            </p>
+
+            <div class="row">
+                <div class="col-6">
+                    <form method="POST" action="/panel/settings">
+                        <input type="hidden" name="_homepageSettings" value="1">
+
+                        <label class="checkbox-label" style="margin-bottom: 8px;">
+                            <input type="radio" name="homepage.mode" value="nginx"
+                                   <%= hp.mode === 'nginx' ? 'checked' : '' %>>
+                            <span><%= t('settings.homepageModeNginx') || 'Имитация nginx (welcome page)' %></span>
+                        </label>
+                        <label class="checkbox-label" style="margin-bottom: 8px;">
+                            <input type="radio" name="homepage.mode" value="custom"
+                                   <%= hp.mode === 'custom' ? 'checked' : '' %>
+                                   <%= hp.hasCustom ? '' : 'disabled' %>>
+                            <span>
+                                <%= t('settings.homepageModeCustom') || 'Своя HTML страница' %>
+                                <% if (hp.hasCustom) { %>
+                                    <small style="color: var(--text-muted);">(<%= hpCustomKB %> KB)</small>
+                                <% } else { %>
+                                    <small style="color: var(--text-muted);">(<%= t('settings.homepageNoCustom') || 'файл не загружен' %>)</small>
+                                <% } %>
+                            </span>
+                        </label>
+                        <label class="checkbox-label" style="margin-bottom: 12px;">
+                            <input type="radio" name="homepage.mode" value="template"
+                                   <%= hp.mode === 'template' ? 'checked' : '' %>
+                                   <%= hpTemplates.length > 0 ? '' : 'disabled' %>>
+                            <span><%= t('settings.homepageModeTemplate') || 'Шаблон из sni-templates' %></span>
+                        </label>
+
+                        <div class="form-group">
+                            <label for="homepageTemplateSlug"><%= t('settings.homepageTemplate') || 'Шаблон' %></label>
+                            <select name="homepage.templateSlug" id="homepageTemplateSlug" <%= hpTemplates.length > 0 ? '' : 'disabled' %>>
+                                <% hpTemplates.forEach(template => { %>
+                                    <option value="<%= template.slug %>" <%= template.slug === hpSelectedTemplate ? 'selected' : '' %>><%= template.label || template.slug %></option>
+                                <% }) %>
+                            </select>
+                            <small class="hint">
+                                <%= hpTemplates.length > 0
+                                    ? (t('settings.homepageTemplateHint') || 'Выбранный шаблон будет показан на https://домен/.')
+                                    : (t('settings.homepageNoTemplates') || 'Шаблоны не найдены в sni-templates/.') %>
+                            </small>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="ti ti-device-floppy"></i> <%= t('settings.homepageSaveMode') || 'Сохранить режим' %>
+                        </button>
+                    </form>
+                </div>
+
+                <div class="col-6">
+                    <form method="POST" action="/panel/settings/homepage/upload" enctype="multipart/form-data">
+                        <label for="homepageFile" style="display: block; margin-bottom: 6px; font-weight: 500;">
+                            <%= t('settings.homepageUpload') || 'Загрузить HTML файл' %>
+                        </label>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                            <input type="file" name="file" id="homepageFile"
+                                   accept=".html,.htm,text/html" required
+                                   style="flex: 1; min-width: 180px;">
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="ti ti-upload"></i> <%= t('common.upload') || 'Загрузить' %>
+                            </button>
+                            <% if (hp.hasCustom) { %>
+                            <button type="button" class="btn btn-warning btn-sm"
+                                    onclick="if(confirm('<%= t('settings.homepageResetConfirm') || 'Удалить загруженную страницу и вернуться к дефолту?' %>')) document.getElementById('homepageResetForm').submit();">
+                                <i class="ti ti-trash"></i> <%= t('settings.homepageReset') || 'Сбросить' %>
+                            </button>
+                            <% } %>
+                        </div>
+                        <small class="hint" style="display: block; margin-top: 6px;">
+                            <%= (t('settings.homepageUploadHint') || 'Максимум {kb} KB. После загрузки режим автоматически переключится на «Своя HTML».').replace('{kb}', hpMaxKB) %>
+                        </small>
+                    </form>
+                    <% if (hp.hasCustom) { %>
+                    <form id="homepageResetForm" method="POST" action="/panel/settings/homepage/reset" style="display: none;"></form>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

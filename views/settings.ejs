@@ -20,6 +20,7 @@
     <%
         const settingsTabs = [
             { id: 'system',       icon: 'ti-settings',        label: t('settings.tabSystem')       || 'Система',       desc: t('settings.tabSystemDesc')       || 'Производительность, кэш, лимиты и SSH-пул.' },
+            { id: 'masking',      icon: 'ti-mask',            label: t('settings.tabMasking')      || 'Маскировка панели', desc: t('settings.tabMaskingDesc')      || 'Заглушка на корне домена и шаблоны из sni-templates.' },
             { id: 'subscription', icon: 'ti-link',            label: t('settings.tabSubscription') || 'Подписка',      desc: t('settings.tabSubscriptionDesc') || 'Внешний вид, кнопки и поведение клиентских приложений.' },
             { id: 'security',     icon: 'ti-shield-lock',     label: t('settings.tabSecurity')     || 'Безопасность',  desc: t('settings.tabSecurityDesc')     || 'Администратор, 2FA, API-ключи, MCP и вебхуки.' },
             { id: 'backup',       icon: 'ti-database-export', label: t('settings.tabBackup')       || 'Бэкапы',        desc: t('settings.tabBackupDesc')       || 'Локальные и S3 бэкапы, расписание, восстановление.' },
@@ -57,6 +58,8 @@
     </div>
 
     <%- include('partials/settings/system') %>
+
+    <%- include('partials/settings/masking') %>
 
     <%- include('partials/settings/subscription') %>
 
