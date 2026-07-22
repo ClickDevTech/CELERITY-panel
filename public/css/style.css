@@ -3407,6 +3407,78 @@ html {
     }
 }
 
+/* Branded tooltips replace inconsistent browser-native title bubbles. */
+.app-tooltip {
+    --tooltip-arrow-x: 50%;
+    position: fixed;
+    z-index: 12000;
+    width: max-content;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 7px 10px;
+    border: 1px solid rgba(148, 163, 184, .2);
+    border-radius: 8px;
+    background: rgba(17, 18, 25, .96);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .38), 0 0 0 1px rgba(255, 255, 255, .025) inset;
+    color: #f8fafc;
+    font-family: Inter, sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
+    text-align: left;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px) scale(.98);
+    transform-origin: var(--tooltip-arrow-x) top;
+    transition: opacity .14s ease, transform .14s ease;
+}
+
+.app-tooltip.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.app-tooltip::before,
+.app-tooltip::after {
+    position: absolute;
+    left: var(--tooltip-arrow-x);
+    width: 0;
+    height: 0;
+    border-style: solid;
+    content: '';
+    transform: translateX(-50%);
+}
+
+.app-tooltip.is-above::before {
+    top: 100%;
+    border-width: 6px 6px 0;
+    border-color: rgba(148, 163, 184, .2) transparent transparent;
+}
+
+.app-tooltip.is-above::after {
+    top: calc(100% - 1px);
+    border-width: 5px 5px 0;
+    border-color: rgba(17, 18, 25, .96) transparent transparent;
+}
+
+.app-tooltip.is-below::before {
+    bottom: 100%;
+    border-width: 0 6px 6px;
+    border-color: transparent transparent rgba(148, 163, 184, .2);
+}
+
+.app-tooltip.is-below::after {
+    bottom: calc(100% - 1px);
+    border-width: 0 5px 5px;
+    border-color: transparent transparent rgba(17, 18, 25, .96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-tooltip {
+        transition: none;
+    }
+}
+
 /* ==================== CASCADE ROLE PICKER ==================== */
 
 .cascade-role-picker {
