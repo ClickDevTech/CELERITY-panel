@@ -1,0 +1,135 @@
+<div class="page-header sticky-header">
+    <div class="page-header-left">
+        <div class="view-tabs">
+            <a class="view-tab" href="/panel/nodes">
+                <i class="ti ti-list"></i> <%= t('nodes.title') %>
+                <span class="tab-badge"><%= typeof nodesCount === 'number' ? nodesCount : 0 %></span>
+            </a>
+            <a class="view-tab" href="/panel/nodes?view=network">
+                <i class="ti ti-topology-star-3"></i> <%= t('network.title') %>
+                <span class="beta-badge" style="margin-left:4px"><%= t('network.betaBadge') %></span>
+                <% if (linksCount) { %><span class="tab-badge"><%= linksCount %></span><% } %>
+            </a>
+            <div class="view-tab active" aria-current="page">
+                <img class="wg-brand-icon" src="/img/wireguard.svg" alt="" aria-hidden="true"> <%= t('nav.wgPanels') %>
+                <span class="tab-badge"><%= panels.length %></span>
+            </div>
+        </div>
+    </div>
+    <div class="page-header-right">
+        <a href="/panel/wg-panels/add" class="btn btn-primary">
+            <i class="ti ti-plus"></i> Добавить WireGuard
+        </a>
+    </div>
+</div>
+
+<% if (message) { %><div class="alert alert-success" role="status"><i class="ti ti-circle-check"></i> <%= message %></div><% } %>
+<% if (error) { %><div class="alert alert-error" role="alert"><i class="ti ti-alert-circle"></i> <%= error %></div><% } %>
+
+<div class="card">
+    <div class="card-body no-padding">
+        <div class="table-wrapper">
+            <table class="table" id="wgPanelsTable">
+                <thead>
+                    <tr>
+                        <th>Название</th>
+                        <th>Страна</th>
+                        <th>Тип</th>
+                        <th>Адрес</th>
+                        <th>API</th>
+                        <th>Профили</th>
+                        <th>Статус</th>
+                        <th>Создание профилей</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% if (panels.length === 0) { %>
+                    <tr>
+                        <td colspan="9" class="text-center text-muted">
+                            <div class="empty-state">
+                                <span class="empty-icon"><img class="wg-brand-icon wg-brand-icon-lg" src="/img/wireguard.svg" alt="" aria-hidden="true"></span>
+                                <p>Подключения WireGuard ещё не добавлены</p>
+                                <a href="/panel/wg-panels/add" class="btn btn-primary"><i class="ti ti-plus"></i> Добавить WireGuard</a>
+                            </div>
+                        </td>
+                    </tr>
+                    <% } %>
+                    <% panels.forEach(function(panel) { const stat = counts.get(String(panel._id)) || { count: 0, errors: 0 }; %>
+                    <tr>
+                        <td><strong><%= panel.name %></strong></td>
+                        <td>
+                            <% if (panel.country) { %><span class="wg-country-badge"><span aria-hidden="true"><%= countryCodeToFlag(panel.country) %></span> <%= panel.country %></span><% } else { %><span class="text-muted">—</span><% } %>
+                        </td>
+                        <td><span class="node-info-badge"><img class="wg-brand-icon wg-brand-icon-sm" src="<%= panel.kind === 'awg-easy' ? '/img/amnezia.svg' : '/img/wireguard.svg' %>" alt="" aria-hidden="true"> <%= panel.kind %></span></td>
+                        <td><code title="<%= panel.baseUrl %>"><%= panel.baseUrl %></code></td>
+                        <td><span class="node-info-badge"><%= panel.detectedVersion || panel.apiVersion %></span></td>
+                        <td>
+                            <strong><%= stat.count %></strong>
+                            <% if (stat.errors) { %><span class="badge badge-danger" title="Профили с ошибками"><%= stat.errors %> ошибок</span><% } %>
+                        </td>
+                        <td>
+                            <span class="badge badge-<%= panel.status === 'online' ? 'success' : (panel.status === 'error' ? 'danger' : 'warning') %>">
+                                <i class="ti ti-<%= panel.status === 'online' ? 'circle-check' : (panel.status === 'error' ? 'alert-circle' : 'clock') %>"></i>
+                                <%= panel.status %>
+                            </span>
+                            <% if (panel.lastError) { %><small class="wg-panel-error" title="<%= panel.lastError %>"><%= panel.lastError %></small><% } %>
+                        </td>
+                        <td><span class="badge badge-<%= panel.enabled ? 'success' : 'secondary' %>"><%= panel.enabled ? 'Включено' : 'Выключено' %></span></td>
+                        <td>
+                            <div class="node-actions">
+                                <form method="post" action="/panel/wg-panels/<%= panel._id %>/test">
+                                    <button class="btn-icon" title="Проверить подключение" aria-label="Проверить подключение: <%= panel.name %>"><i class="ti ti-plug-connected"></i></button>
+                                </form>
+                                <form method="post" action="/panel/wg-panels/<%= panel._id %>/sync">
+                                    <button class="btn-icon" title="Создать недостающие профили" aria-label="Синхронизировать профили: <%= panel.name %>"><i class="ti ti-refresh"></i></button>
+                                </form>
+                                <a href="/panel/wg-panels/<%= panel._id %>/edit" class="btn-icon" title="Изменить" aria-label="Изменить: <%= panel.name %>"><i class="ti ti-pencil"></i></a>
+                                <form method="post" action="/panel/wg-panels/<%= panel._id %>/delete" onsubmit="return confirm('Удалить подключение? Клиенты на внешнем WireGuard-сервере удалены не будут.')">
+                                    <button class="btn-icon btn-icon-danger" title="Удалить" aria-label="Удалить: <%= panel.name %>"><i class="ti ti-trash"></i></button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mobile-nodes-list">
+            <% if (panels.length === 0) { %>
+            <div class="empty-state">
+                <span class="empty-icon"><img class="wg-brand-icon wg-brand-icon-lg" src="/img/wireguard.svg" alt="" aria-hidden="true"></span>
+                <p>Подключения WireGuard ещё не добавлены</p>
+                <a href="/panel/wg-panels/add" class="btn btn-primary"><i class="ti ti-plus"></i> Добавить WireGuard</a>
+            </div>
+            <% } %>
+            <% panels.forEach(function(panel) { const stat = counts.get(String(panel._id)) || { count: 0, errors: 0 }; %>
+            <div class="mobile-node-card">
+                <div class="mobile-node-header">
+                    <div class="mobile-node-title">
+                        <strong><%= panel.name %></strong>
+                        <code><%= panel.baseUrl %></code>
+                    </div>
+                    <div class="mobile-node-state">
+                        <span class="badge badge-<%= panel.status === 'online' ? 'success' : (panel.status === 'error' ? 'danger' : 'warning') %>"><%= panel.status %></span>
+                    </div>
+                </div>
+                <% if (panel.lastError) { %><div class="wg-panel-error"><i class="ti ti-alert-circle"></i> <%= panel.lastError %></div><% } %>
+                <div class="mobile-node-stats">
+                    <div class="mobile-stat-item"><span class="mobile-stat-label">Тип</span><span class="mobile-stat-value"><img class="wg-brand-icon wg-brand-icon-sm" src="<%= panel.kind === 'awg-easy' ? '/img/amnezia.svg' : '/img/wireguard.svg' %>" alt="" aria-hidden="true"> <%= panel.kind %></span></div>
+                    <div class="mobile-stat-item"><span class="mobile-stat-label">Страна</span><span class="mobile-stat-value"><%= panel.country ? countryCodeToFlag(panel.country) + ' ' + panel.country : '—' %></span></div>
+                    <div class="mobile-stat-item"><span class="mobile-stat-label">API</span><span class="mobile-stat-value"><%= panel.detectedVersion || panel.apiVersion %></span></div>
+                    <div class="mobile-stat-item"><span class="mobile-stat-label">Профили</span><span class="mobile-stat-value"><%= stat.count %><%= stat.errors ? ' / ' + stat.errors + ' ошибок' : '' %></span></div>
+                </div>
+                <div class="mobile-node-actions">
+                    <form method="post" action="/panel/wg-panels/<%= panel._id %>/test"><button class="btn btn-sm" title="Проверить подключение" aria-label="Проверить подключение"><i class="ti ti-plug-connected"></i></button></form>
+                    <form method="post" action="/panel/wg-panels/<%= panel._id %>/sync"><button class="btn btn-sm" title="Синхронизировать профили" aria-label="Синхронизировать профили"><i class="ti ti-refresh"></i></button></form>
+                    <a href="/panel/wg-panels/<%= panel._id %>/edit" class="btn btn-sm" title="Изменить" aria-label="Изменить"><i class="ti ti-pencil"></i></a>
+                    <form method="post" action="/panel/wg-panels/<%= panel._id %>/delete" onsubmit="return confirm('Удалить подключение? Клиенты на внешнем WireGuard-сервере удалены не будут.')"><button class="btn btn-sm btn-danger" title="Удалить" aria-label="Удалить"><i class="ti ti-trash"></i></button></form>
+                </div>
+            </div>
+            <% }); %>
+        </div>
+    </div>
+</div>

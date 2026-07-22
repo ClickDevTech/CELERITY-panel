@@ -60,6 +60,7 @@
     "nodes": "Nodes",
     "network": "Network",
     "users": "Users",
+    "wgPanels": "WireGuard",
     "groups": "Groups",
     "accessLogs": "Access logs",
     "settings": "Settings",

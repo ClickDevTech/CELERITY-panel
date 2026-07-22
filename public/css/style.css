@@ -803,6 +803,165 @@ html {
     min-width: 0;
 }
 
+/* The Nodes toolbar contains three independently wide groups (view tabs,
+   filters and actions). Keep them inside the content column and move filters
+   to their own row before any group can force horizontal page overflow. */
+.nodes-toolbar-header,
+.nodes-toolbar-header > * {
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* The decorative glow extends beyond .main-content by design. On the Nodes
+   page, clip that paint overflow so it cannot create a page-level horizontal
+   scrollbar; the table keeps its own horizontal scroller. */
+.main-content:has(.nodes-toolbar-header) {
+    overflow-x: clip;
+}
+
+.nodes-toolbar-header .page-header-left {
+    min-width: 0;
+}
+
+.nodes-toolbar-header .page-header-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+@media (min-width: 769px) and (max-width: 1550px) {
+    .nodes-toolbar-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px 16px;
+        align-items: center;
+    }
+
+    .nodes-toolbar-header .page-header-left {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    .nodes-toolbar-header .page-header-center {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .nodes-toolbar-header .page-header-right {
+        grid-column: 2;
+        grid-row: 1;
+        justify-self: end;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1100px) {
+    .nodes-toolbar-header {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .nodes-toolbar-header .page-header-left,
+    .nodes-toolbar-header .page-header-center,
+    .nodes-toolbar-header .page-header-right {
+        grid-column: 1;
+        width: 100%;
+    }
+
+    .nodes-toolbar-header .page-header-left {
+        grid-row: 1;
+    }
+
+    .nodes-toolbar-header .page-header-center {
+        grid-row: 2;
+    }
+
+    .nodes-toolbar-header .page-header-right {
+        grid-row: 3;
+        justify-self: stretch;
+        justify-content: flex-start;
+    }
+}
+
+/* Shared Nodes section navigation: list, network map, WireGuard */
+.view-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    padding: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.view-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.view-tab {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 9px 18px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-secondary, #94a3b8);
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color .2s ease, background .2s ease, box-shadow .2s ease;
+}
+
+.view-tab:hover {
+    color: var(--text-primary, #e2e8f0);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.view-tab:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.view-tab.active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent, #6366f1) 0%, var(--accent-gradient-end, #7c3aed) 100%);
+    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35),
+                0 1px 0 rgba(255, 255, 255, 0.18) inset,
+                0 -1px 0 rgba(0, 0, 0, 0.25) inset;
+}
+
+.view-tab[aria-current="page"] {
+    cursor: default;
+}
+
+.tab-badge {
+    padding: 1px 7px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    font-size: 11px;
+}
+
+.view-tab.active .tab-badge {
+    background: rgba(255, 255, 255, 0.25);
+}
+
 /* ----- Filter pill — copies .settings-tabs exactly ----- */
 .filters-bar {
     display: inline-flex;
@@ -2745,6 +2904,14 @@ html {
         flex-wrap: wrap;
     }
 
+    .view-tabs {
+        width: 100%;
+    }
+
+    .view-tab {
+        min-height: 44px;
+    }
+
     .page-header-center {
         width: 100%;
         justify-content: flex-start;
@@ -4678,4 +4845,147 @@ body {
 
 .pem-status.is-invalid {
     color: #d9534f;
+}
+
+/* WireGuard panel list + dedicated create/edit screen */
+.wg-panel-form-card {
+    max-width: 920px;
+    margin: 0 auto;
+}
+
+.wg-panel-form-card .form-section:first-child {
+    margin-top: 0;
+}
+
+.form-options-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 18px;
+}
+
+.password-input-wrap {
+    position: relative;
+}
+
+.password-input-wrap input {
+    padding-right: 48px !important;
+}
+
+.password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color .18s ease, background .18s ease;
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.wg-panel-error {
+    display: block;
+    max-width: 260px;
+    margin-top: 5px;
+    color: var(--danger);
+    font-size: 11px;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#wgPanelsTable td code {
+    display: block;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#wgPanelsTable .node-actions form {
+    display: inline-flex;
+}
+
+.wg-country-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.wg-brand-icon {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    vertical-align: middle;
+    opacity: 0.9;
+}
+
+.wg-brand-icon-sm {
+    width: 16px;
+    height: 16px;
+}
+
+.wg-brand-icon-heading {
+    width: 22px;
+    height: 22px;
+}
+
+.wg-brand-icon-lg {
+    width: 48px;
+    height: 48px;
+}
+
+.view-tab.active .wg-brand-icon,
+.card-header .wg-brand-icon {
+    opacity: 1;
+}
+
+@media (max-width: 768px) {
+    .wg-panel-form-card {
+        margin: 0;
+    }
+
+    .mobile-node-actions > form {
+        display: flex;
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .mobile-node-actions > form > .btn {
+        width: 100%;
+        min-width: 0;
+        padding: 10px 0;
+    }
+
+    .wg-panel-error {
+        max-width: 100%;
+        white-space: normal;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .password-toggle,
+    .view-tab {
+        transition: none;
+    }
 }

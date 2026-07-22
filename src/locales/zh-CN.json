@@ -60,6 +60,7 @@
     "nodes": "节点",
     "network": "网络",
     "users": "用户",
+    "wgPanels": "WireGuard",
     "groups": "服务器组",
     "accessLogs": "访问日志",
     "settings": "设置",

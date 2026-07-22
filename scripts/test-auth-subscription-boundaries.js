@@ -9,6 +9,9 @@ function createQuery(result) {
         select() {
             return this;
         },
+        sort() {
+            return this;
+        },
         lean() {
             return Promise.resolve(result);
         },
@@ -24,6 +27,7 @@ function createResponse() {
         headers: {},
         body: undefined,
         headersSent: false,
+        locals: { lang: 'ru' },
         status(code) {
             this.statusCode = code;
             return this;
@@ -32,8 +36,9 @@ function createResponse() {
             this.headers['content-type'] = value;
             return this;
         },
-        set(headers) {
-            Object.assign(this.headers, headers);
+        set(headers, value) {
+            if (typeof headers === 'string') this.headers[headers] = value;
+            else Object.assign(this.headers, headers);
             return this;
         },
         json(value) {
@@ -119,6 +124,8 @@ async function withRouteStubs(usersById, usersByToken, run) {
         setActiveNodes: async () => {},
         getSubscription: async () => null,
         setSubscription: async () => {},
+        getQR: async () => null,
+        setQR: async () => {},
     };
 
     Module._load = function patchedLoad(request, parent, isMain) {
@@ -134,6 +141,10 @@ async function withRouteStubs(usersById, usersByToken, run) {
             }
             if (request === '../models/hyUserModel') return HyUser;
             if (request === '../models/hyNodeModel') return HyNode;
+            if (request === '../models/wgProfileModel') {
+                return { find: () => createQuery([]) };
+            }
+            if (request === '../services/wgEasyService') return { getConfiguration: async () => null };
             if (request === '../services/cacheService') return cache;
             if (request === '../utils/logger') return logger;
             if (request === '../services/cryptoService') {
@@ -227,6 +238,17 @@ function makeSubReq(token) {
     };
 }
 
+function makeBrowserSubReq(token) {
+    return {
+        ...makeSubReq(token),
+        headers: {
+            accept: 'text/html,application/xhtml+xml',
+            'user-agent': 'Mozilla/5.0 Chrome/126.0',
+        },
+        path: `/api/files/${token}`,
+    };
+}
+
 async function main() {
     const alice = {
         userId: 'alice',
@@ -248,14 +270,27 @@ async function main() {
         groups: [],
         nodes: [{ active: true, type: 'hysteria', status: 'online', groups: [] }],
     };
+    const empty = {
+        userId: 'empty',
+        subscriptionToken: 'empty-token',
+        password: 'legacy-empty',
+        enabled: true,
+        trafficLimit: 0,
+        maxDevices: 0,
+        groups: [],
+        nodes: [],
+        traffic: { tx: 0, rx: 0 },
+    };
 
     const usersById = new Map([
         ['alice', alice],
         ['bob', bob],
+        ['empty', empty],
     ]);
     const usersByToken = new Map([
         ['safe-token', alice],
         ['bob-token', bob],
+        ['empty-token', empty],
     ]);
 
     await withRouteStubs(usersById, usersByToken, async ({ warnings }) => {
@@ -293,6 +328,10 @@ async function main() {
         res = await invokeRoute(subscriptionRouter, 'get', '/info/:token', makeSubReq('alice'));
         assert.strictEqual(res.statusCode, 404, 'userId must not work as a subscription token');
         assert.deepStrictEqual(res.body, { error: 'Not found' });
+
+        res = await invokeRoute(subscriptionRouter, 'get', '/files/:token', makeBrowserSubReq('empty-token'));
+        assert.strictEqual(res.statusCode, 200, 'browser landing page must render without nodes');
+        assert.match(res.body, /<!DOCTYPE html>/, 'empty subscription must still return the HTML landing page');
     });
 
     await withRateLimiterStubs(async () => {

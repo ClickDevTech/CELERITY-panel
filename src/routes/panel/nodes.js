@@ -4,6 +4,7 @@ const router = express.Router();
 const HyNode = require('../../models/hyNodeModel');
 const HyUser = require('../../models/hyUserModel');
 const ServerGroup = require('../../models/serverGroupModel');
+const WgPanel = require('../../models/wgPanelModel');
 const Settings = require('../../models/settingsModel');
 const cryptoService = require('../../services/cryptoService');
 const syncService = require('../../services/syncService');
@@ -163,11 +164,12 @@ router.get('/', async (req, res) => {
 router.get('/nodes', async (req, res) => {
     try {
         const CascadeLink = require('../../models/cascadeLinkModel');
-        const [nodes, groups, linksCount, settings] = await Promise.all([
+        const [nodes, groups, linksCount, settings, wgPanelsCount] = await Promise.all([
             HyNode.find().populate('groups', 'name color').sort({ rankingCoefficient: 1, name: 1 }),
             getActiveGroups(),
             CascadeLink.countDocuments({ active: true }),
             Settings.get(),
+            WgPanel.countDocuments(),
         ]);
 
         // Build a map of IP → protocol count so the template can show dual-protocol badges
@@ -180,6 +182,7 @@ router.get('/nodes', async (req, res) => {
             nodes,
             groups,
             linksCount,
+            wgPanelsCount,
             ipProtocolCount,
             loadBalancingEnabled: !!(settings?.loadBalancing?.enabled),
             panelDomain: config.PANEL_DOMAIN || '',

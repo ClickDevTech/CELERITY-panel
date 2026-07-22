@@ -22,18 +22,22 @@ function nodeMetaFor(node) {
 }
 %>
 
-<div class="page-header sticky-header">
+<div class="page-header sticky-header nodes-toolbar-header">
     <div class="page-header-left">
         <div class="view-tabs">
-            <button class="view-tab active" id="tabList" onclick="switchNodesView('list')">
+            <button type="button" class="view-tab active" id="tabList" onclick="switchNodesView('list')">
                 <i class="ti ti-list"></i> <%= t('nodes.title') %>
                 <span class="tab-badge"><%= nodes.length %></span>
             </button>
-            <button class="view-tab" id="tabNetwork" onclick="switchNodesView('network')">
+            <button type="button" class="view-tab" id="tabNetwork" onclick="switchNodesView('network')">
                 <i class="ti ti-topology-star-3"></i> <%= t('network.title') %>
                 <span class="beta-badge" style="margin-left:4px"><%= t('network.betaBadge') %></span>
                 <% if (linksCount) { %><span class="tab-badge"><%= linksCount %></span><% } %>
             </button>
+            <a class="view-tab" href="/panel/wg-panels">
+                <img class="wg-brand-icon" src="/img/wireguard.svg" alt="" aria-hidden="true"> <%= t('nav.wgPanels') %>
+                <span class="tab-badge"><%= typeof wgPanelsCount === 'number' ? wgPanelsCount : 0 %></span>
+            </a>
         </div>
     </div>
     <div class="page-header-center" id="listFilters">
@@ -800,55 +804,6 @@ function nodeMetaFor(node) {
     color: var(--warning, #f59e0b);
     background: rgba(245,158,11,0.08);
 }
-/* View tabs — matches .settings-tabs / .filters-bar glass pill */
-.view-tabs {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 6px;
-    background: var(--glass-bg-strong);
-    border: 1px solid var(--glass-border);
-    border-radius: 999px;
-    box-shadow: var(--glass-shadow);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
-}
-.view-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 18px;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary, #94a3b8);
-    font-size: 13.5px;
-    font-weight: 500;
-    font-family: inherit;
-    border-radius: 999px;
-    cursor: pointer;
-    transition: color .2s ease, background .2s ease, transform .15s ease;
-    white-space: nowrap;
-}
-.view-tab:hover {
-    color: var(--text-primary, #e2e8f0);
-    background: rgba(255, 255, 255, 0.05);
-}
-.view-tab.active {
-    background: linear-gradient(135deg, var(--accent, #6366f1) 0%, var(--accent-gradient-end, #7c3aed) 100%);
-    color: #fff;
-    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35),
-                0 1px 0 rgba(255, 255, 255, 0.18) inset,
-                0 -1px 0 rgba(0, 0, 0, 0.25) inset;
-}
-.tab-badge {
-    background: rgba(255,255,255,0.15);
-    padding: 1px 7px;
-    border-radius: 10px;
-    font-size: 11px;
-}
-.view-tab.active .tab-badge {
-    background: rgba(255,255,255,0.25);
-}
 /* Cascade role badge in node table */
 .badge-cascade {
     display: inline-block;
@@ -1108,7 +1063,8 @@ async function deleteNode(id) {
 // ==================== View Tabs ====================
 
 // Auto-restore network tab if navigated from node-form (set by node-form.ejs)
-const _restoreNetworkView = sessionStorage.getItem('nodesView') === 'network';
+const _requestedNodesView = new URLSearchParams(window.location.search).get('view');
+const _restoreNetworkView = _requestedNodesView === 'network' || sessionStorage.getItem('nodesView') === 'network';
 if (_restoreNetworkView) sessionStorage.removeItem('nodesView');
 
 let networkLoaded = false;
