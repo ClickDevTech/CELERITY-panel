@@ -7,7 +7,7 @@ const CascadeLink = require('../../models/cascadeLinkModel');
 const cryptoService = require('../../services/cryptoService');
 const wgEasyService = require('../../services/wgEasyService');
 const logger = require('../../utils/logger');
-const { COUNTRY_OPTIONS, normalizeCountryCode, countryCodeToFlag } = require('../../utils/country');
+const { getCountryOptions, normalizeCountryCode, countryCodeToFlag } = require('../../utils/country');
 const { render } = require('./helpers');
 
 function panelPayload(body, existing = null) {
@@ -33,7 +33,7 @@ async function renderPanelForm(res, { panel = null, error = '' } = {}) {
         title: panel?._id ? 'Изменить WireGuard' : 'Добавить WireGuard',
         page: 'wg-panels',
         panel,
-        countryOptions: COUNTRY_OPTIONS,
+        countryOptions: getCountryOptions(res.locals.lang),
         error,
     });
 }

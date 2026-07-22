@@ -19,6 +19,7 @@ const statsService = require('../../services/statsService');
 const uaStatsService = require('../../services/uaStatsService');
 const { getActiveGroups, invalidateNodesCache } = require('../../utils/helpers');
 const { buildNodeUiMeta } = require('../../utils/nodeUi');
+const { getCountryOptions } = require('../../utils/country');
 const config = require('../../../config');
 const logger = require('../../utils/logger');
 
@@ -240,6 +241,7 @@ router.get('/nodes/add', async (req, res) => {
             defaultRealityKeys,
             groups,
             candidateNodes,
+            countryOptions: getCountryOptions(res.locals.lang),
             cascadeLinks: [],
             error: req.query.error || null,
             panelDomain: config.PANEL_DOMAIN || '',
@@ -582,6 +584,7 @@ router.get('/nodes/:id', async (req, res) => {
             nodeConfigPreview,
             groups,
             candidateNodes,
+            countryOptions: getCountryOptions(res.locals.lang),
             cascadeLinks: cascadeLinks || [],
             error: req.query.error || null,
             panelDomain: config.PANEL_DOMAIN || '',

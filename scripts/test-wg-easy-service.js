@@ -5,7 +5,7 @@ process.env.ACME_EMAIL ||= 'admin@example.test';
 process.env.ENCRYPTION_KEY ||= 'test-encryption-key-32-characters!!';
 process.env.SESSION_SECRET ||= 'test-session-secret-32-characters!!!!';
 const { WgEasyClient, normalizeBaseUrl, safeRemoteName } = require('../src/services/wgEasyService');
-const { normalizeCountryCode, countryCodeToFlag } = require('../src/utils/country');
+const { getCountryOptions, normalizeCountryCode, countryCodeToFlag } = require('../src/utils/country');
 
 function readJson(req) {
     return new Promise(resolve => {
@@ -91,6 +91,8 @@ async function testV14() {
     assert.equal(normalizeCountryCode(' de '), 'DE');
     assert.equal(normalizeCountryCode('DEU'), '');
     assert.equal(countryCodeToFlag('DE'), '🇩🇪');
+    assert.equal(getCountryOptions('ru').find(country => country.code === 'NL').name, 'Нидерланды');
+    assert.equal(getCountryOptions('en').find(country => country.code === 'NL').name, 'Netherlands');
     await testV15();
     await testV14();
     console.log('wg-easy service tests passed');

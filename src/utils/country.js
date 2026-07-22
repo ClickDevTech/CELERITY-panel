@@ -24,13 +24,34 @@ function countryCodeToFlag(value) {
     return String.fromCodePoint(...Array.from(code, char => 127397 + char.charCodeAt(0)));
 }
 
-const COUNTRY_OPTIONS = Object.freeze(ISO_COUNTRY_CODES.map(code => ({
-    code,
-    flag: countryCodeToFlag(code),
-})));
+const countryOptionsCache = new Map();
+
+function normalizeLocale(value) {
+    const locale = String(value || '').trim().toLowerCase();
+    if (locale.startsWith('zh')) return 'zh-CN';
+    if (locale.startsWith('ru')) return 'ru';
+    return 'en';
+}
+
+function getCountryOptions(locale = 'ru') {
+    const normalizedLocale = normalizeLocale(locale);
+    if (countryOptionsCache.has(normalizedLocale)) return countryOptionsCache.get(normalizedLocale);
+
+    const names = new Intl.DisplayNames([normalizedLocale], { type: 'region', fallback: 'code' });
+    const options = Object.freeze(ISO_COUNTRY_CODES.map(code => Object.freeze({
+        code,
+        flag: countryCodeToFlag(code),
+        name: names.of(code) || code,
+    })));
+    countryOptionsCache.set(normalizedLocale, options);
+    return options;
+}
+
+const COUNTRY_OPTIONS = getCountryOptions('ru');
 
 module.exports = {
     COUNTRY_OPTIONS,
+    getCountryOptions,
     normalizeCountryCode,
     countryCodeToFlag,
 };

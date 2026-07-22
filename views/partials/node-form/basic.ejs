@@ -31,7 +31,18 @@
                 <small><%= t('nodes.commentHint') %></small>
             </div>
 
-            <%# ========== 1b. Cascade Role & Country (Xray only) ========== %>
+            <div class="form-group" style="max-width:380px">
+                <label for="country"><%= t('nodes.country') %></label>
+                <select id="country" name="country">
+                    <option value=""><%= t('common.notSelected') %></option>
+                    <% countryOptions.forEach(function(countryOption) { %>
+                    <option value="<%= countryOption.code %>" <%= String(node?.country || '').toUpperCase() === countryOption.code ? 'selected' : '' %>><%= countryOption.flag %> <%= countryOption.code %> — <%= countryOption.name %></option>
+                    <% }); %>
+                </select>
+                <small><%= t('nodes.countryHint') %></small>
+            </div>
+
+            <%# ========== 1b. Cascade Role (Xray only) ========== %>
             <div class="form-section xray-only" id="cascadeRoleSection" style="<%= node?.type === 'xray' ? '' : 'display:none' %>">
                 <h3><i class="ti ti-topology-star-3"></i> <%= t('nodes.cascadeRole') %></h3>
                 <small class="section-hint"><%= t('nodes.cascadeRoleHint') %></small>
@@ -72,14 +83,6 @@
                             <span class="role-card-desc"><%= t('nodes.roleRelay') %></span>
                         </span>
                     </label>
-                </div>
-
-                <div class="form-group" style="margin-top:12px; max-width:200px">
-                    <label for="country"><%= t('nodes.country') %></label>
-                    <input type="text" id="country" name="country"
-                           value="<%= node?.country || '' %>"
-                           placeholder="RU, DE, NL...">
-                    <small><%= t('nodes.countryHint') %></small>
                 </div>
 
                 <div class="alert alert-info" id="cascadeBridgeHint" style="<%= node?.cascadeRole === 'bridge' ? '' : 'display:none' %>">

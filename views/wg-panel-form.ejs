@@ -31,10 +31,10 @@
                         <select id="wgPanelCountry" name="country">
                             <option value="">Не выбрана</option>
                             <% countryOptions.forEach(function(country) { %>
-                            <option value="<%= country.code %>" <%= panel?.country === country.code ? 'selected' : '' %>><%= country.flag %> <%= country.code %></option>
+                            <option value="<%= country.code %>" <%= panel?.country === country.code ? 'selected' : '' %>><%= country.flag %> <%= country.code %> — <%= country.name %></option>
                             <% }); %>
                         </select>
-                        <small>Флаг и двухбуквенный код страны.</small>
+                        <small>Флаг, двухбуквенный код и название страны.</small>
                     </div>
                 </div>
                 <div class="form-group">
