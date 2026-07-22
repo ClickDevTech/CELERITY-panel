@@ -10,6 +10,26 @@ const logger = require('../../utils/logger');
 const { getCountryOptions, normalizeCountryCode, countryCodeToFlag } = require('../../utils/country');
 const { render } = require('./helpers');
 
+function translate(res, key, replacements = {}) {
+    let value = res.locals.t?.(key) || key;
+    Object.entries(replacements).forEach(([name, replacement]) => {
+        value = value.replaceAll(`{${name}}`, String(replacement));
+    });
+    return value;
+}
+
+function localizeServiceError(res, error) {
+    const errorKeys = {
+        'Для wg-easy v15 требуется логин': 'loginRequiredV15',
+        'WG-панель не найдена': 'panelNotFound',
+        'Не указывайте логин или пароль в адресе': 'credentialsInAddress',
+        'Панель создала клиента, но не вернула его идентификатор': 'createdClientMissingId',
+        'Панель не вернула ID клиента': 'clientIdMissing',
+    };
+    if (errorKeys[error.message]) return translate(res, `wgPanels.${errorKeys[error.message]}`);
+    return error.message;
+}
+
 function panelPayload(body, existing = null) {
     const apiVersion = ['auto', 'v14', 'v15'].includes(body.apiVersion) ? body.apiVersion : 'auto';
     const kind = body.kind === 'awg-easy' ? 'awg-easy' : 'wg-easy';
@@ -30,7 +50,7 @@ function panelPayload(body, existing = null) {
 
 async function renderPanelForm(res, { panel = null, error = '' } = {}) {
     return render(res, 'wg-panel-form', {
-        title: panel?._id ? 'Изменить WireGuard' : 'Добавить WireGuard',
+        title: translate(res, panel?._id ? 'wgPanels.edit' : 'wgPanels.add'),
         page: 'wg-panels',
         panel,
         countryOptions: getCountryOptions(res.locals.lang),
@@ -48,12 +68,12 @@ router.get('/wg-panels', async (req, res) => {
         ]);
         const countMap = new Map(counts.map(item => [String(item._id), item]));
         render(res, 'wg-panels', {
-            title: 'WireGuard', page: 'wg-panels', panels,
+            title: translate(res, 'wgPanels.title'), page: 'wg-panels', panels,
             counts: countMap, nodesCount, linksCount, countryCodeToFlag,
             message: req.query.message || '', error: req.query.error || '',
         });
     } catch (error) {
-        res.status(500).send('Error: ' + error.message);
+        res.status(500).send(`${translate(res, 'common.error')}: ${error.message}`);
     }
 });
 
@@ -76,7 +96,7 @@ router.post('/wg-panels', async (req, res) => {
         if (!req.body.name || !req.body.baseUrl || !req.body.password) {
             return renderPanelForm(res.status(400), {
                 panel: { ...req.body, enabled: req.body.enabled === 'on', rejectUnauthorized: req.body.rejectUnauthorized === 'on', syncExisting: req.body.syncExisting === 'on' },
-                error: 'Название, адрес и пароль обязательны',
+                error: translate(res, 'wgPanels.requiredFields'),
             });
         }
         const payload = panelPayload(req.body);
@@ -90,9 +110,9 @@ router.post('/wg-panels', async (req, res) => {
         if (req.body.syncExisting === 'on') {
             await wgEasyService.syncExistingUsers(panel._id);
         }
-        res.redirect('/panel/wg-panels?message=' + encodeURIComponent('WireGuard добавлен'));
+        res.redirect('/panel/wg-panels?message=' + encodeURIComponent(translate(res, 'wgPanels.added')));
     } catch (error) {
-        const message = error.code === 11000 ? 'Подключение с таким адресом уже существует' : error.message;
+        const message = error.code === 11000 ? translate(res, 'wgPanels.duplicateAddress') : localizeServiceError(res, error);
         return renderPanelForm(res.status(error.code === 11000 ? 409 : 400), {
             panel: { ...req.body, enabled: req.body.enabled === 'on', rejectUnauthorized: req.body.rejectUnauthorized === 'on', syncExisting: req.body.syncExisting === 'on' },
             error: message,
@@ -107,12 +127,12 @@ router.post('/wg-panels/:id', async (req, res) => {
         const payload = panelPayload(req.body, current);
         if (req.body.password) payload.password = cryptoService.encrypt(req.body.password);
         await WgPanel.updateOne({ _id: current._id }, { $set: payload });
-        res.redirect('/panel/wg-panels?message=' + encodeURIComponent('Настройки сохранены'));
+        res.redirect('/panel/wg-panels?message=' + encodeURIComponent(translate(res, 'wgPanels.saved')));
     } catch (error) {
         const current = await WgPanel.findById(req.params.id).lean().catch(() => null);
         return renderPanelForm(res.status(400), {
             panel: { ...(current || {}), ...req.body, _id: req.params.id, enabled: req.body.enabled === 'on', rejectUnauthorized: req.body.rejectUnauthorized === 'on' },
-            error: error.message,
+            error: localizeServiceError(res, error),
         });
     }
 });
@@ -121,9 +141,14 @@ router.post('/wg-panels/:id/test', async (req, res) => {
     try {
         const { client } = await wgEasyService.connect(req.params.id);
         const clients = await client.listClients();
-        res.redirect('/panel/wg-panels?message=' + encodeURIComponent(`Подключение успешно: API ${client.version}, клиентов ${clients.length}`));
+        res.redirect('/panel/wg-panels?message=' + encodeURIComponent(translate(res, 'wgPanels.connectionSuccess', {
+            api: client.version,
+            count: clients.length,
+        })));
     } catch (error) {
-        res.redirect('/panel/wg-panels?error=' + encodeURIComponent(`Ошибка подключения: ${error.message}`));
+        res.redirect('/panel/wg-panels?error=' + encodeURIComponent(translate(res, 'wgPanels.connectionError', {
+            error: localizeServiceError(res, error),
+        })));
     }
 });
 
@@ -131,9 +156,12 @@ router.post('/wg-panels/:id/sync', async (req, res) => {
     try {
         const results = await wgEasyService.syncExistingUsers(req.params.id);
         const failed = results.filter(item => !item.success).length;
-        res.redirect('/panel/wg-panels?message=' + encodeURIComponent(`Синхронизировано: ${results.length - failed}, ошибок: ${failed}`));
+        res.redirect('/panel/wg-panels?message=' + encodeURIComponent(translate(res, 'wgPanels.syncResult', {
+            success: results.length - failed,
+            failed,
+        })));
     } catch (error) {
-        res.redirect('/panel/wg-panels?error=' + encodeURIComponent(error.message));
+        res.redirect('/panel/wg-panels?error=' + encodeURIComponent(localizeServiceError(res, error)));
     }
 });
 
@@ -143,22 +171,22 @@ router.post('/wg-panels/:id/delete', async (req, res) => {
             WgProfile.deleteMany({ panel: req.params.id }),
             WgPanel.findByIdAndDelete(req.params.id),
         ]);
-        res.redirect('/panel/wg-panels?message=' + encodeURIComponent('Подключение удалено; клиенты на внешнем WireGuard-сервере оставлены'));
+        res.redirect('/panel/wg-panels?message=' + encodeURIComponent(translate(res, 'wgPanels.deleted')));
     } catch (error) {
-        res.redirect('/panel/wg-panels?error=' + encodeURIComponent(error.message));
+        res.redirect('/panel/wg-panels?error=' + encodeURIComponent(localizeServiceError(res, error)));
     }
 });
 
 router.get('/wg-profiles/:id/download', async (req, res) => {
     try {
         const result = await wgEasyService.getConfiguration(req.params.id);
-        if (!result) return res.status(404).send('Профиль не найден');
+        if (!result) return res.status(404).send(translate(res, 'wgPanels.profileNotFound'));
         const filename = `${result.profile.remoteName}.conf`.replace(/[^a-zA-Z0-9_.-]/g, '-');
         res.set('Content-Type', 'application/octet-stream');
         res.set('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(result.configuration);
     } catch (error) {
-        res.status(500).send('Error: ' + error.message);
+        res.status(500).send(`${translate(res, 'common.error')}: ${localizeServiceError(res, error)}`);
     }
 });
 
