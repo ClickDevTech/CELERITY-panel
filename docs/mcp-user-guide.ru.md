@@ -18,6 +18,7 @@
 | 🖥 **Настройка серверов** | Конфигурация серверов и нод |
 | 💻 **SSH-команды** | Выполнение команд на серверах удалённо |
 | 📊 **Мониторинг** | Получение статистики и логов |
+| 🔎 **Access Logs** | Read-only SQL-запросы к ClickHouse `access_events` |
 | 🔧 **Диагностика** | Диагностика и устранение проблем |
 
 ---
@@ -130,7 +131,7 @@ curl -X POST https://your-panel.com/api/mcp \
 | `nodes` | 🖥 Список серверов | `nodes:read` |
 | `groups` | 📁 Группы серверов | `stats:read` |
 | `stats` | 📊 Статистика трафика | `stats:read` |
-| `logs` | 📜 Системные логи | `stats:read` |
+| `logs` | 📜 Системные логи (winston-буфер панели, не ClickHouse) | `stats:read` |
 
 **Параметры:**
 
@@ -152,6 +153,36 @@ curl -X POST https://your-panel.com/api/mcp \
     "resource": "users",
     "filter": { "enabled": true },
     "limit": 50
+  }
+}
+```
+
+</details>
+
+---
+
+### 🔎 query_access_logs — Access-логи ClickHouse
+
+> Требуется scope: `stats:read`. Нужны включённые Access Logs и настроенный ClickHouse в настройках панели.
+
+Выполняет **read-only** SQL-запрос к таблице ClickHouse `access_events` (события подключений Xray). Это **не** то же самое, что `query` / `resource=logs` (системные логи панели).
+
+Разрешены: `SELECT`, `WITH`, `EXPLAIN`, `DESCRIBE`, `SHOW`. Мутации отклоняются; результат ограничен (по умолчанию 1000 строк, таймаут 30с).
+
+**Параметры:**
+
+| Параметр | Обязательно | Описание |
+|----------|-------------|----------|
+| `sql` | ✅ Да | Один read-only SQL-запрос ClickHouse |
+
+<details>
+<summary>📖 Пример: Недавние accepted-подключения пользователя</summary>
+
+```json
+{
+  "name": "query_access_logs",
+  "arguments": {
+    "sql": "SELECT event_time, node_id, source_ip, dest_host, dest_ip, dest_port, action FROM access_events WHERE email = 'user123' AND event_time >= now() - INTERVAL 1 DAY ORDER BY event_time DESC LIMIT 100"
   }
 }
 ```
@@ -361,7 +392,7 @@ AI использует промпт `setup_new_node`:
 | `users:write` | ✏️ Создание, изменение, удаление | Запись |
 | `nodes:read` | 👁 Чтение серверов и статистики | Чтение |
 | `nodes:write` | ✏️ Управление серверами, SSH-команды | Запись |
-| `stats:read` | 👁 Чтение статистики и логов | Чтение |
+| `stats:read` | 👁 Чтение статистики, системных логов и access-логов ClickHouse | Чтение |
 | `sync:write` | ✏️ Синхронизация, бэкапы, системные операции | Запись |
 
 ---

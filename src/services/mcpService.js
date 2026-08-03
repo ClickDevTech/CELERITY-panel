@@ -22,6 +22,7 @@ const cascadeTools = require('../mcp/tools/cascade');
 const systemTools = require('../mcp/tools/system');
 const statsTools = require('../mcp/tools/stats');
 const logsTools = require('../mcp/tools/logs');
+const accessLogsTools = require('../mcp/tools/accessLogs');
 
 // ─── Schema generation ─────────────────────────────────────────────────────
 // Advertised tool `inputSchema`s are derived from the zod schemas that the
@@ -153,6 +154,12 @@ const TOOLS = {
             properties: {},
         },
     },
+
+    query_access_logs: {
+        description: accessLogsTools.TOOL_DESCRIPTION,
+        requiredScope: 'stats:read',
+        inputSchema: zodToInputSchema(accessLogsTools.schemas.queryAccessLogs),
+    },
 };
 
 // ─── Scope helpers ───────────────────────────────────────────────────────────
@@ -280,6 +287,9 @@ async function callTool(name, args, apiKey, emit) {
 
         case 'health_check':
             return await systemTools.healthCheck();
+
+        case 'query_access_logs':
+            return await accessLogsTools.queryAccessLogs(args);
 
         default:
             throw Object.assign(new Error(`Tool not implemented: ${name}`), { code: 501 });

@@ -407,6 +407,88 @@ async function query(sql, params = {}, opts = {}) {
     }
 }
 
+const READONLY_SQL_START = /^(SELECT|WITH|EXPLAIN|DESCRIBE|DESC|SHOW)\b/i;
+// Mid-query deny list. Intentionally omits SYSTEM — it would false-positive on
+// system.* tables, while bare SYSTEM commands are already rejected by the
+// start-keyword check. FORMAT is matched only as an output-format clause so
+// the format() SQL function still works.
+const READONLY_SQL_DENY = /\b(INSERT|ALTER|DROP|TRUNCATE|DELETE|CREATE|ATTACH|DETACH|RENAME|GRANT|REVOKE|KILL|OPTIMIZE|INTO\s+OUTFILE)\b|\bFORMAT\s+[A-Za-z0-9_]+/i;
+
+/**
+ * Lightweight SQL gate for MCP / ad-hoc reads. Not a full parser — rejects
+ * multi-statement and obvious mutating keywords. Pair with ClickHouse
+ * `readonly=2` so the server blocks writes while still allowing per-query
+ * settings (max_result_rows, etc.).
+ *
+ * @param {string} sql
+ * @returns {string} normalized single statement
+ * @throws {Error} with message suitable for API responses
+ */
+function assertReadonlySql(sql) {
+    if (typeof sql !== 'string') throw new Error('sql_required');
+    let s = sql.trim();
+    if (!s) throw new Error('sql_required');
+    // Allow a single trailing semicolon; reject anything that looks like
+    // a second statement.
+    if (s.endsWith(';')) s = s.slice(0, -1).trim();
+    if (!s) throw new Error('sql_required');
+    if (s.includes(';')) throw new Error('multi_statement_forbidden');
+    if (!READONLY_SQL_START.test(s)) throw new Error('only_readonly_sql_allowed');
+    if (READONLY_SQL_DENY.test(s)) throw new Error('mutating_sql_forbidden');
+    return s;
+}
+
+/**
+ * Run an ad-hoc read-only query (MCP). Validates SQL, forces ClickHouse
+ * readonly mode, and caps result size / runtime.
+ *
+ * @param {string} sql
+ * @param {{ timeoutMs?: number, maxRows?: number }} [opts]
+ * @returns {Promise<{ok:true, rows:object[], rowCount:number, truncated:boolean}|{ok:false, error:string}>}
+ */
+async function queryReadonly(sql, opts = {}) {
+    let normalized;
+    try {
+        normalized = assertReadonlySql(sql);
+    } catch (e) {
+        return { ok: false, error: String(e && e.message || e) };
+    }
+
+    const client = await getClient();
+    if (!client) return { ok: false, error: 'not_configured' };
+
+    const timeoutMs = opts.timeoutMs || 30000;
+    const maxRows = Math.max(1, Math.min(5000, parseInt(opts.maxRows, 10) || 1000));
+
+    try {
+        const rs = await client.query({
+            query: normalized,
+            format: 'JSONEachRow',
+            clickhouse_settings: {
+                // readonly=2: block writes/DDL, but still allow changing query
+                // settings. readonly=1 forbids setting max_result_rows /
+                // result_overflow_mode in the same request.
+                readonly: 2,
+                max_execution_time: Math.round(timeoutMs / 1000),
+                max_result_rows: maxRows,
+                result_overflow_mode: 'break',
+                output_format_json_quote_64bit_integers: 0,
+            },
+        });
+        const rows = await rs.json();
+        const list = Array.isArray(rows) ? rows : [];
+        const truncated = list.length >= maxRows;
+        return {
+            ok: true,
+            rows: truncated ? list.slice(0, maxRows) : list,
+            rowCount: Math.min(list.length, maxRows),
+            truncated,
+        };
+    } catch (e) {
+        return { ok: false, error: String(e && e.message || e).slice(0, 300) };
+    }
+}
+
 // Delete all stored events (admin purge). TRUNCATE keeps the schema.
 async function truncate() {
     const client = await getClient();
@@ -429,5 +511,7 @@ module.exports = {
     applyRetention,
     insertRaw,
     query,
+    assertReadonlySql,
+    queryReadonly,
     truncate,
 };
