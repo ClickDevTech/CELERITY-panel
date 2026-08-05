@@ -143,6 +143,19 @@
                         <span class="text-muted"><%= t('users.noNodes') %></span>
                     <% } %>
                 </div>
+
+                <h3 class="section-title"><%= t('wgPanels.userProfiles') %> (<%= wgProfiles?.length || 0 %>)</h3>
+                <div class="nodes-list">
+                    <% if (wgProfiles && wgProfiles.length) { wgProfiles.forEach(function(profile) { %>
+                    <div class="node-badge" style="align-items:center;gap:10px">
+                        <img class="wg-brand-icon" src="<%= profile.panel?.kind === 'awg-easy' ? '/img/amnezia.svg' : '/img/wireguard.svg' %>" alt="" aria-hidden="true">
+                        <span class="node-name"><% if (profile.panel?.country) { %><span aria-hidden="true"><%= countryCodeToFlag(profile.panel.country) %></span> <% } %><%= profile.panel?.name || t('wgPanels.remotePanel') %></span>
+                        <span class="badge <%= profile.status === 'active' ? 'badge-success' : (profile.status === 'error' ? 'badge-danger' : '') %>"><%= t('wgPanels.profileStatus' + (profile.status || 'pending').charAt(0).toUpperCase() + (profile.status || 'pending').slice(1)) %></span>
+                        <% if (profile.status !== 'error') { %><a class="btn btn-sm" href="/panel/wg-profiles/<%= profile._id %>/download"><i class="ti ti-download"></i> .conf</a><% } %>
+                        <% if (profile.lastError) { %><small class="text-danger"><%= profile.lastError %></small><% } %>
+                    </div>
+                    <% }); } else { %><span class="text-muted"><%= t('wgPanels.noUserProfiles') %></span><% } %>
+                </div>
             </div>
         </div>
     </div>

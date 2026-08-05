@@ -1,0 +1,118 @@
+<div class="page-header">
+    <a href="/panel/wg-panels" class="btn btn-back"><i class="ti ti-chevron-left"></i> <%= t('common.backToList') %></a>
+</div>
+
+<% if (error) { %>
+<div class="alert alert-error" role="alert" style="margin-bottom:16px;"><i class="ti ti-alert-circle"></i> <%= error %></div>
+<% } %>
+
+<div class="card wg-panel-form-card">
+    <div class="card-header">
+        <h2><img id="wgPanelBrandIcon" class="wg-brand-icon wg-brand-icon-heading" src="<%= panel?.kind === 'awg-easy' ? '/img/amnezia.svg' : '/img/wireguard.svg' %>" alt="" aria-hidden="true"> <%= panel?._id ? t('wgPanels.edit') : t('wgPanels.new') %></h2>
+    </div>
+    <div class="card-body">
+        <form method="post" action="<%= panel?._id ? '/panel/wg-panels/' + panel._id : '/panel/wg-panels' %>" class="form">
+            <div class="form-section">
+                <h3><%= t('wgPanels.connection') %></h3>
+                <div class="form-row-3">
+                    <div class="form-group">
+                        <label for="wgPanelName"><%= t('common.name') %> <span aria-hidden="true">*</span></label>
+                        <input id="wgPanelName" name="name" required value="<%= panel?.name || '' %>" placeholder="<%= t('wgPanels.namePlaceholder') %>" autofocus>
+                    </div>
+                    <div class="form-group">
+                        <label for="wgPanelKind"><%= t('wgPanels.type') %> WireGuard</label>
+                        <select id="wgPanelKind" name="kind">
+                            <option value="wg-easy" <%= panel?.kind !== 'awg-easy' ? 'selected' : '' %>>wg-easy</option>
+                            <option value="awg-easy" <%= panel?.kind === 'awg-easy' ? 'selected' : '' %>>awg-easy / amnezia-wg-easy</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="wgPanelCountry"><%= t('wgPanels.country') %></label>
+                        <select id="wgPanelCountry" name="country">
+                            <option value=""><%= t('common.notSelected') %></option>
+                            <% countryOptions.forEach(function(country) { %>
+                            <option value="<%= country.code %>" <%= panel?.country === country.code ? 'selected' : '' %>><%= country.flag %> <%= country.code %> — <%= country.name %></option>
+                            <% }); %>
+                        </select>
+                        <small><%= t('wgPanels.countryHint') %></small>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="wgPanelBaseUrl"><%= t('wgPanels.addressLabel') %> <span aria-hidden="true">*</span></label>
+                    <input id="wgPanelBaseUrl" name="baseUrl" required value="<%= panel?.baseUrl || '' %>" placeholder="https://wg.example.com:51821" inputmode="url" autocomplete="url">
+                    <small><%= t('wgPanels.addressHint') %> <code>178.20.10.5:51821</code> / <code>https://wg.example.com</code>.</small>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3><%= t('wgPanels.authorization') %></h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="wgPanelUsername"><%= t('wgPanels.username') %></label>
+                        <input id="wgPanelUsername" name="username" value="<%= panel?.username || '' %>" autocomplete="username">
+                        <small><%= t('wgPanels.usernameHint') %></small>
+                    </div>
+                    <div class="form-group">
+                        <label for="wgPanelPassword"><%= t('wgPanels.password') %> <%- panel?._id ? '' : '<span aria-hidden="true">*</span>' %></label>
+                        <div class="password-input-wrap">
+                            <input id="wgPanelPassword" type="password" name="password" <%= panel?._id ? '' : 'required' %> autocomplete="new-password" placeholder="<%= panel?._id ? t('wgPanels.keepPassword') : '' %>">
+                            <button type="button" class="password-toggle" onclick="toggleWgPassword(this)" aria-label="<%= t('wgPanels.showPassword') %>" aria-pressed="false"><i class="ti ti-eye"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3><%= t('wgPanels.apiSettings') %></h3>
+                <div class="form-group">
+                    <label for="wgPanelApiVersion"><%= t('wgPanels.apiVersion') %></label>
+                    <select id="wgPanelApiVersion" name="apiVersion">
+                        <% ['auto','v14','v15'].forEach(function(v) { %><option value="<%= v %>" <%= (panel?.apiVersion || 'auto') === v ? 'selected' : '' %>><%= v === 'auto' ? t('wgPanels.detectAutomatically') : v %></option><% }); %>
+                    </select>
+                </div>
+                <div class="form-options-stack">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="rejectUnauthorized" <%= !panel || panel.rejectUnauthorized ? 'checked' : '' %>>
+                        <span class="checkbox-text"><%= t('wgPanels.verifyTls') %></span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="enabled" <%= !panel || panel.enabled ? 'checked' : '' %>>
+                        <span class="checkbox-text"><%= t('wgPanels.createForNewUsers') %></span>
+                    </label>
+                    <% if (!panel?._id) { %>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="syncExisting" <%= panel?.syncExisting === false ? '' : 'checked' %>>
+                        <span class="checkbox-text"><%= t('wgPanels.createForExistingUsers') %></span>
+                    </label>
+                    <% } %>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button class="btn btn-primary" type="submit"><i class="ti ti-device-floppy"></i> <%= panel?._id ? t('common.save') : t('wgPanels.addAndTest') %></button>
+                <a class="btn" href="/panel/wg-panels"><%= t('common.cancel') %></a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+const wgPasswordLabels = {
+    show: <%- JSON.stringify(t('wgPanels.showPassword')) %>,
+    hide: <%- JSON.stringify(t('wgPanels.hidePassword')) %>
+};
+
+function toggleWgPassword(button) {
+    const input = document.getElementById('wgPanelPassword');
+    const visible = input.type === 'text';
+    input.type = visible ? 'password' : 'text';
+    button.setAttribute('aria-pressed', String(!visible));
+    button.setAttribute('aria-label', visible ? wgPasswordLabels.show : wgPasswordLabels.hide);
+    button.querySelector('i').className = visible ? 'ti ti-eye' : 'ti ti-eye-off';
+}
+
+document.getElementById('wgPanelKind')?.addEventListener('change', function () {
+    const icon = document.getElementById('wgPanelBrandIcon');
+    if (icon) icon.src = this.value === 'awg-easy' ? '/img/amnezia.svg' : '/img/wireguard.svg';
+});
+</script>

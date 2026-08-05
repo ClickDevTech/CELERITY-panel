@@ -1239,6 +1239,7 @@ class SyncService {
         await Promise.allSettled([
             this.removeUserFromAllXrayNodes(user),
             this.kickUser(user.userId),
+            require('./wgEasyService').setUserEnabled(user.userId, false),
             invalidateUserCache(user.userId, token),
         ]);
 

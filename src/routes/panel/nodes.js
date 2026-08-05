@@ -4,6 +4,7 @@ const router = express.Router();
 const HyNode = require('../../models/hyNodeModel');
 const HyUser = require('../../models/hyUserModel');
 const ServerGroup = require('../../models/serverGroupModel');
+const WgPanel = require('../../models/wgPanelModel');
 const Settings = require('../../models/settingsModel');
 const cryptoService = require('../../services/cryptoService');
 const syncService = require('../../services/syncService');
@@ -18,6 +19,7 @@ const statsService = require('../../services/statsService');
 const uaStatsService = require('../../services/uaStatsService');
 const { getActiveGroups, invalidateNodesCache } = require('../../utils/helpers');
 const { buildNodeUiMeta } = require('../../utils/nodeUi');
+const { getCountryOptions } = require('../../utils/country');
 const config = require('../../../config');
 const logger = require('../../utils/logger');
 
@@ -163,11 +165,12 @@ router.get('/', async (req, res) => {
 router.get('/nodes', async (req, res) => {
     try {
         const CascadeLink = require('../../models/cascadeLinkModel');
-        const [nodes, groups, linksCount, settings] = await Promise.all([
+        const [nodes, groups, linksCount, settings, wgPanelsCount] = await Promise.all([
             HyNode.find().populate('groups', 'name color').sort({ rankingCoefficient: 1, name: 1 }),
             getActiveGroups(),
             CascadeLink.countDocuments({ active: true }),
             Settings.get(),
+            WgPanel.countDocuments(),
         ]);
 
         // Build a map of IP → protocol count so the template can show dual-protocol badges
@@ -180,6 +183,7 @@ router.get('/nodes', async (req, res) => {
             nodes,
             groups,
             linksCount,
+            wgPanelsCount,
             ipProtocolCount,
             loadBalancingEnabled: !!(settings?.loadBalancing?.enabled),
             panelDomain: config.PANEL_DOMAIN || '',
@@ -237,6 +241,7 @@ router.get('/nodes/add', async (req, res) => {
             defaultRealityKeys,
             groups,
             candidateNodes,
+            countryOptions: getCountryOptions(res.locals.lang),
             cascadeLinks: [],
             error: req.query.error || null,
             panelDomain: config.PANEL_DOMAIN || '',
@@ -579,6 +584,7 @@ router.get('/nodes/:id', async (req, res) => {
             nodeConfigPreview,
             groups,
             candidateNodes,
+            countryOptions: getCountryOptions(res.locals.lang),
             cascadeLinks: cascadeLinks || [],
             error: req.query.error || null,
             panelDomain: config.PANEL_DOMAIN || '',

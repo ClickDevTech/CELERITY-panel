@@ -866,6 +866,20 @@ Bucket: my-backups
 
 ---
 
+## 🛡️ wg-easy / awg-easy integration
+
+Use the **WireGuard** tab in the Nodes section to connect one or more external servers by IP and port or by domain. Supported APIs:
+
+- wg-easy v15 (`username + password`, Basic Auth);
+- wg-easy v14 and compatible awg-easy/amnezia-wg-easy forks (`password only`, cookie session);
+- automatic API detection, connection testing, and reconciliation of existing users.
+
+Every new CELERITY user gets a client in every enabled WireGuard connection. The generated `.conf` is stored encrypted and can be downloaded from the user details or subscription page. Disable, re-enable, expiration, and deletion actions are synchronized to the external servers.
+
+> wg-easy v15 Basic Auth does not work for accounts with 2FA enabled. Use a dedicated API account without 2FA.
+
+---
+
 ## 🐳 Docker Compose
 
 ```yaml

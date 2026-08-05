@@ -51,7 +51,7 @@
                     <span class="nav-icon"><i class="ti ti-trending-up"></i></span>
                     <span><%= t('nav.stats') %></span>
                 </a></li>
-                <li><a href="/panel/nodes" class="<%= page === 'nodes' ? 'active' : '' %>">
+                <li><a href="/panel/nodes" class="<%= page === 'nodes' || page === 'wg-panels' ? 'active' : '' %>">
                     <span class="nav-icon"><i class="ti ti-server"></i></span>
                     <span><%= t('nav.nodes') %></span>
                 </a></li>
@@ -106,6 +106,8 @@
         </main>
     </div>
     
+    <script defer src="/js/custom-tooltip.js"></script>
+    <script defer src="/js/custom-select.js"></script>
     <script defer src="/js/app.js"></script>
     <script>
     function toggleMobileMenu() {

@@ -23,6 +23,29 @@ const uaStats = require('../services/uaStatsService');
 const { extractHwidHeaders } = require('../utils/hwidHeaders');
 const hwidDeviceService = require('../services/hwidDeviceService');
 const webhookService = require('../services/webhookService');
+const wgEasyService = require('../services/wgEasyService');
+const WgProfile = require('../models/wgProfileModel');
+const { countryCodeToFlag } = require('../utils/country');
+
+// Download a WireGuard profile using the same private subscription token.
+// The profile itself remains encrypted in MongoDB and is decrypted only here.
+router.get('/wg/:token/:profileId', async (req, res) => {
+    try {
+        const user = await HyUser.findOne({ subscriptionToken: req.params.token }).lean();
+        const validation = validateUser(user);
+        if (!validation.valid) return res.status(404).send('Not found');
+        const result = await wgEasyService.getConfiguration(req.params.profileId, user.userId);
+        if (!result || result.profile.status === 'error') return res.status(404).send('Not found');
+        const filename = `${result.profile.remoteName}.conf`.replace(/[^a-zA-Z0-9_.-]/g, '-');
+        res.set('Content-Type', 'application/octet-stream');
+        res.set('Content-Disposition', `attachment; filename="${filename}"`);
+        res.set('Cache-Control', 'private, no-store');
+        res.send(result.configuration);
+    } catch (error) {
+        logger.error(`[WG subscription] Download error: ${error.message}`);
+        res.status(404).send('Not found');
+    }
+});
 
 // ==================== HELPERS ====================
 
@@ -1764,6 +1787,11 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
     // Soft-block mode: replace the link/locations/QR sections with a notice
     // banner; everything else (header, stats, buttons, styles) is reused.
     const softBlock = opts.softBlock || null;
+    const wgProfiles = softBlock ? [] : await WgProfile.find({
+        userId: user.userId,
+        status: { $in: ['active', 'disabled'] },
+        configuration: { $ne: '' },
+    }).populate('panel', 'name kind enabled country').sort({ createdAt: 1 }).lean();
     // Collect all configs
     const allConfigs = [];
     nodes.forEach(node => {
@@ -1894,6 +1922,22 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
                         <span>${safeLabel}</span>
                     </a>`;
                 }).filter(Boolean).join('')}
+            </div>
+           </div>`
+        : '';
+
+    const wgProfilesHtml = wgProfiles.length > 0
+        ? `<div class="section">
+            <h2><span class="vpn-title-icons" aria-hidden="true"><img class="vpn-brand-icon" src="/img/wireguard.svg" alt=""><img class="vpn-brand-icon" src="/img/amnezia.svg" alt=""></span> WireGuard / AmneziaWG</h2>
+            <div class="btn-grid">
+                ${wgProfiles.map(profile => {
+                    const countryFlag = countryCodeToFlag(profile.panel?.country);
+                    const profileName = profile.panel?.name || profile.remoteName || 'WireGuard';
+                    const label = escAttr(`${countryFlag ? `${countryFlag} ` : ''}${profileName}`);
+                    const href = `/api/wg/${encodeURIComponent(token)}/${encodeURIComponent(String(profile._id))}`;
+                    const icon = profile.panel?.kind === 'awg-easy' ? '/img/amnezia.svg' : '/img/wireguard.svg';
+                    return `<a href="${href}" class="app-btn"><img class="vpn-brand-icon" src="${icon}" alt="" aria-hidden="true"><span>${label} (.conf)</span></a>`;
+                }).join('')}
             </div>
            </div>`
         : '';
@@ -2282,6 +2326,19 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
             color: var(--accent);
             flex-shrink: 0;
         }
+        .vpn-brand-icon {
+            display: inline-block;
+            flex: 0 0 auto;
+            width: 18px;
+            height: 18px;
+            object-fit: contain;
+            vertical-align: middle;
+        }
+        .vpn-title-icons {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
         .app-btn:hover {
             background: rgba(99, 102, 241, 0.08);
             border-color: rgba(99, 102, 241, 0.4);
@@ -2382,7 +2439,8 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
             `).join('')}
         </div>
 
-        ${qrSectionHtml}`}
+        ${qrSectionHtml}
+        ${wgProfilesHtml}`}
         ${buttonsHtml}
     </div>
 
@@ -2775,9 +2833,6 @@ async function serveSubscription(req, res, ctx) {
     if (browser && !format) {
         const settings = await getSettings();
         const nodes = await getActiveNodes(user);
-        if (nodes.length === 0) {
-            return res.status(503).type('text/plain').send('# No servers available');
-        }
         const html = await generateHTML(user, nodes, cacheToken, baseUrl, settings, res.locals.lang);
         return res
             .type('text/html')

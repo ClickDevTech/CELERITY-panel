@@ -16,6 +16,7 @@ const { recomputeEnabled } = require('../utils/userActivity');
 const expireScheduler = require('../services/expireScheduler');
 const { requireScope } = require('../middleware/auth');
 const webhook = require('../services/webhookService');
+const wgEasyService = require('../services/wgEasyService');
 
 /**
  * Lazy-load syncService to avoid circular dependency
@@ -53,6 +54,7 @@ async function deleteUserById(userId) {
     await hwidDeviceService.invalidateCountCache(userId);
 
     xrayRemoveUser(user.toObject());
+    await wgEasyService.removeUser(userId);
 
     await invalidateUserCache(userId, user.subscriptionToken);
     webhook.clearDeviceLimitNotified(userId);
@@ -203,6 +205,7 @@ router.delete('/:userId/devices/:hwid', requireScope('users:write'), async (req,
         }
         await hwidDeviceService.invalidateCountCache(userId);
         await invalidateUserCache(userId, user.subscriptionToken);
+
         webhook.clearDeviceLimitNotified(userId);
         res.json({ success: true });
     } catch (error) {
@@ -298,6 +301,8 @@ router.post('/', requireScope('users:write'), async (req, res) => {
         await user.save();
 
         await invalidateUserCache(userId, user.subscriptionToken);
+
+        await wgEasyService.provisionUser(user.toObject());
 
         logger.info(`[Users API] Created user ${userId}, groups: ${userGroups.length}`);
         webhook.emit(webhook.EVENTS.USER_CREATED, { userId, username: username || '', groups: userGroups });
@@ -405,6 +410,7 @@ router.put('/:userId', requireScope('users:write'), async (req, res) => {
                 xrayRemoveUser(merged);
                 webhook.emit(webhook.EVENTS.USER_DISABLED, { userId: req.params.userId });
             }
+            await wgEasyService.setUserEnabled(req.params.userId, nowEnabled);
         }
 
         if (Object.prototype.hasOwnProperty.call(updates, 'expireAt')) {
@@ -502,6 +508,7 @@ router.post('/:userId/enable', requireScope('users:write'), async (req, res) => 
 
         // Add to Xray nodes (user just got enabled)
         xrayAddUser(user.toObject());
+        await wgEasyService.setUserEnabled(req.params.userId, true);
 
         // Инвалидируем кэш
         await invalidateUserCache(req.params.userId, user.subscriptionToken);
@@ -531,6 +538,7 @@ router.post('/:userId/disable', requireScope('users:write'), async (req, res) =>
 
         // Remove from Xray nodes (user is disabled)
         xrayRemoveUser(user.toObject());
+        await wgEasyService.setUserEnabled(req.params.userId, false);
 
         // Инвалидируем кэш
         await invalidateUserCache(req.params.userId, user.subscriptionToken);
@@ -671,6 +679,7 @@ router.post('/sync-from-main', requireScope('users:write'), async (req, res) => 
                                 xrayRemoveUser(merged);
                                 webhook.emit(webhook.EVENTS.USER_DISABLED, { userId });
                             }
+                            await wgEasyService.setUserEnabled(userId, updates.enabled);
                         }
                     }
                 } else {
@@ -692,6 +701,7 @@ router.post('/sync-from-main', requireScope('users:write'), async (req, res) => 
                     if (createdUser.enabled) {
                         xrayAddUser(createdUser.toObject());
                     }
+                    await wgEasyService.provisionUser(createdUser.toObject());
                 }
             } catch (err) {
                 logger.error(`[Sync] Error for userId ${userData.userId}: ${err.message}`);

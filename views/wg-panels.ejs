@@ -1,0 +1,135 @@
+<div class="page-header sticky-header">
+    <div class="page-header-left">
+        <div class="view-tabs">
+            <a class="view-tab" href="/panel/nodes">
+                <i class="ti ti-list"></i> <%= t('nodes.title') %>
+                <span class="tab-badge"><%= typeof nodesCount === 'number' ? nodesCount : 0 %></span>
+            </a>
+            <a class="view-tab" href="/panel/nodes?view=network">
+                <i class="ti ti-topology-star-3"></i> <%= t('network.title') %>
+                <span class="beta-badge" style="margin-left:4px"><%= t('network.betaBadge') %></span>
+                <% if (linksCount) { %><span class="tab-badge"><%= linksCount %></span><% } %>
+            </a>
+            <div class="view-tab active" aria-current="page">
+                <img class="wg-brand-icon" src="/img/wireguard.svg" alt="" aria-hidden="true"> <%= t('nav.wgPanels') %>
+                <span class="tab-badge"><%= panels.length %></span>
+            </div>
+        </div>
+    </div>
+    <div class="page-header-right">
+        <a href="/panel/wg-panels/add" class="btn btn-primary">
+            <i class="ti ti-plus"></i> <%= t('wgPanels.add') %>
+        </a>
+    </div>
+</div>
+
+<% if (message) { %><div class="alert alert-success" role="status"><i class="ti ti-circle-check"></i> <%= message %></div><% } %>
+<% if (error) { %><div class="alert alert-error" role="alert"><i class="ti ti-alert-circle"></i> <%= error %></div><% } %>
+
+<div class="card">
+    <div class="card-body no-padding">
+        <div class="table-wrapper">
+            <table class="table" id="wgPanelsTable">
+                <thead>
+                    <tr>
+                        <th><%= t('common.name') %></th>
+                        <th><%= t('wgPanels.country') %></th>
+                        <th><%= t('wgPanels.type') %></th>
+                        <th><%= t('wgPanels.address') %></th>
+                        <th>API</th>
+                        <th><%= t('wgPanels.profiles') %></th>
+                        <th><%= t('common.status') %></th>
+                        <th><%= t('wgPanels.profileCreation') %></th>
+                        <th><%= t('common.actions') %></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% if (panels.length === 0) { %>
+                    <tr>
+                        <td colspan="9" class="text-center text-muted">
+                            <div class="empty-state">
+                                <span class="empty-icon"><img class="wg-brand-icon wg-brand-icon-lg" src="/img/wireguard.svg" alt="" aria-hidden="true"></span>
+                                <p><%= t('wgPanels.empty') %></p>
+                                <a href="/panel/wg-panels/add" class="btn btn-primary"><i class="ti ti-plus"></i> <%= t('wgPanels.add') %></a>
+                            </div>
+                        </td>
+                    </tr>
+                    <% } %>
+                    <% panels.forEach(function(panel) { const stat = counts.get(String(panel._id)) || { count: 0, errors: 0 }; const statusLabel = ['online', 'error', 'unknown'].includes(panel.status) ? t('common.' + panel.status) : panel.status; %>
+                    <tr>
+                        <td><strong><%= panel.name %></strong></td>
+                        <td>
+                            <% if (panel.country) { %><span class="wg-country-badge"><span aria-hidden="true"><%= countryCodeToFlag(panel.country) %></span> <%= panel.country %></span><% } else { %><span class="text-muted">—</span><% } %>
+                        </td>
+                        <td><span class="node-info-badge"><img class="wg-brand-icon wg-brand-icon-sm" src="<%= panel.kind === 'awg-easy' ? '/img/amnezia.svg' : '/img/wireguard.svg' %>" alt="" aria-hidden="true"> <%= panel.kind %></span></td>
+                        <td><code title="<%= panel.baseUrl %>"><%= panel.baseUrl %></code></td>
+                        <td><span class="node-info-badge"><%= panel.detectedVersion || panel.apiVersion %></span></td>
+                        <td>
+                            <strong><%= stat.count %></strong>
+                            <% if (stat.errors) { %><span class="badge badge-danger" title="<%= t('wgPanels.profilesWithErrors') %>"><%= stat.errors %> <%= t('wgPanels.errors') %></span><% } %>
+                        </td>
+                        <td>
+                            <span class="badge badge-<%= panel.status === 'online' ? 'success' : (panel.status === 'error' ? 'danger' : 'warning') %>">
+                                <i class="ti ti-<%= panel.status === 'online' ? 'circle-check' : (panel.status === 'error' ? 'alert-circle' : 'clock') %>"></i>
+                                <%= statusLabel %>
+                            </span>
+                            <% if (panel.lastError) { %><small class="wg-panel-error" title="<%= panel.lastError %>"><%= panel.lastError %></small><% } %>
+                        </td>
+                        <td><span class="badge badge-<%= panel.enabled ? 'success' : 'secondary' %>"><%= panel.enabled ? t('common.enabled') : t('common.disabled') %></span></td>
+                        <td>
+                            <div class="node-actions">
+                                <form method="post" action="/panel/wg-panels/<%= panel._id %>/test">
+                                    <button class="btn-icon" title="<%= t('wgPanels.testConnection') %>" aria-label="<%= t('wgPanels.testConnection') %>: <%= panel.name %>"><i class="ti ti-plug-connected"></i></button>
+                                </form>
+                                <form method="post" action="/panel/wg-panels/<%= panel._id %>/sync">
+                                    <button class="btn-icon" title="<%= t('wgPanels.createMissingProfiles') %>" aria-label="<%= t('wgPanels.syncProfiles') %>: <%= panel.name %>"><i class="ti ti-refresh"></i></button>
+                                </form>
+                                <a href="/panel/wg-panels/<%= panel._id %>/edit" class="btn-icon" title="<%= t('common.edit') %>" aria-label="<%= t('common.edit') %>: <%= panel.name %>"><i class="ti ti-pencil"></i></a>
+                                <form method="post" action="/panel/wg-panels/<%= panel._id %>/delete" data-confirm="<%= t('wgPanels.deleteConfirm') %>" onsubmit="return confirm(this.dataset.confirm)">
+                                    <button class="btn-icon btn-icon-danger" title="<%= t('common.delete') %>" aria-label="<%= t('common.delete') %>: <%= panel.name %>"><i class="ti ti-trash"></i></button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mobile-nodes-list">
+            <% if (panels.length === 0) { %>
+            <div class="empty-state">
+                <span class="empty-icon"><img class="wg-brand-icon wg-brand-icon-lg" src="/img/wireguard.svg" alt="" aria-hidden="true"></span>
+                <p><%= t('wgPanels.empty') %></p>
+                <a href="/panel/wg-panels/add" class="btn btn-primary"><i class="ti ti-plus"></i> <%= t('wgPanels.add') %></a>
+            </div>
+            <% } %>
+            <% panels.forEach(function(panel) { const stat = counts.get(String(panel._id)) || { count: 0, errors: 0 }; const statusLabel = ['online', 'error', 'unknown'].includes(panel.status) ? t('common.' + panel.status) : panel.status; %>
+            <div class="mobile-node-card">
+                <div class="mobile-node-header">
+                    <div class="mobile-node-title">
+                        <strong><%= panel.name %></strong>
+                        <code><%= panel.baseUrl %></code>
+                    </div>
+                    <div class="mobile-node-state">
+                        <span class="badge badge-<%= panel.status === 'online' ? 'success' : (panel.status === 'error' ? 'danger' : 'warning') %>"><%= statusLabel %></span>
+                    </div>
+                </div>
+                <% if (panel.lastError) { %><div class="wg-panel-error"><i class="ti ti-alert-circle"></i> <%= panel.lastError %></div><% } %>
+                <div class="mobile-node-stats">
+                    <div class="mobile-stat-item"><span class="mobile-stat-label"><%= t('wgPanels.type') %></span><span class="mobile-stat-value"><img class="wg-brand-icon wg-brand-icon-sm" src="<%= panel.kind === 'awg-easy' ? '/img/amnezia.svg' : '/img/wireguard.svg' %>" alt="" aria-hidden="true"> <%= panel.kind %></span></div>
+                    <div class="mobile-stat-item"><span class="mobile-stat-label"><%= t('wgPanels.country') %></span><span class="mobile-stat-value"><%= panel.country ? countryCodeToFlag(panel.country) + ' ' + panel.country : '—' %></span></div>
+                    <div class="mobile-stat-item"><span class="mobile-stat-label">API</span><span class="mobile-stat-value"><%= panel.detectedVersion || panel.apiVersion %></span></div>
+                    <div class="mobile-stat-item"><span class="mobile-stat-label"><%= t('wgPanels.profiles') %></span><span class="mobile-stat-value"><%= stat.count %><%= stat.errors ? ' / ' + stat.errors + ' ' + t('wgPanels.errors') : '' %></span></div>
+                </div>
+                <div class="mobile-node-actions">
+                    <form method="post" action="/panel/wg-panels/<%= panel._id %>/test"><button class="btn btn-sm" title="<%= t('wgPanels.testConnection') %>" aria-label="<%= t('wgPanels.testConnection') %>"><i class="ti ti-plug-connected"></i></button></form>
+                    <form method="post" action="/panel/wg-panels/<%= panel._id %>/sync"><button class="btn btn-sm" title="<%= t('wgPanels.syncProfiles') %>" aria-label="<%= t('wgPanels.syncProfiles') %>"><i class="ti ti-refresh"></i></button></form>
+                    <a href="/panel/wg-panels/<%= panel._id %>/edit" class="btn btn-sm" title="<%= t('common.edit') %>" aria-label="<%= t('common.edit') %>"><i class="ti ti-pencil"></i></a>
+                    <form method="post" action="/panel/wg-panels/<%= panel._id %>/delete" data-confirm="<%= t('wgPanels.deleteConfirm') %>" onsubmit="return confirm(this.dataset.confirm)"><button class="btn btn-sm btn-danger" title="<%= t('common.delete') %>" aria-label="<%= t('common.delete') %>"><i class="ti ti-trash"></i></button></form>
+                </div>
+            </div>
+            <% }); %>
+        </div>
+    </div>
+</div>

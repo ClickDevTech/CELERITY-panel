@@ -11,6 +11,7 @@ const hwidDeviceService = require('../../services/hwidDeviceService');
 const cryptoService = require('../../services/cryptoService');
 const cache = require('../../services/cacheService');
 const logger = require('../../utils/logger');
+const wgEasyService = require('../../services/wgEasyService');
 const webhook = require('../../services/webhookService');
 const expireScheduler = require('../../services/expireScheduler');
 const { recomputeEnabled, isExpired, isOverLimit } = require('../../utils/userActivity');
@@ -152,6 +153,7 @@ async function manageUser(args, emit) {
                 nodes: [],
             });
             await user.save();
+            await wgEasyService.provisionUser(user.toObject());
             logger.info(`[MCP] Created user ${userId}`);
             webhook.emit(webhook.EVENTS.USER_CREATED, { userId, username: data.username || '', groups: data.groups || [] });
             if (user.enabled) getSyncService().addUserToAllXrayNodes(user.toObject()).catch(() => {});
@@ -213,6 +215,7 @@ async function manageUser(args, emit) {
                     sync.removeUserFromAllXrayNodes(merged).catch(() => {});
                     webhook.emit(webhook.EVENTS.USER_DISABLED, { userId });
                 }
+                await wgEasyService.setUserEnabled(userId, nowEnabled);
             }
 
             if (Object.prototype.hasOwnProperty.call(updates, 'expireAt')) {
@@ -230,6 +233,7 @@ async function manageUser(args, emit) {
             if (!user) return { error: `User '${userId}' not found`, code: 404 };
             await UserDevice.deleteMany({ userId });
             getSyncService().removeUserFromAllXrayNodes(user.toObject()).catch(() => {});
+            await wgEasyService.removeUser(userId);
             await invalidateUserCache(userId, user.subscriptionToken);
             webhook.clearDeviceLimitNotified(userId);
             logger.info(`[MCP] Deleted user ${userId}`);
@@ -242,6 +246,7 @@ async function manageUser(args, emit) {
             const user = await HyUser.findOneAndUpdate({ userId }, { $set: { enabled: true } }, { new: true });
             if (!user) return { error: `User '${userId}' not found`, code: 404 };
             getSyncService().addUserToAllXrayNodes(user.toObject()).catch(() => {});
+            await wgEasyService.setUserEnabled(userId, true);
             await invalidateUserCache(userId, user.subscriptionToken);
             logger.info(`[MCP] Enabled user ${userId}`);
             webhook.emit(webhook.EVENTS.USER_ENABLED, { userId });
@@ -253,6 +258,7 @@ async function manageUser(args, emit) {
             const user = await HyUser.findOneAndUpdate({ userId }, { $set: { enabled: false } }, { new: true });
             if (!user) return { error: `User '${userId}' not found`, code: 404 };
             getSyncService().removeUserFromAllXrayNodes(user.toObject()).catch(() => {});
+            await wgEasyService.setUserEnabled(userId, false);
             await invalidateUserCache(userId, user.subscriptionToken);
             logger.info(`[MCP] Disabled user ${userId}`);
             webhook.emit(webhook.EVENTS.USER_DISABLED, { userId });
@@ -283,6 +289,7 @@ async function manageUser(args, emit) {
 
             if (autoEnable) {
                 getSyncService().addUserToAllXrayNodes(user.toObject()).catch(() => {});
+                await wgEasyService.setUserEnabled(userId, true);
                 webhook.emit(webhook.EVENTS.USER_ENABLED, { userId });
             }
 

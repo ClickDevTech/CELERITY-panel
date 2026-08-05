@@ -13,6 +13,9 @@ const { render } = require('./helpers');
 const { getActiveGroups, invalidateGroupsCache, getSettings, invalidateUserCache, invalidateNodesCache } = require('../../utils/helpers');
 const { recomputeEnabled } = require('../../utils/userActivity');
 const logger = require('../../utils/logger');
+const WgProfile = require('../../models/wgProfileModel');
+const wgEasyService = require('../../services/wgEasyService');
+const { countryCodeToFlag } = require('../../utils/country');
 
 // Whether the global HWID feature is enabled (permissive/strict).
 // Controls visibility of HWID UI in user form and detail.
@@ -230,6 +233,8 @@ router.post('/users', async (req, res) => {
 
         await invalidateUserCache(userId, newUser.subscriptionToken);
 
+        await wgEasyService.provisionUser(newUser.toObject());
+
         if (newUser.enabled) {
             syncService.addUserToAllXrayNodes(newUser.toObject()).catch(err => {
                 logger.error(`[Panel] Xray addUser error for ${userId}: ${err.message}`);
@@ -369,6 +374,7 @@ router.post('/users/:userId', async (req, res) => {
                 });
                 webhookService.emit(webhookService.EVENTS.USER_DISABLED, { userId: req.params.userId });
             }
+            await wgEasyService.setUserEnabled(req.params.userId, nowEnabled);
         }
 
         // Reschedule the expiry timer if the new expireAt could become the next event.
@@ -387,11 +393,12 @@ router.post('/users/:userId', async (req, res) => {
 // GET /users/:userId - User details
 router.get('/users/:userId', async (req, res) => {
     try {
-        const [user, allGroups] = await Promise.all([
+        const [user, allGroups, wgProfiles] = await Promise.all([
             HyUser.findOne({ userId: req.params.userId })
                 .populate('nodes', 'name ip domain active groups')
                 .populate('groups', 'name color maxDevices'),
             getActiveGroups(),
+            WgProfile.find({ userId: req.params.userId }).populate('panel', 'name kind enabled country').sort({ createdAt: 1 }).lean(),
         ]);
 
         if (!user) {
@@ -429,6 +436,8 @@ router.get('/users/:userId', async (req, res) => {
             hwidCount,
             hwidLimit,
             hwidEnabled,
+            wgProfiles,
+            countryCodeToFlag,
         });
     } catch (error) {
         res.status(500).send('Error: ' + error.message);
