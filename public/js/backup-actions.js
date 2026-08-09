@@ -104,6 +104,9 @@
 
             if (data.success) {
                 notify(getMessage(i18n, ['dbRestored', 'restored'], 'Database restored'), 'success');
+                // Blocking dialog on purpose: the page reloads right after, which
+                // would hide a toast the operator has to act on.
+                if (data.warning) alert(data.warning);
                 if (typeof opts.onSuccess === 'function') opts.onSuccess(data);
                 const reloadDelay = Number.isFinite(opts.reloadDelay) ? opts.reloadDelay : 1500;
                 if (opts.reload !== false) setTimeout(() => location.reload(), reloadDelay);

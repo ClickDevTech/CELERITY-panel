@@ -1090,11 +1090,17 @@ router.post('/settings/restore-backup', async (req, res) => {
         
         logger.info(`[Restore] Starting restore from ${source}: ${identifier}`);
         
-        await backupService.restoreBackup(settings, source, identifier);
-        
+        const result = await backupService.restoreBackup(settings, source, identifier);
+
         logger.info(`[Restore] Completed successfully`);
-        
-        res.json({ success: true, message: 'Database restored successfully' });
+
+        res.json({
+            success: true,
+            message: 'Database restored successfully',
+            warning: result?.encryptionKey?.status === 'mismatch'
+                ? (res.locals.t?.('settings.restoreKeyMismatch') || 'Backup was created with a different ENCRYPTION_KEY')
+                : null,
+        });
     } catch (error) {
         logger.error(`[Restore] Error: ${error.message}`);
         res.status(500).json({ error: error.message });
@@ -1275,10 +1281,12 @@ router.post('/settings/apply-update', applyUpdateLimiter, async (req, res) => {
             return res.status(401).json({ error: res.locals.t?.('auth.invalidCurrentPassword') || 'Invalid current password' });
         }
         if (admin.twoFactor?.enabled) {
-            if (!admin.twoFactor.secretEncrypted) {
+            // Empty covers both a missing secret and one that cannot be decrypted
+            // with the current ENCRYPTION_KEY — neither can ever verify a code.
+            const secret = totpService.decryptSecret(admin.twoFactor.secretEncrypted);
+            if (!secret) {
                 return res.status(500).json({ error: res.locals.t?.('auth.totpConfigError') || 'TOTP configuration error' });
             }
-            const secret = totpService.decryptSecret(admin.twoFactor.secretEncrypted);
             const validToken = await totpService.verifyToken({ secret, token: totpToken });
             if (!validToken) {
                 return res.status(401).json({ error: res.locals.t?.('auth.invalidCurrentTotp') || 'Invalid TOTP code' });

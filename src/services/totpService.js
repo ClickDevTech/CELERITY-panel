@@ -4,6 +4,23 @@ const cryptoService = require('./cryptoService');
 
 const DEFAULT_ISSUER = 'C3 CELERITY';
 
+/**
+ * Thrown when a stored TOTP secret cannot be decrypted — in practice this means
+ * ENCRYPTION_KEY no longer matches the one used at enrollment (e.g. the database
+ * was restored from a backup taken on another installation).
+ *
+ * Callers must map this to an operator-facing message instead of surfacing the
+ * underlying crypto/otplib error, which leaks library internals on a page that
+ * is reachable before authentication completes.
+ */
+class TotpSecretUnreadableError extends Error {
+    constructor() {
+        super('TOTP secret cannot be decrypted with the current ENCRYPTION_KEY');
+        this.name = 'TotpSecretUnreadableError';
+        this.code = 'TOTP_SECRET_UNREADABLE';
+    }
+}
+
 class TotpService {
     generateSecret() {
         return otplib.generateSecret();
@@ -13,8 +30,18 @@ class TotpService {
         return cryptoService.encrypt(secret);
     }
 
+    /**
+     * Decrypt a stored secret. Returns '' when the ciphertext cannot be read
+     * with the current key — CryptoJS either throws on malformed UTF-8 or
+     * silently yields an empty string, so both cases are normalized here.
+     */
     decryptSecret(secretEncrypted) {
-        return cryptoService.decrypt(secretEncrypted);
+        if (!secretEncrypted) return '';
+        try {
+            return cryptoService.decrypt(secretEncrypted) || '';
+        } catch (_) {
+            return '';
+        }
     }
 
     buildOtpAuthUrl({ secret, username, issuer = DEFAULT_ISSUER }) {
@@ -30,6 +57,10 @@ class TotpService {
     }
 
     async verifyToken({ secret, token }) {
+        if (!secret) {
+            throw new TotpSecretUnreadableError();
+        }
+
         const normalizedToken = String(token || '').replace(/\s+/g, '');
         if (!normalizedToken) return false;
 
@@ -61,3 +92,4 @@ class TotpService {
 }
 
 module.exports = new TotpService();
+module.exports.TotpSecretUnreadableError = TotpSecretUnreadableError;

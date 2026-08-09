@@ -645,6 +645,11 @@ router.post('/nodes/:id', async (req, res) => {
             return res.redirect('/panel/nodes');
         }
 
+        // Captured before the update: SSH credentials are shared per host, so the
+        // sibling sync below must target the IP this node actually lived on, not
+        // the one it is being moved to.
+        const previousIp = existingNode.ip;
+
         const { name } = req.body;
         const nodeType = ['xray', 'virtual'].includes(req.body.type) ? req.body.type : 'hysteria';
         const ip = req.body.ip || '';
@@ -687,9 +692,18 @@ router.post('/nodes/:id', async (req, res) => {
                 ? req.body.comment.trim().slice(0, 500)
                 : '',
             initScript: req.body.initScript || '',
-            'ssh.port': parseInt(req.body['ssh.port']) || 22,
-            'ssh.username': req.body['ssh.username'] || 'root',
         };
+
+        // SSH transport fields are only touched when the request actually carries
+        // them. Writing them unconditionally would reset a custom port/user to
+        // 22/root for any caller that posts a partial body, and would also make
+        // the sibling sync below fire on every single save.
+        if (req.body['ssh.port'] !== undefined) {
+            updates['ssh.port'] = parseInt(req.body['ssh.port'], 10) || 22;
+        }
+        if (req.body['ssh.username'] !== undefined) {
+            updates['ssh.username'] = req.body['ssh.username'] || 'root';
+        }
 
         if (req.body.statsSecret) {
             updates.statsSecret = req.body.statsSecret;
@@ -751,16 +765,20 @@ router.post('/nodes/:id', async (req, res) => {
 
         syncService.schedulePush(nodeId, updates);
 
-        // Sync SSH credentials to sibling node on the same IP (if SSH was part of this update)
+        // Sync SSH credentials to the sibling node on the same host (if SSH was
+        // part of this update). Skipped when the node was moved to another IP:
+        // the credentials belong to the old host, and nodes already sitting on
+        // the new IP have their own.
         const sshChanged = updates['ssh.password'] !== undefined
             || updates['ssh.privateKey'] !== undefined
             || updates['ssh.port'] !== undefined
             || updates['ssh.username'] !== undefined;
-        if (sshChanged) {
+        const ipUnchanged = String(existingNode.ip || '') === String(previousIp || '');
+        if (sshChanged && previousIp && ipUnchanged) {
             const updatedNode = await HyNode.findById(nodeId).select('ip ssh').lean();
             if (updatedNode) {
                 await HyNode.updateMany(
-                    { ip: updatedNode.ip, _id: { $ne: updatedNode._id } },
+                    { ip: previousIp, _id: { $ne: updatedNode._id } },
                     { $set: { ssh: updatedNode.ssh } }
                 );
             }

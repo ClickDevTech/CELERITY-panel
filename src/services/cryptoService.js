@@ -84,6 +84,20 @@ class CryptoService {
     }
 
     /**
+     * Stable, non-reversible identifier of the active ENCRYPTION_KEY.
+     *
+     * Written into backup archives so a restore can tell the operator upfront
+     * that the dump was produced under a different key — in which case every
+     * encrypted field in it (SSH credentials, TOTP secrets, ClickHouse password)
+     * is unreadable on this installation.
+     */
+    keyFingerprint() {
+        return CryptoJS.HmacSHA256('celerity-encryption-key-fingerprint', this.key)
+            .toString(CryptoJS.enc.Hex)
+            .slice(0, 16);
+    }
+
+    /**
      * Generate random secret for node stats API
      */
     generateNodeSecret() {

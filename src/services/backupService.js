@@ -16,6 +16,29 @@ const execFileAsync = promisify(execFile);
 const BACKUP_FILE_PREFIX = 'celerity-backup-';
 const LEGACY_BACKUP_FILE_PREFIXES = ['hysteria-backup-'];
 const BACKUP_FILE_PREFIXES = [BACKUP_FILE_PREFIX, ...LEGACY_BACKUP_FILE_PREFIXES];
+// Sidecar file stored next to the mongodump output inside the archive.
+const BACKUP_META_FILE = 'celerity-meta.json';
+
+/**
+ * Compare the ENCRYPTION_KEY fingerprint recorded in an archive against the one
+ * this installation runs with.
+ *
+ * Returns 'match', 'mismatch', or 'unknown' for archives created before the
+ * fingerprint existed (or written by another tool).
+ */
+async function readEncryptionKeyStatus(dumpPath) {
+    try {
+        const raw = await fs.readFile(path.join(dumpPath, BACKUP_META_FILE), 'utf8');
+        const meta = JSON.parse(raw);
+        if (!meta?.encryptionKeyFingerprint) return { status: 'unknown' };
+        return {
+            status: meta.encryptionKeyFingerprint === cryptoService.keyFingerprint() ? 'match' : 'mismatch',
+            createdAt: meta.createdAt || null,
+        };
+    } catch (_) {
+        return { status: 'unknown' };
+    }
+}
 
 /**
  * Extract database name from MONGO_URI, fallback to 'hysteria'.
@@ -89,6 +112,17 @@ async function createBackup(settings) {
         logger.info(`[Backup] Starting backup: ${backupName}`);
         await execFileAsync('mongodump', ['--uri', mongoUri, '--out', backupPath, '--gzip']);
         logger.info(`[Backup] Dump created: ${backupPath}`);
+
+        // Record which ENCRYPTION_KEY the encrypted fields in this dump belong to,
+        // so a restore onto another installation can warn instead of silently
+        // producing unreadable SSH credentials and TOTP secrets.
+        await fs.writeFile(
+            path.join(backupPath, BACKUP_META_FILE),
+            JSON.stringify({
+                createdAt: new Date().toISOString(),
+                encryptionKeyFingerprint: cryptoService.keyFingerprint(),
+            }, null, 2)
+        );
 
         await execFileAsync('tar', ['-czf', archivePath, '-C', backupDir, backupName]);
         logger.info(`[Backup] Archive created: ${archivePath}`);
@@ -554,13 +588,23 @@ async function restoreArchive(archivePath, source, identifier) {
 
         const mongoUri = config.MONGO_URI;
 
+        // Checked before the restore so the warning is emitted even if mongorestore
+        // later fails. A mismatch is not fatal: the data itself restores fine, only
+        // the encrypted fields become unreadable.
+        const encryptionKey = await readEncryptionKeyStatus(dumpPath);
+        if (encryptionKey.status === 'mismatch') {
+            logger.warn('[Restore] Backup was created with a different ENCRYPTION_KEY. SSH credentials, TOTP secrets and other encrypted fields in this dump cannot be decrypted. Restore the original key from the old .env, or re-enter SSH credentials and reset 2FA (node scripts/reset-2fa.js <username>).');
+        } else if (encryptionKey.status === 'unknown') {
+            logger.info('[Restore] Backup has no ENCRYPTION_KEY fingerprint (created by an older version) — key match could not be verified.');
+        }
+
         logger.info(`[Restore] Starting restore from ${source}: ${identifier}`);
         await execFileAsync('mongorestore', ['--uri', mongoUri, '--drop', '--gzip', '--db', dbName, dbDir]);
         logger.info(`[Restore] Database restored successfully`);
 
         await fs.rm(extractDir, { recursive: true });
 
-        return { success: true };
+        return { success: true, encryptionKey };
 
     } catch (error) {
         try {

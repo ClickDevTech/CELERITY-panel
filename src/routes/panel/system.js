@@ -222,8 +222,14 @@ router.post('/restore', backupUpload.single('backup'), async (req, res) => {
     }
 
     try {
-        await backupService.restoreUploadedBackup(req.file.path, req.file.originalname);
-        res.json({ success: true, message: 'База данных успешно восстановлена' });
+        const result = await backupService.restoreUploadedBackup(req.file.path, req.file.originalname);
+        res.json({
+            success: true,
+            message: 'База данных успешно восстановлена',
+            warning: result?.encryptionKey?.status === 'mismatch'
+                ? (res.locals.t?.('settings.restoreKeyMismatch') || 'Backup was created with a different ENCRYPTION_KEY')
+                : null,
+        });
     } catch (error) {
         logger.error(`[Restore] Error: ${error.message}`);
         res.status(500).json({ error: error.message });

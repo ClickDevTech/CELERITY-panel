@@ -1072,6 +1072,7 @@
     "restoring": "Restoring...",
     "restored": "Database restored! Reloading...",
     "restoreError": "Restore error",
+    "restoreKeyMismatch": "This backup was created with a different ENCRYPTION_KEY. SSH credentials and 2FA secrets from it cannot be decrypted: restore the original key from the old .env, or re-enter SSH credentials and reset 2FA via scripts/reset-2fa.js.",
     "restoreBtn": "Restore",
     "downloadBtn": "Download",
     "downloadError": "Download error",

@@ -377,6 +377,15 @@ router.post('/totp', totpVerifyLimiter, async (req, res) => {
     } catch (error) {
         logger.error('[Panel] Universal TOTP confirmation error:', error.message);
 
+        // An unreadable secret means ENCRYPTION_KEY no longer matches the stored
+        // ciphertext; no code can ever verify, so point the operator at the
+        // recovery path instead of echoing the crypto error.
+        if (error.code === 'TOTP_SECRET_UNREADABLE') {
+            logger.error('[Panel] TOTP secret is unreadable — ENCRYPTION_KEY likely differs from the one used at enrollment. Recover with: node scripts/reset-2fa.js <username>');
+            const configError = res.locals.t?.('auth.totpConfigError') || 'TOTP configuration error';
+            return renderPanelTotpPage(res, pending, configError);
+        }
+
         if (pending.type === 'settings') {
             return renderPanelTotpPage(res, pending, error.message);
         }

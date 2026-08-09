@@ -419,10 +419,14 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
             return res.status(404).json({ error: 'Node not found' });
         }
 
-        // Sync SSH credentials to sibling node on the same IP (if SSH was updated)
-        if (updates.ssh) {
+        // Sync SSH credentials to the sibling node on the same host (if SSH was
+        // updated). Matched on the pre-update IP and skipped when the node moved
+        // to another one: the credentials belong to the old host, and nodes
+        // already sitting on the new IP have their own.
+        const ipUnchanged = String(existing.ip || '') === String(node.ip || '');
+        if (updates.ssh && existing.ip && ipUnchanged) {
             await HyNode.updateMany(
-                { ip: node.ip, _id: { $ne: node._id } },
+                { ip: existing.ip, _id: { $ne: node._id } },
                 { $set: { ssh: node.ssh } }
             );
         }

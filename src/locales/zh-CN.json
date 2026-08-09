@@ -1072,6 +1072,7 @@
     "restoring": "恢复中...",
     "restored": "数据库已恢复！正在重新加载...",
     "restoreError": "恢复错误",
+    "restoreKeyMismatch": "此备份使用了不同的 ENCRYPTION_KEY 创建。其中的 SSH 凭据和 2FA 密钥无法解密：请从旧的 .env 恢复原密钥，或重新输入 SSH 凭据并通过 scripts/reset-2fa.js 重置 2FA。",
     "restoreBtn": "恢复",
     "downloadBtn": "下载",
     "downloadError": "下载错误",

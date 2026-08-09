@@ -386,6 +386,9 @@ async function restoreBackup(source, identifier) {
         
         if (data.success) {
             showToast(i18n.restored, 'success');
+            // Blocking dialog on purpose: the page reloads right after, which
+            // would hide a toast the operator has to act on.
+            if (data.warning) alert(data.warning);
             setTimeout(() => location.reload(), 2000);
         } else {
             showToast(i18n.restoreError + ': ' + (data.error || 'unknown'), 'error');

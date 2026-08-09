@@ -453,7 +453,11 @@
 
     function renderHistoryNode(probeId, node, data) {
         const open = isNodeOpen(probeId, node);
-        const health = node.failures > 0 ? 'is-bad' : (node.worstCode ? 'is-warn' : 'is-ok');
+        // Colour by the number itself: any failure used to paint even 99% red.
+        const health = node.uptimePct === null ? ''
+            : node.uptimePct >= 90 ? 'is-ok'
+            : node.uptimePct >= 70 ? 'is-warn'
+            : 'is-bad';
 
         const inbounds = node.inbounds.map((inbound) => {
             const key = seriesKey(node.nodeId, 'in', inbound.inboundId);
