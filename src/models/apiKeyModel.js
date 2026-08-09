@@ -17,6 +17,7 @@ const VALID_SCOPES = [
     'stats:read',
     'sync:write',
     'mcp:enabled',
+    'probes:read',
 ];
 
 const apiKeySchema = new mongoose.Schema({

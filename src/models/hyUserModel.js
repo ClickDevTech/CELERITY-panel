@@ -84,7 +84,18 @@ const hyUserSchema = new mongoose.Schema({
         type: Date,
         default: null,
     },
-    
+
+    /**
+     * Marks a hidden user owned by a diagnostic probe. Such users are excluded
+     * from listings and statistics, but still take part in node sync and
+     * subscription generation so the probe can actually reach the nodes.
+     */
+    isProbe: {
+        type: Boolean,
+        default: false,
+        index: true,
+    },
+
 }, { timestamps: true });
 
 hyUserSchema.index({ enabled: 1 });

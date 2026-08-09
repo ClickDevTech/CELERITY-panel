@@ -244,6 +244,18 @@ function nodeMetaFor(node) {
                             <% } else { %>
                                 <span class="text-muted">—</span>
                             <% } %>
+                            <%
+                                const probeInfo = (typeof probeSummary !== 'undefined' && probeSummary)
+                                    ? probeSummary[String(node._id)]
+                                    : null;
+                            %>
+                            <% if (probeInfo) { %>
+                                <span class="probe-badge <%= probeInfo.failing > 0 ? 'probe-badge-fail' : 'probe-badge-ok' %>"
+                                      title="<%= t('probes.badgeTitle') || 'Внешние проверки' %>">
+                                    <i class="ti ti-radar"></i>
+                                    <%= probeInfo.checks - probeInfo.failing %>/<%= probeInfo.checks %>
+                                </span>
+                            <% } %>
                         </td>
                         <td>
                             <div class="node-actions">

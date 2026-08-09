@@ -47,6 +47,11 @@ cc-agent/cc-agent
 cc-agent/cc-agent-linux-amd64
 cc-agent/cc-agent-linux-arm64
 
+# Celerity Probe binaries (built in CI, attached to releases)
+probe/celerity-probe
+probe/celerity-probe.exe
+probe/celerity-probe-*
+
 # Access-logs ingest spool
 data/access-logs/
 

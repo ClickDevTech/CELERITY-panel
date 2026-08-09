@@ -51,7 +51,7 @@ async function queryGroups(args) {
 
         const [nodeCount, userCount] = await Promise.all([
             HyNode.countDocuments({ groups: group._id }),
-            HyUser.countDocuments({ groups: group._id }),
+            HyUser.countDocuments({ groups: group._id, isProbe: { $ne: true } }),
         ]);
 
         return { group: { ...group.toObject(), nodeCount, userCount } };
@@ -62,7 +62,7 @@ async function queryGroups(args) {
     const result = await Promise.all(groups.map(async (g) => {
         const [nodeCount, userCount] = await Promise.all([
             HyNode.countDocuments({ groups: g._id }),
-            HyUser.countDocuments({ groups: g._id }),
+            HyUser.countDocuments({ groups: g._id, isProbe: { $ne: true } }),
         ]);
         return { ...g.toObject(), nodeCount, userCount };
     }));

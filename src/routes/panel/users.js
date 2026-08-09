@@ -30,7 +30,8 @@ router.get('/users', async (req, res) => {
         const { enabled, group, page = 1, search, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
         const limit = 50;
         
-        const filter = {};
+        // Hidden probe users never appear in listings or counts.
+        const filter = { isProbe: { $ne: true } };
         if (enabled !== undefined) filter.enabled = enabled === 'true';
         if (group) filter.groups = new mongoose.Types.ObjectId(group);
         
@@ -455,7 +456,7 @@ router.get('/groups', async (req, res) => {
                     { $group: { _id: '$groups', count: { $sum: 1 } } },
                 ]),
                 HyUser.aggregate([
-                    { $match: { groups: { $in: groupIds } } },
+                    { $match: { groups: { $in: groupIds }, isProbe: { $ne: true } } },
                     { $unwind: '$groups' },
                     { $match: { groups: { $in: groupIds } } },
                     { $group: { _id: '$groups', count: { $sum: 1 } } },

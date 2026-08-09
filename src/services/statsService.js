@@ -55,6 +55,7 @@ class StatsService {
             }
             
             const userStats = await HyUser.aggregate([
+                { $match: { isProbe: { $ne: true } } },
                 {
                     $group: {
                         _id: null,

@@ -70,7 +70,8 @@ router.get('/', requireScope('users:read'), async (req, res) => {
     try {
         const { enabled, group, page = 1, limit = 50, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
         
-        const filter = {};
+        // Hidden probe users never appear in listings or counts.
+        const filter = { isProbe: { $ne: true } };
         if (enabled !== undefined) filter.enabled = enabled === 'true';
         if (group) filter.groups = group;
         

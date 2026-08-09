@@ -324,6 +324,7 @@ router.post('/settings', async (req, res) => {
 
         // Homepage mode (decoy/custom). File upload has its own endpoint.
         let homepageModeChanged = null;
+        let probeTrafficLimit = null;
         if (req.body['_homepageSettings'] !== undefined) {
             const VALID_MODES = ['nginx', 'custom'];
             const mode = String(req.body['homepage.mode'] || 'nginx');
@@ -423,6 +424,54 @@ router.post('/settings', async (req, res) => {
             accessLogsToggled = true;
         }
 
+        // Probe settings (opt-in external diagnostics). Its own form carries the
+        // _probesSettings marker, so an absent checkbox means "off". Sizes are
+        // entered in GB/MB and stored as bytes.
+        if (req.body['_probesSettings'] !== undefined) {
+            const intInRange = (raw, fallback, min, max) => {
+                const n = parseInt(raw, 10);
+                return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+            };
+
+            updates['probes.enabled'] = req.body['probes.enabled'] === 'on';
+            updates['probes.transportIntervalSec'] = intInRange(req.body['probes.transportIntervalSec'], 300, 60, 86400);
+            updates['probes.targetsIntervalSec'] = intInRange(req.body['probes.targetsIntervalSec'], 3600, 300, 86400);
+            updates['probes.reportIntervalSec'] = intInRange(req.body['probes.reportIntervalSec'], 900, 60, 86400);
+            updates['probes.retentionDays'] = intInRange(req.body['probes.retentionDays'], 30, 1, 365);
+            updates['probes.probeTrafficLimitBytes'] =
+                intInRange(req.body['probes.probeTrafficLimitGB'], 5, 0, 10000) * 1024 * 1024 * 1024;
+
+            updates['probes.speedTest.enabled'] = req.body['probes.speedTest.enabled'] === 'on';
+            updates['probes.speedTest.maxBytes'] =
+                intInRange(req.body['probes.speedTest.maxMB'], 20, 1, 1024) * 1024 * 1024;
+            updates['probes.speedTest.maxSeconds'] = intInRange(req.body['probes.speedTest.maxSeconds'], 5, 1, 60);
+            updates['probes.speedTest.dailyBudgetBytes'] =
+                intInRange(req.body['probes.speedTest.dailyBudgetGB'], 1, 0, 1000) * 1024 * 1024 * 1024;
+
+            // Checklist entries are edited as "id|url" lines. Invalid lines are
+            // dropped rather than rejected, so one typo cannot block the save.
+            const rawTargets = String(req.body['probes.targetsRaw'] || '');
+            const seenTargetIds = new Set();
+            updates['probes.targets'] = rawTargets
+                .split('\n')
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line) => {
+                    const [id, url, label] = line.split('|').map((part) => (part || '').trim());
+                    return { id: id.slice(0, 32), url: (url || '').slice(0, 500), label: (label || '').slice(0, 64) };
+                })
+                .filter((target) => {
+                    if (!target.id || !/^https?:\/\//i.test(target.url)) return false;
+                    if (seenTargetIds.has(target.id)) return false;
+                    seenTargetIds.add(target.id);
+                    return true;
+                })
+                .slice(0, 25)
+                .map((target) => ({ ...target, enabled: true }));
+
+            probeTrafficLimit = updates['probes.probeTrafficLimitBytes'];
+        }
+
         await Settings.update(updates);
         
         await invalidateSettingsCache();
@@ -438,6 +487,25 @@ router.post('/settings', async (req, res) => {
         // not after subscriptionTTL (up to 1 h).
         if (systemTabSubmit) {
             await cache.invalidateAllSubscriptions();
+        }
+
+        if (req.body['_probesSettings'] !== undefined) {
+            // Toggling the feature must take effect on the next probe request,
+            // not after the ingest route's cache expires.
+            try {
+                require('../probe').invalidateFeatureCache();
+            } catch (_) { /* route not mounted in this process */ }
+        }
+
+        // The probe traffic cap only protects the operator if it also applies
+        // to probes that already exist.
+        if (probeTrafficLimit !== null) {
+            try {
+                await require('../../services/probes/enrollService')
+                    .applyProbeTrafficLimit(probeTrafficLimit);
+            } catch (err) {
+                logger.warn(`[Panel] Could not apply probe traffic limit: ${err.message}`);
+            }
         }
         
         const sshPool = require('../../services/sshPoolService');

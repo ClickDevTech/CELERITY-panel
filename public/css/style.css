@@ -4679,3 +4679,174 @@ body {
 .pem-status.is-invalid {
     color: #d9534f;
 }
+
+/* ==================== PROBES ==================== */
+
+.probes-list { display: flex; flex-direction: column; gap: 10px; }
+
+.probe-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 12px 14px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.probe-main { display: flex; align-items: center; gap: 12px; min-width: 220px; }
+.probe-name { font-weight: 600; color: var(--text-primary); }
+.probe-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.probe-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-muted);
+}
+.probe-dot-online { background: var(--success); box-shadow: 0 0 8px var(--success-bg); }
+.probe-dot-offline { background: var(--danger); }
+.probe-dot-pending { background: var(--text-muted); }
+
+.probe-facts { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
+.probe-facts i { margin-right: 4px; }
+
+.probe-actions { display: flex; gap: 8px; }
+
+.probe-empty { padding: 24px; text-align: center; color: var(--text-muted); }
+
+/* Placeholder rows shown until the first list response arrives */
+.skeleton-row {
+    height: 56px;
+    border-radius: 10px;
+    background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-secondary) 37%, var(--bg-tertiary) 63%);
+    background-size: 400% 100%;
+    animation: skeleton-sweep 1.4s ease infinite;
+}
+
+@keyframes skeleton-sweep {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+
+.probe-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+}
+.probe-overlay[hidden] { display: none; }
+
+.probe-dialog {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    max-width: 720px;
+    width: 100%;
+}
+.probe-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+}
+.probe-dialog-header h2 { font-size: 16px; margin: 0; }
+.probe-dialog-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+}
+.probe-dialog-close:hover { color: var(--text-primary); }
+.probe-dialog-body { padding: 18px; }
+
+.probe-os-tabs { display: flex; gap: 6px; margin-top: 12px; }
+.probe-os-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+}
+.probe-os-tab:hover { color: var(--text-primary); }
+.probe-os-tab.is-active {
+    background: var(--bg-primary);
+    border-color: var(--primary);
+    color: var(--text-primary);
+}
+
+.probe-code {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 10px 0 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text-primary);
+}
+
+/* External checks block on the node card */
+.probe-node-block { display: flex; flex-direction: column; gap: 10px; }
+.probe-node-probe {
+    padding: 10px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+.probe-node-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+.probe-check {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    padding: 4px 0;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border);
+}
+.probe-code-badge {
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: var(--danger-bg);
+    color: var(--danger);
+}
+.probe-code-ok { background: var(--success-bg); color: var(--success); }
+.probe-code-warn { background: var(--warning-bg); color: var(--warning); }
+.probe-warn { font-size: 12px; color: var(--danger); margin-top: 4px; }
+
+/* Compact probe badge in the nodes list */
+.probe-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+.probe-badge-fail { color: var(--danger); }
+.probe-badge-ok { color: var(--success); }

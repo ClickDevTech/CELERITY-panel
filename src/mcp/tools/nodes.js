@@ -277,7 +277,7 @@ async function queryNodes(args) {
         const result = { ...node.toObject() };
 
         if (parsed.includeUsers) {
-            result.users = await HyUser.find({ nodes: node._id, enabled: true })
+            result.users = await HyUser.find({ nodes: node._id, enabled: true, isProbe: { $ne: true } })
                 .select('userId username traffic');
         }
 
@@ -288,7 +288,7 @@ async function queryNodes(args) {
             result.config = configGenerator.generateNodeConfig(node, `${baseUrl}/api/auth`);
         }
 
-        result.userCount = await HyUser.countDocuments({ nodes: node._id, enabled: true });
+        result.userCount = await HyUser.countDocuments({ nodes: node._id, enabled: true, isProbe: { $ne: true } });
         return { node: result };
     }
 

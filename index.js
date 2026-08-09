@@ -87,6 +87,23 @@ app.use(cors({
     app.use('/api/access-logs', accessLogsIngestLimiter, accessLogsIngestRoutes);
 }
 
+// External diagnostic probes are mounted here for the same reason: the ingest
+// handler reads a raw gzipped body and authenticates with a probe-scoped Bearer
+// token rather than a session. Probes report on a light cadence (a batch every
+// ~15 minutes each), so the limit only has to stop a runaway client.
+{
+    const rateLimitLib = require('express-rate-limit');
+    const probeLimiter = rateLimitLib({
+        windowMs: 60 * 1000,
+        max: 120,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { error: 'too many probe requests' },
+    });
+    const probeRoutes = require('./src/routes/probe');
+    app.use('/api/probe', probeLimiter, probeRoutes);
+}
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -121,23 +138,29 @@ app.use((req, res, next) => {
     next();
 });
 
-// Expose the access-logs feature flag to views (drives the sidebar nav entry).
+// Expose optional-feature flags to views (they drive the sidebar nav entries).
 // Cached briefly so it is effectively free per request; only computed for panel
 // HTML routes to avoid work on API/static traffic.
-let _accessLogsNavCache = { value: false, at: 0 };
-const ACCESS_LOGS_NAV_TTL_MS = 30 * 1000;
+let _featureNavCache = { accessLogs: false, probes: false, at: 0 };
+const FEATURE_NAV_TTL_MS = 30 * 1000;
 app.use(async (req, res, next) => {
     if (!req.path.startsWith('/panel')) return next();
     try {
         const now = Date.now();
-        if (now - _accessLogsNavCache.at > ACCESS_LOGS_NAV_TTL_MS) {
+        if (now - _featureNavCache.at > FEATURE_NAV_TTL_MS) {
             const Settings = require('./src/models/settingsModel');
             const s = await Settings.get();
-            _accessLogsNavCache = { value: !!s?.accessLogs?.enabled, at: now };
+            _featureNavCache = {
+                accessLogs: !!s?.accessLogs?.enabled,
+                probes: !!s?.probes?.enabled,
+                at: now,
+            };
         }
-        res.locals.accessLogsEnabled = _accessLogsNavCache.value;
+        res.locals.accessLogsEnabled = _featureNavCache.accessLogs;
+        res.locals.probesEnabled = _featureNavCache.probes;
     } catch (_) {
         res.locals.accessLogsEnabled = false;
+        res.locals.probesEnabled = false;
     }
     next();
 });
@@ -1058,6 +1081,38 @@ function setupCronJobs() {
     
     // Access-logs retention is enforced natively by the ClickHouse TTL on the
     // access_events table (set via settings), so the panel runs no retention job.
+
+    // Probe rollups at 5 minutes past the hour: fold the finished hour of raw
+    // windows into the hourly read index so long dashboard ranges never
+    // aggregate raw documents.
+    cron.schedule('5 * * * *', async () => {
+        try {
+            const rollupService = require('./src/services/probes/rollupService');
+            await rollupService.rollupPreviousHour();
+        } catch (error) {
+            logger.error(`[Cron] Probe rollup failed: ${error.message}`);
+        }
+    });
+
+    // Probe liveness check every 5 minutes (alerts on silent probes).
+    cron.schedule('*/5 * * * *', async () => {
+        try {
+            const rollupService = require('./src/services/probes/rollupService');
+            await rollupService.checkLiveness();
+        } catch (error) {
+            logger.error(`[Cron] Probe liveness check failed: ${error.message}`);
+        }
+    });
+
+    // Probe retention daily at 00:20.
+    cron.schedule('20 0 * * *', async () => {
+        try {
+            const rollupService = require('./src/services/probes/rollupService');
+            await rollupService.cleanup();
+        } catch (error) {
+            logger.error(`[Cron] Probe cleanup failed: ${error.message}`);
+        }
+    });
 
     // Clean inactive HWID device rows (daily 03:30)
     cron.schedule('30 3 * * *', async () => {

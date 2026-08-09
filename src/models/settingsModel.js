@@ -185,6 +185,49 @@ const settingsSchema = new mongoose.Schema({
         },
     },
 
+    // External diagnostic probes. Opt-in like access logs: while `enabled` is
+    // false no enrollment or ingest is accepted, so the feature stays inert.
+    // Cadence defaults follow the light profile: cheap transport checks every
+    // 5 minutes, resource checklist hourly, reports shipped every 15 minutes.
+    probes: {
+        enabled: { type: Boolean, default: false },
+        transportIntervalSec: { type: Number, default: 300 },
+        targetsIntervalSec: { type: Number, default: 3600 },
+        reportIntervalSec: { type: Number, default: 900 },
+        // Bounded throughput measurement. Off by default: it burns real node
+        // traffic the operator pays for. The scheduler spreads the daily byte
+        // budget across nodes round-robin instead of using a fixed interval.
+        speedTest: {
+            enabled: { type: Boolean, default: false },
+            maxBytes: { type: Number, default: 20 * 1024 * 1024 },
+            maxSeconds: { type: Number, default: 5 },
+            dailyBudgetBytes: { type: Number, default: 1024 * 1024 * 1024 },
+        },
+        // Resource checklist evaluated through every node. A failure here is a
+        // separate measurement, not a node outage.
+        targets: {
+            type: [{
+                _id: false,
+                id: { type: String },
+                url: { type: String },
+                label: { type: String, default: '' },
+                enabled: { type: Boolean, default: true },
+            }],
+            default: [],
+        },
+        retentionDays: { type: Number, default: 30 },
+        // Traffic cap applied to every hidden probe user (bytes).
+        probeTrafficLimitBytes: { type: Number, default: 5 * 1024 * 1024 * 1024 },
+        // Full ingest base URL handed to probes; empty = derive from BASE_URL.
+        ingestUrl: { type: String, default: '' },
+        stats: {
+            ingestedBatches: { type: Number, default: 0 },
+            rejectedBatches: { type: Number, default: 0 },
+            duplicateBatches: { type: Number, default: 0 },
+            lastIngestAt: { type: Date, default: null },
+        },
+    },
+
     homepage: {
         mode: { type: String, enum: ['nginx', 'custom'], default: 'nginx' },
         customHtml: { type: Buffer, default: null },

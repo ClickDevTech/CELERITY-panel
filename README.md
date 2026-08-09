@@ -151,6 +151,7 @@ Use `latest` for fast updates, or pin an explicit tag for predictable production
 - 🪝 **Webhooks** — Real-time event notifications with HMAC-SHA256 signing
 - 🗺 **Network Map** — Visual cascade topology with Forward/Reverse chain routing *(beta)*
 - 🤖 **MCP Integration** — Native AI assistant support (Claude, Cursor, etc.) for panel management
+- 📡 **External Probes** — A standalone agent with a real sing-box core verifies node connectivity from real networks ([guide](docs/probes.md))
 
 ---
 
@@ -617,11 +618,36 @@ const expected = 'sha256=' + crypto
 | `host.disk_critical` | Panel host free disk dropped below the critical threshold |
 | `host.disk_recovered` | Panel host free disk recovered above the warning threshold |
 | `sync.completed` | Sync cycle finished |
+| `probe.node_unreachable` | A probe cannot reach a node inbound from its vantage point |
+| `probe.target_unreachable` | A checklist resource became unreachable through a node |
+| `probe.offline` | A probe stopped reporting |
 
 Disk alert thresholds are configured under **Settings → Security → Webhooks**
 (`Warning: free space below %` and `Critical: free space below GB`). Alerts fire
 once per threshold crossing with hysteresis to avoid spam, and a recovery event
 is sent once free space climbs back above the warning level.
+
+---
+
+## 📡 External Diagnostic Probes
+
+A probe is a separate Go binary installed on your own server. It receives a
+hidden subscription, runs a real sing-box core and connects to your nodes the
+same way a customer does, so it answers the question node status cannot: *does
+this node actually work from this network?*
+
+Enable it under **Settings → Probes**, then add a probe and run the generated
+install command on the host you want to check from. Every result is stored per
+vantage point and never overrides `node.status` — a single probe cannot tell a
+dead node from its own broken uplink.
+
+Failure codes are actionable rather than generic: `net_unreachable` (port
+filtered on the path), `handshake_failed` (dead REALITY destination or DPI),
+`auth_rejected` (user not pushed to the running core), `tunnel_no_data` (broken
+outbound or ACL), `degraded`, and `core_down` for a failure of the probe's own
+core.
+
+📖 **Full guide:** [English](docs/probes.md) · [Русский](docs/probes.ru.md)
 
 ---
 

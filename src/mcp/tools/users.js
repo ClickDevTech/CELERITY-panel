@@ -74,7 +74,8 @@ async function queryUsers(args) {
         return { user };
     }
 
-    const filter = {};
+    // Hidden probe users never appear in listings or counts.
+    const filter = { isProbe: { $ne: true } };
     if (parsed.filter?.enabled !== undefined) filter.enabled = parsed.filter.enabled;
     if (parsed.filter?.group) filter.groups = parsed.filter.group;
 

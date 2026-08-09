@@ -69,6 +69,12 @@
                     <span><%= t('nav.accessLogs') %></span>
                 </a></li>
                 <% } %>
+                <% if (typeof probesEnabled !== 'undefined' && probesEnabled) { %>
+                <li><a href="/panel/probes" class="<%= page === 'probes' ? 'active' : '' %>">
+                    <span class="nav-icon"><i class="ti ti-radar"></i></span>
+                    <span><%= t('nav.probes') %></span>
+                </a></li>
+                <% } %>
                 <li><a href="/panel/settings" class="<%= page === 'settings' ? 'active' : '' %>">
                     <span class="nav-icon"><i class="ti ti-settings"></i></span>
                     <span><%= t('nav.settings') %></span>

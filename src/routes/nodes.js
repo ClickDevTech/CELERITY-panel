@@ -195,7 +195,8 @@ router.get('/:id', requireScope('nodes:read'), async (req, res) => {
         // Count users on this node
         const userCount = await HyUser.countDocuments({
             nodes: node._id,
-            enabled: true
+            enabled: true,
+            isProbe: { $ne: true }
         });
         
         res.json({
@@ -591,7 +592,8 @@ router.get('/:id/users', requireScope('nodes:read'), async (req, res) => {
         
         const users = await HyUser.find({
             nodes: node._id,
-            enabled: true
+            enabled: true,
+            isProbe: { $ne: true }
         }).select('userId username traffic');
         
         res.json(users);

@@ -1,0 +1,130 @@
+<!-- ==================== TAB: PROBES ==================== -->
+<%
+    const pr = (settings && settings.probes) || {};
+    const prSpeed = pr.speedTest || {};
+    const prTargets = Array.isArray(pr.targets) ? pr.targets : [];
+%>
+<div class="tab-content" id="tab-probes">
+    <div class="row" style="align-items: stretch; flex-direction: column; gap: 16px;">
+        <div style="display: flex; width: 100%;">
+            <div class="card" style="flex: 1; display: flex; flex-direction: column;">
+                <div class="card-header">
+                    <h2><i class="ti ti-radar"></i> <%= t('probes.title') %></h2>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info" style="margin-bottom: 14px; padding: 10px 12px; font-size: 13px; line-height: 1.55;">
+                        <%= t('probes.settingsIntro') %>
+                    </div>
+
+                    <form method="POST" action="/panel/settings" id="probesSettingsForm">
+                        <input type="hidden" name="_probesSettings" value="1">
+
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="probes.enabled" id="probesEnabled" <%= pr.enabled ? 'checked' : '' %>>
+                            <span><%= t('probes.enable') %></span>
+                        </label>
+                        <small class="hint" style="display: block; margin-top: 6px;">
+                            <%= t('probes.enableHint') %>
+                        </small>
+
+                        <div id="probesSettings" style="margin-top: 14px; <%= pr.enabled ? '' : 'display: none;' %>">
+                            <div class="settings-grid">
+                                <div class="form-group">
+                                    <label for="probes.transportIntervalSec"><%= t('probes.transportInterval') %></label>
+                                    <input type="number" name="probes.transportIntervalSec" id="probes.transportIntervalSec"
+                                           value="<%= pr.transportIntervalSec || 300 %>" min="60" max="86400">
+                                </div>
+                                <div class="form-group">
+                                    <label for="probes.targetsIntervalSec"><%= t('probes.targetsInterval') %></label>
+                                    <input type="number" name="probes.targetsIntervalSec" id="probes.targetsIntervalSec"
+                                           value="<%= pr.targetsIntervalSec || 3600 %>" min="300" max="86400">
+                                </div>
+                                <div class="form-group">
+                                    <label for="probes.reportIntervalSec"><%= t('probes.reportInterval') %></label>
+                                    <input type="number" name="probes.reportIntervalSec" id="probes.reportIntervalSec"
+                                           value="<%= pr.reportIntervalSec || 900 %>" min="60" max="86400">
+                                </div>
+                                <div class="form-group">
+                                    <label for="probes.retentionDays"><%= t('probes.retentionDays') %></label>
+                                    <input type="number" name="probes.retentionDays" id="probes.retentionDays"
+                                           value="<%= pr.retentionDays || 30 %>" min="1" max="365">
+                                </div>
+                                <div class="form-group">
+                                    <label for="probes.probeTrafficLimitGB"><%= t('probes.trafficLimit') %></label>
+                                    <input type="number" name="probes.probeTrafficLimitGB" id="probes.probeTrafficLimitGB"
+                                           value="<%= Math.round((pr.probeTrafficLimitBytes || 0) / (1024*1024*1024)) %>" min="0" max="10000">
+                                    <small class="hint"><%= t('probes.trafficLimitHint') %></small>
+                                </div>
+                            </div>
+
+                            <hr class="settings-divider">
+
+                            <h3 style="margin: 4px 0 10px; font-size: 14px;">
+                                <i class="ti ti-gauge"></i> <%= t('probes.speedSection') %>
+                            </h3>
+                            <small class="hint" style="display:block; margin-bottom:10px;">
+                                <%= t('probes.speedHint') %>
+                            </small>
+
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="probes.speedTest.enabled" <%= prSpeed.enabled ? 'checked' : '' %>>
+                                <span><%= t('probes.speedEnable') %></span>
+                            </label>
+
+                            <div class="settings-grid" style="margin-top: 10px;">
+                                <div class="form-group">
+                                    <label for="probes.speedTest.maxMB"><%= t('probes.speedMaxMb') %></label>
+                                    <input type="number" name="probes.speedTest.maxMB" id="probes.speedTest.maxMB"
+                                           value="<%= Math.round((prSpeed.maxBytes || 0) / (1024*1024)) %>" min="1" max="1024">
+                                </div>
+                                <div class="form-group">
+                                    <label for="probes.speedTest.maxSeconds"><%= t('probes.speedMaxSeconds') %></label>
+                                    <input type="number" name="probes.speedTest.maxSeconds" id="probes.speedTest.maxSeconds"
+                                           value="<%= prSpeed.maxSeconds || 5 %>" min="1" max="60">
+                                </div>
+                                <div class="form-group">
+                                    <label for="probes.speedTest.dailyBudgetGB"><%= t('probes.speedBudget') %></label>
+                                    <input type="number" name="probes.speedTest.dailyBudgetGB" id="probes.speedTest.dailyBudgetGB"
+                                           value="<%= Math.round((prSpeed.dailyBudgetBytes || 0) / (1024*1024*1024)) %>" min="0" max="1000">
+                                </div>
+                            </div>
+
+                            <hr class="settings-divider">
+
+                            <h3 style="margin: 4px 0 10px; font-size: 14px;">
+                                <i class="ti ti-list-check"></i> <%= t('probes.targetsSection') %>
+                            </h3>
+                            <small class="hint" style="display:block; margin-bottom:10px;">
+                                <%= t('probes.targetsHint') %>
+                            </small>
+
+                            <div class="form-group">
+                                <label for="probes.targetsRaw"><%= t('probes.targetsList') %></label>
+                                <textarea name="probes.targetsRaw" id="probes.targetsRaw" rows="5"
+                                          placeholder="google|https://www.google.com/generate_204"><%= prTargets.map(tg => `${tg.id}|${tg.url}`).join('\n') %></textarea>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 16px;">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="ti ti-device-floppy"></i> <%= t('common.save') %>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const enabled = document.getElementById('probesEnabled');
+    const box = document.getElementById('probesSettings');
+    if (enabled && box) {
+        enabled.addEventListener('change', function () {
+            box.style.display = this.checked ? '' : 'none';
+        });
+    }
+})();
+</script>

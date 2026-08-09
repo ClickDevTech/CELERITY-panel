@@ -1,0 +1,33 @@
+<%# ========== External checks reported by probes (edit only) ========== %>
+<% if (node?._id && typeof probesEnabled !== 'undefined' && probesEnabled) { %>
+<div class="card mt-3" id="nodeProbesCard" data-node-id="<%= node._id %>">
+    <div class="card-header">
+        <h2><i class="ti ti-radar"></i> <%= t('probes.nodeSection') %></h2>
+        <a href="/panel/probes" class="btn btn-sm"><i class="ti ti-external-link"></i></a>
+    </div>
+    <div class="card-body">
+        <small class="hint" style="display:block; margin-bottom:10px;">
+            <%= t('probes.nodeSectionHint') %>
+        </small>
+        <div id="nodeProbesBlock" class="probe-node-block">
+            <div class="probe-empty"><%= t('common.loading') %></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.NODE_PROBES_I18N = <%- JSON.stringify({
+        empty: t('probes.nodeEmpty'),
+        sameHost: t('probes.sameHost'),
+        ok: t('probes.codeOk'),
+        net_unreachable: t('probes.codeNetUnreachable'),
+        handshake_failed: t('probes.codeHandshakeFailed'),
+        auth_rejected: t('probes.codeAuthRejected'),
+        tunnel_no_data: t('probes.codeTunnelNoData'),
+        degraded: t('probes.codeDegraded'),
+        core_down: t('probes.codeCoreDown'),
+        target_blocked: t('probes.codeTargetBlocked')
+    }) %>;
+</script>
+<script src="/js/node-probes.js"></script>
+<% } %>

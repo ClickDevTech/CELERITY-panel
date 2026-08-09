@@ -24,6 +24,7 @@
             { id: 'security',     icon: 'ti-shield-lock',     label: t('settings.tabSecurity')     || 'Безопасность',  desc: t('settings.tabSecurityDesc')     || 'Администратор, 2FA, API-ключи, MCP и вебхуки.' },
             { id: 'backup',       icon: 'ti-database-export', label: t('settings.tabBackup')       || 'Бэкапы',        desc: t('settings.tabBackupDesc')       || 'Локальные и S3 бэкапы, расписание, восстановление.' },
             { id: 'accessLogs',   icon: 'ti-list-search',     label: t('settings.tabAccessLogs')   || 'Access-логи',   desc: t('settings.tabAccessLogsDesc')   || 'Сбор и аналитика access-логов Xray. Выключено по умолчанию.' },
+            { id: 'probes',       icon: 'ti-radar',           label: t('settings.tabProbes')       || 'Проберы',       desc: t('settings.tabProbesDesc')       || 'Внешние диагностические агенты: реальные подключения к нодам со стороны.' },
             { id: 'maintenance',  icon: 'ti-tool',            label: t('settings.tabMaintenance')  || 'Обслуживание',  desc: t('settings.tabMaintenanceDesc')  || 'Обслуживание, кэш, сброс счётчиков и опасные операции.' },
             { id: 'migration',    icon: 'ti-transfer-in',     label: t('settings.tabMigration')    || 'Миграция',      desc: t('settings.tabMigrationDesc')    || 'Бесшовный импорт из Marzban — старые ссылки продолжают работать.' },
         ];
@@ -66,6 +67,8 @@
     <%- include('partials/settings/backup') %>
 
     <%- include('partials/settings/access-logs') %>
+
+    <%- include('partials/settings/probes') %>
 
     <%- include('partials/settings/maintenance') %>
 
@@ -558,7 +561,7 @@ async function submitMcpKey(e) {
     const name = document.getElementById('mcpKeyName').value.trim() || 'MCP AI Key';
     const writeScopes = [...document.querySelectorAll('.mcp-write-scope:checked')].map(c => c.value);
 
-    const scopes = ['mcp:enabled', 'users:read', 'nodes:read', 'stats:read', ...writeScopes];
+    const scopes = ['mcp:enabled', 'users:read', 'nodes:read', 'stats:read', 'probes:read', ...writeScopes];
     const uniqueScopes = [...new Set(scopes)];
 
     const body = new URLSearchParams();

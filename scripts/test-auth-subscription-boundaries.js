@@ -1,6 +1,13 @@
 const assert = require('assert');
 const Module = require('module');
 
+// Module paths use backslashes on Windows, so the suffix checks below have to
+// compare against a normalized form or every stub silently misses and the test
+// talks to the real database.
+function normalizePath(p) {
+    return String(p || '').replace(/\\/g, '/');
+}
+
 function createQuery(result) {
     return {
         populate() {
@@ -124,7 +131,7 @@ async function withRouteStubs(usersById, usersByToken, run) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === 'qrcode') return {};
 
-        const parentFile = parent?.filename || '';
+        const parentFile = normalizePath(parent?.filename);
         if (parentFile.endsWith('/src/routes/auth.js') || parentFile.endsWith('/src/routes/subscription.js')) {
             if (request === '../../config') {
                 return {
@@ -190,7 +197,7 @@ async function withRouteStubs(usersById, usersByToken, run) {
 async function withRateLimiterStubs(run) {
     const originalLoad = Module._load;
     Module._load = function patchedLoad(request, parent, isMain) {
-        const parentFile = parent?.filename || '';
+        const parentFile = normalizePath(parent?.filename);
         if (parentFile.endsWith('/src/utils/rateLimiters.js') && request === './logger') {
             return {
                 info() {},

@@ -1,0 +1,85 @@
+<% if (!enabled) { %>
+<div class="alert alert-warning" style="margin-bottom: 16px;">
+    <i class="ti ti-alert-triangle"></i>
+    <%= t('probes.disabledBanner') %>
+    <a href="/panel/settings?tab=probes" style="margin-left: 8px;"><%= t('nav.settings') %></a>
+</div>
+<% } %>
+
+<div id="probesApp" data-enabled="<%= enabled ? '1' : '0' %>">
+    <div class="card" style="margin-bottom: 16px;">
+        <div class="card-body" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div>
+                <strong><%= t('probes.title') %></strong>
+                <small class="hint" style="display: block; margin-top: 4px;">
+                    <%= t('probes.subtitle') %>
+                </small>
+            </div>
+            <button type="button" class="btn btn-primary" id="probeCreateBtn" <%= enabled ? '' : 'disabled' %>>
+                <i class="ti ti-plus"></i> <%= t('probes.create') %>
+            </button>
+        </div>
+    </div>
+
+    <% if (seriesEstimate > 2000) { %>
+    <div class="alert alert-warning" style="margin-bottom: 16px;">
+        <i class="ti ti-alert-triangle"></i>
+        <%= t('probes.scaleWarning') %>
+    </div>
+    <% } %>
+
+    <div class="card">
+        <div class="card-body">
+            <div id="probesList" class="probes-list">
+                <div class="skeleton-row"></div>
+                <div class="skeleton-row"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Install command overlay, filled after a probe is created -->
+<div class="probe-overlay" id="probeInstallModal" hidden>
+    <div class="probe-dialog">
+        <div class="probe-dialog-header">
+            <h2><i class="ti ti-terminal-2"></i> <%= t('probes.installTitle') %></h2>
+            <button type="button" class="probe-dialog-close" data-probe-close aria-label="close">&times;</button>
+        </div>
+        <div class="probe-dialog-body">
+            <p class="hint">
+                <%= t('probes.installHint') %>
+            </p>
+            <div class="probe-os-tabs">
+                <button type="button" class="probe-os-tab is-active" data-probe-os="unix">
+                    <i class="ti ti-brand-debian"></i> Linux / macOS
+                </button>
+                <button type="button" class="probe-os-tab" data-probe-os="windows">
+                    <i class="ti ti-brand-windows"></i> Windows
+                </button>
+            </div>
+            <pre id="probeInstallCommand" class="probe-code"></pre>
+            <button type="button" class="btn" id="probeCopyCommand">
+                <i class="ti ti-copy"></i> <%= t('common.copy') %>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.PROBES_I18N = <%- JSON.stringify({
+        never: t('probes.never'),
+        online: t('probes.online'),
+        offline: t('probes.offline'),
+        pending: t('probes.pending'),
+        traffic: t('probes.traffic'),
+        reinstall: t('probes.reinstall'),
+        remove: t('common.delete'),
+        confirmRemove: t('probes.confirmRemove'),
+        empty: t('probes.empty'),
+        lastSeen: t('probes.lastSeen'),
+        namePrompt: t('probes.namePrompt'),
+        copied: t('common.copied'),
+        sameHost: t('probes.sameHost')
+    }) %>;
+</script>
+<script src="/js/probes.js"></script>

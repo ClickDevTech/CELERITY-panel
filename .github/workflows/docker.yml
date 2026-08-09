@@ -31,6 +31,27 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o cc-agent-linux-amd64 .
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o cc-agent-linux-arm64 .
 
+      - name: Test celerity-probe
+        working-directory: probe
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Build celerity-probe
+        working-directory: probe
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}"; arch="${target#*/}"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -ldflags="-s -w" -o "celerity-probe-$os-$arch" .
+          done
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=windows GOARCH="$arch" \
+              go build -ldflags="-s -w" -o "celerity-probe-windows-$arch.exe" .
+          done
+          cp install.sh celerity-probe-install.sh
+          cp install.ps1 celerity-probe-install.ps1
+
       - name: Upload agent binaries as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -38,6 +59,18 @@ jobs:
           path: |
             cc-agent/cc-agent-linux-amd64
             cc-agent/cc-agent-linux-arm64
+
+      - name: Upload probe binaries as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: celerity-probe-binaries
+          path: |
+            probe/celerity-probe-linux-amd64
+            probe/celerity-probe-linux-arm64
+            probe/celerity-probe-darwin-amd64
+            probe/celerity-probe-darwin-arm64
+            probe/celerity-probe-windows-amd64.exe
+            probe/celerity-probe-windows-arm64.exe
 
       - name: Publish to GitHub Release (on tag only)
         if: startsWith(github.ref, 'refs/tags/')
@@ -56,10 +89,33 @@ jobs:
             | `cc-agent-linux-amd64` | x86_64 (most VPS) |
             | `cc-agent-linux-arm64` | ARM64 |
 
+            ## Celerity Probe binaries
+
+            External diagnostic probe. Installed by the operator on their own
+            host; holds only client subscription credentials and no node access.
+            The install command with a single-use token is generated in the panel.
+
+            | File | Platform |
+            |------|----------|
+            | `celerity-probe-linux-amd64` | Linux x86_64 |
+            | `celerity-probe-linux-arm64` | Linux ARM64 |
+            | `celerity-probe-darwin-amd64` | macOS Intel |
+            | `celerity-probe-darwin-arm64` | macOS Apple Silicon |
+            | `celerity-probe-windows-amd64.exe` | Windows x86_64 |
+            | `celerity-probe-windows-arm64.exe` | Windows ARM64 |
+
             > Panel source code is distributed via Docker Hub: `clickdevtech/hysteria-panel`
           files: |
             cc-agent/cc-agent-linux-amd64
             cc-agent/cc-agent-linux-arm64
+            probe/celerity-probe-linux-amd64
+            probe/celerity-probe-linux-arm64
+            probe/celerity-probe-darwin-amd64
+            probe/celerity-probe-darwin-arm64
+            probe/celerity-probe-windows-amd64.exe
+            probe/celerity-probe-windows-arm64.exe
+            probe/celerity-probe-install.sh
+            probe/celerity-probe-install.ps1
 
   build-and-push:
     runs-on: ubuntu-latest

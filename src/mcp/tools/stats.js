@@ -23,8 +23,8 @@ async function queryStats(args) {
     switch (parsed.type) {
         case 'summary': {
             const [usersTotal, usersEnabled, nodesTotal, nodesOnline] = await Promise.all([
-                HyUser.countDocuments(),
-                HyUser.countDocuments({ enabled: true }),
+                HyUser.countDocuments({ isProbe: { $ne: true } }),
+                HyUser.countDocuments({ enabled: true, isProbe: { $ne: true } }),
                 HyNode.countDocuments(),
                 HyNode.countDocuments({ status: 'online' }),
             ]);

@@ -18,6 +18,7 @@ const settingsRoutes = require('./settings');
 const systemRoutes = require('./system');
 const migrationRoutes = require('./migration');
 const accessLogsRoutes = require('./accessLogs');
+const probesRoutes = require('./probes');
 
 // IP whitelist applies to all panel routes
 router.use(checkIpWhitelist);
@@ -37,5 +38,6 @@ router.use('/', requireAuth, requireOnboarding, settingsRoutes);
 router.use('/', requireAuth, requireOnboarding, systemRoutes);
 router.use('/', requireAuth, requireOnboarding, migrationRoutes);
 router.use('/', requireAuth, requireOnboarding, accessLogsRoutes);
+router.use('/', requireAuth, requireOnboarding, probesRoutes);
 
 module.exports = router;

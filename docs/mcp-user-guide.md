@@ -191,6 +191,42 @@ Allowed statement types: `SELECT`, `WITH`, `EXPLAIN`, `DESCRIBE`, `SHOW`. Mutati
 
 ---
 
+### 📡 query_probes — External Probe Results
+
+> `probes:read` scope required. Requires probes enabled in panel settings.
+
+Returns what external probes observed by dialling your nodes through a real sing-box core, which is the one thing control-plane data cannot answer: whether a client behind a given ISP can actually connect. See the [probes guide](probes.md).
+
+**Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `view` | ❌ No | `probes` (vantage points, default), `nodes` (latest verdict per inbound), `targets` (checklist resources) |
+| `nodeId` | ❌ No | Restrict `nodes` / `targets` views to one node |
+| `probeId` | ❌ No | Restrict results to one probe |
+| `hours` | ❌ No | Look-back window, 1–720 (default 1). Over 24 h reads hourly rollups |
+| `limit` | ❌ No | 1–500 (default 100) |
+
+Verdicts: `net_unreachable`, `handshake_failed`, `auth_rejected`, `tunnel_no_data`, `degraded`, `core_down` (the probe's own core failed — this says nothing about the node).
+
+<details>
+<summary>📖 Example: Why users complain about one node</summary>
+
+```json
+{
+  "name": "query_probes",
+  "arguments": {
+    "view": "nodes",
+    "nodeId": "sample-node",
+    "hours": 6
+  }
+}
+```
+
+</details>
+
+---
+
 ### 👤 manage_user — User Management
 
 > `users:write` scope required
@@ -393,6 +429,7 @@ AI will use the `setup_new_node` prompt:
 | `nodes:read` | 👁 Read servers and statistics | Read |
 | `nodes:write` | ✏️ Manage servers, SSH commands | Write |
 | `stats:read` | 👁 Read statistics, system logs, and ClickHouse access logs | Read |
+| `probes:read` | 👁 Read external probe results | Read |
 | `sync:write` | ✏️ Sync, backups, system operations | Write |
 
 ---

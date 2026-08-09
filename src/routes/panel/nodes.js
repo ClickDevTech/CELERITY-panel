@@ -97,14 +97,15 @@ router.get('/', async (req, res) => {
             const realNodeFilter = { type: { $ne: 'virtual' } };
             const [trafficAgg, usersTotal, usersEnabled, nodesTotal, nodesOnline] = await Promise.all([
                 HyUser.aggregate([
+                    { $match: { isProbe: { $ne: true } } },
                     { $group: { 
                         _id: null, 
                         tx: { $sum: '$traffic.tx' }, 
                         rx: { $sum: '$traffic.rx' } 
                     }}
                 ]),
-                HyUser.countDocuments(),
-                HyUser.countDocuments({ enabled: true }),
+                HyUser.countDocuments({ isProbe: { $ne: true } }),
+                HyUser.countDocuments({ enabled: true, isProbe: { $ne: true } }),
                 HyNode.countDocuments(realNodeFilter),
                 HyNode.countDocuments({ ...realNodeFilter, status: 'online' }),
             ]);
@@ -159,6 +160,47 @@ router.get('/', async (req, res) => {
 
 // ==================== NODES ====================
 
+/**
+ * Per-node view of the most recent probe verdicts, for the compact badge in the
+ * list. One aggregation covers the whole page, so the badge costs a single
+ * query no matter how many nodes are shown.
+ */
+async function buildProbeSummary() {
+    const ProbeResult = require('../../models/probeResultModel');
+    const since = new Date(Date.now() - 30 * 60 * 1000);
+
+    const rows = await ProbeResult.aggregate([
+        { $match: { bucket: 'raw', ts: { $gte: since } } },
+        { $sort: { ts: -1 } },
+        {
+            $group: {
+                _id: { nodeId: '$nodeId', probeId: '$probeId', inboundId: '$inboundId' },
+                ok: { $first: '$ok' },
+                attempts: { $first: '$attempts' },
+                lastCode: { $first: '$lastCode' },
+            },
+        },
+        {
+            $group: {
+                _id: '$_id.nodeId',
+                checks: { $sum: 1 },
+                failing: { $sum: { $cond: [{ $eq: ['$ok', 0] }, 1, 0] } },
+                codes: { $addToSet: '$lastCode' },
+            },
+        },
+    ]);
+
+    const summary = {};
+    for (const row of rows) {
+        summary[String(row._id)] = {
+            checks: row.checks,
+            failing: row.failing,
+            code: (row.codes || []).find((c) => c) || '',
+        };
+    }
+    return summary;
+}
+
 // GET /panel/nodes - Node list
 router.get('/nodes', async (req, res) => {
     try {
@@ -174,6 +216,8 @@ router.get('/nodes', async (req, res) => {
         const ipProtocolCount = {};
         nodes.forEach(n => { ipProtocolCount[n.ip] = (ipProtocolCount[n.ip] || 0) + 1; });
 
+        const probeSummary = settings?.probes?.enabled ? await buildProbeSummary() : {};
+
         render(res, 'nodes', {
             title: res.locals.locales.nodes.title,
             page: 'nodes',
@@ -181,6 +225,7 @@ router.get('/nodes', async (req, res) => {
             groups,
             linksCount,
             ipProtocolCount,
+            probeSummary,
             loadBalancingEnabled: !!(settings?.loadBalancing?.enabled),
             panelDomain: config.PANEL_DOMAIN || '',
             buildNodeUiMeta,

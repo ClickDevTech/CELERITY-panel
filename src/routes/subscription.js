@@ -132,7 +132,12 @@ async function getActiveNodes(user) {
     }
     
     const lb = settings.loadBalancing || {};
-    
+
+    // Diagnostic probes must see the fleet as it is, not as it should be shown
+    // to customers: hiding an offline node from a probe would switch external
+    // monitoring off exactly when the node needs checking.
+    const isProbe = user.isProbe === true;
+
     // Exclude exit (bridge) and relay nodes — users connect to entry (portal) or standalone nodes only.
     // Traffic is routed through the cascade automatically.
     {
@@ -144,7 +149,7 @@ async function getActiveNodes(user) {
     }
 
     // Filter overloaded nodes (if enabled). Virtual nodes have no capacity.
-    if (lb.hideOverloaded) {
+    if (lb.hideOverloaded && !isProbe) {
         const beforeFilter = nodes.length;
         nodes = nodes.filter(n => {
             if (n.type === 'virtual') return true;
@@ -158,7 +163,7 @@ async function getActiveNodes(user) {
 
     // Filter offline/error nodes flagged by the health checker.
     // Virtual nodes are never pinged (default status='offline') so they bypass.
-    if (lb.hideOffline !== false) {
+    if (lb.hideOffline !== false && !isProbe) {
         const beforeFilter = nodes.length;
         nodes = nodes.filter(n => n.type === 'virtual' || (n.status !== 'offline' && n.status !== 'error'));
         if (nodes.length < beforeFilter) {
@@ -239,10 +244,14 @@ function resolveVirtualSources(nodes, user) {
         // Final guard: source must remain visible to this user via group overlap.
         // Real nodes already passed group filter above, but manual lists may include
         // nodes the user shouldn't see if administrator changed groups since.
-        resolved = resolved.filter(real => {
-            const ids = (real.groups || []).map(g => String(g._id || g));
-            return ids.some(id => userGroupIds.has(id));
-        });
+        // Probes are bound to nodes explicitly and belong to no group, so the
+        // overlap check would drop every balancer from their subscription.
+        if (user.isProbe !== true) {
+            resolved = resolved.filter(real => {
+                const ids = (real.groups || []).map(g => String(g._id || g));
+                return ids.some(id => userGroupIds.has(id));
+            });
+        }
 
         if (resolved.length === 0) {
             logger.debug(`[Sub] Virtual node "${node.name}" dropped: no resolved sources`);
@@ -367,6 +376,10 @@ function getXrayPublishedInbounds(node) {
     const main = {
         port: node.port || 443,
         nameSuffix: '',
+        // Stable identity of this inbound. Unused by client config builders,
+        // consumed by the diagnostic probe manifest to key its results.
+        extraId: null,
+        inboundTag: xray.inboundTag || 'vless-in',
         transport: xray.transport,
         security: xray.security,
         flow: xray.flow,
@@ -397,6 +410,8 @@ function getXrayPublishedInbounds(node) {
             // When uniqueName is set the label fully replaces the node name
             // in the published server name (issue #74).
             uniqueName: !!i.uniqueName,
+            extraId: i.id,
+            inboundTag: i.inboundTag,
             transport: i.transport,
             security: i.security,
             flow: i.flow,
@@ -3067,3 +3082,9 @@ module.exports.serveSubscription = serveSubscription;
 module.exports.serveInfo = serveInfo;
 module.exports.validateUser = validateUser;
 module.exports.rejectOrSoftBlock = rejectOrSoftBlock;
+// Exposed for the diagnostic probe manifest. The probe matches subscription
+// outbounds to nodes by tag, so the panel must predict those tags with the
+// very same code that generates the subscription.
+module.exports.getNodeConfigs = getNodeConfigs;
+module.exports.getXrayPublishedInbounds = getXrayPublishedInbounds;
+module.exports.xrayInboundName = _xrayInboundName;

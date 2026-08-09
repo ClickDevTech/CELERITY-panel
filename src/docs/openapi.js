@@ -1374,6 +1374,7 @@ These endpoints are not under \`/api\` and are not part of this specification:
         { name: 'Nodes',  description: 'Node management — scope: `nodes:read` / `nodes:write`' },
         { name: 'Cascade', description: 'Cascade tunnel management — scope: `nodes:read` / `nodes:write`' },
         { name: 'MCP',    description: 'Model Context Protocol endpoint — scope: `mcp:enabled`' },
+        { name: 'Probes', description: 'External diagnostic probes — authenticated with a probe token, not an API key' },
         { name: 'Sync',   description: 'Synchronization and user kicking — scope: `sync:write`' },
         { name: 'Public', description: 'Public endpoints — no authentication required' },
     ],
@@ -2674,6 +2675,120 @@ integrations. Resolution is bound to the collection interval (~5 min), not per-s
                     400: { description: 'positions must be an array', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' }, examples: { invalid: { value: { error: 'positions must be an array' } } } } } },
                     401: { $ref: '#/components/responses/Unauthorized' },
                     403: { $ref: '#/components/responses/Forbidden' },
+                },
+            },
+        },
+
+        // ── Probes ─────────────────────────────────────────────────────────────
+
+        '/probe/enroll': {
+            post: {
+                tags: ['Probes'],
+                summary: 'Exchange an enrollment token for a probe token',
+                description: 'Called once by a freshly installed probe. The enrollment token is single-use and short-lived; the permanent token it returns authenticates every later request. Rejected with 403 while the probes feature is disabled.',
+                security: [],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/json': {
+                            schema: {
+                                type: 'object',
+                                properties: {
+                                    enrollToken: { type: 'string', description: 'May also be sent as a Bearer token' },
+                                    version: { type: 'string' },
+                                    singboxVersion: { type: 'string' },
+                                    os: { type: 'string' },
+                                    arch: { type: 'string' },
+                                },
+                            },
+                        },
+                    },
+                },
+                responses: {
+                    201: {
+                        description: 'Enrolled',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        token: { type: 'string' },
+                                        probeId: { type: 'string' },
+                                        name: { type: 'string' },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    401: { description: 'Missing, invalid or expired enrollment token' },
+                    403: { description: 'Probes are disabled' },
+                    429: { $ref: '#/components/responses/RateLimited' },
+                },
+            },
+        },
+
+        '/probe/profile': {
+            get: {
+                tags: ['Probes'],
+                summary: 'Get the checking plan for this probe',
+                description: 'Returns the nodes and inbounds to check with the sing-box outbound tag each one will carry in the subscription, plus the resource checklist, cadence, speed-test budget and the subscription URL. Requires the probe Bearer token.',
+                security: [{ BearerToken: [] }],
+                responses: {
+                    200: {
+                        description: 'Manifest',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        probeId: { type: 'string' },
+                                        name: { type: 'string' },
+                                        subscriptionUrl: { type: 'string' },
+                                        ingestUrl: { type: 'string' },
+                                        intervals: {
+                                            type: 'object',
+                                            properties: {
+                                                transportSec: { type: 'integer' },
+                                                targetsSec: { type: 'integer' },
+                                                reportSec: { type: 'integer' },
+                                            },
+                                        },
+                                        speedTest: { type: 'object' },
+                                        targets: { type: 'array', items: { type: 'object' } },
+                                        nodes: { type: 'array', items: { type: 'object' } },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    401: { $ref: '#/components/responses/Unauthorized' },
+                    403: { description: 'Probes are disabled' },
+                },
+            },
+        },
+
+        '/probe/ingest': {
+            post: {
+                tags: ['Probes'],
+                summary: 'Submit probe measurements',
+                description: 'Accepts gzipped NDJSON rollup windows (kinds: transport, target, event, meta). `X-Batch-Id` must be the SHA-256 of the body; identical redelivered batches are acknowledged without reprocessing, which makes at-least-once shipping safe.',
+                security: [{ BearerToken: [] }],
+                requestBody: {
+                    required: true,
+                    content: {
+                        'application/x-ndjson': {
+                            schema: { type: 'string', format: 'binary' },
+                        },
+                    },
+                },
+                responses: {
+                    202: { description: 'Accepted' },
+                    200: { description: 'Duplicate batch, already processed' },
+                    400: { description: 'Empty body or batch id mismatch' },
+                    401: { $ref: '#/components/responses/Unauthorized' },
+                    403: { description: 'Probes are disabled' },
+                    413: { description: 'Payload too large' },
+                    429: { $ref: '#/components/responses/RateLimited' },
                 },
             },
         },

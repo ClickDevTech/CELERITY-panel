@@ -925,7 +925,16 @@ const render = (res, template, data = {}) => {
         locales: res.locals.locales,
     };
 
+    // Feature flags live in res.locals, which the layout can read but an inner
+    // template cannot: EJS only sees what is passed to compile(). Exposing them
+    // here keeps partials from silently rendering nothing.
+    const featureFlags = {
+        accessLogsEnabled: res.locals.accessLogsEnabled === true,
+        probesEnabled: res.locals.probesEnabled === true,
+    };
+
     const viewVars = {
+        ...featureFlags,
         ...data,
         ...i18nVars,
         baseUrl: config.BASE_URL,
