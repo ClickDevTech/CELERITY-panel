@@ -21,6 +21,19 @@ import (
 // node is sampled over time instead of one node consuming everything.
 const speedTestURLTemplate = "https://speed.cloudflare.com/__down?bytes=%d"
 
+const (
+	// Share of the byte cap pulled and thrown away before the clock starts.
+	// TCP slow start, the TLS handshake tail and the proxy's own buffering all
+	// land in the opening bytes and say nothing about what the node can hold.
+	speedWarmupShare = 4
+	// Beyond this the warm-up would eat a large cap for no extra accuracy.
+	speedWarmupMaxBytes = 512 * 1024
+	// The connection gets its own allowance so setup never eats into the
+	// measured window.
+	speedConnectGrace = 15 * time.Second
+	speedReadChunk    = 64 * 1024
+)
+
 // SpeedBudget persists the spent portion of the daily allowance so a restart
 // cannot reset it and blow through the operator's traffic.
 type SpeedBudget struct {
@@ -102,47 +115,117 @@ func (b *SpeedBudget) NextBinding(count int) int {
 	return idx
 }
 
+// SpeedSample is one throughput observation taken through a node.
+type SpeedSample struct {
+	// Bps is the throughput of the timed part of the transfer.
+	Bps int64
+	// Transferred counts every byte pulled through the node, warm-up included:
+	// the operator pays for those as well, so the budget must see them.
+	Transferred int64
+	// Capped marks a run that ended on the byte cap instead of on the clock.
+	// The link was never given the chance to show more, so Bps is a floor and
+	// has to be presented as one.
+	Capped bool
+}
+
 // MeasureSpeed downloads a bounded amount of data through one node and returns
 // the observed throughput in bytes per second.
-func MeasureSpeed(ctx context.Context, b Binding, maxBytes int64, maxSeconds int) (int64, int64, error) {
+func MeasureSpeed(ctx context.Context, b Binding, maxBytes int64, maxSeconds int) (SpeedSample, error) {
+	var sample SpeedSample
 	if maxBytes <= 0 {
-		return 0, 0, errors.New("speed test disabled")
+		return sample, errors.New("speed test disabled")
 	}
 	if maxSeconds <= 0 {
 		maxSeconds = 5
 	}
+	window := time.Duration(maxSeconds) * time.Second
 
-	runCtx, cancel := context.WithTimeout(ctx, time.Duration(maxSeconds)*time.Second)
+	// The read loop enforces the measurement window itself; these limits are
+	// the outer guard that stops a stalled transfer from hanging the pass.
+	hardLimit := speedConnectGrace + 2*window
+	runCtx, cancel := context.WithTimeout(ctx, hardLimit)
 	defer cancel()
 
 	socksAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(b.SocksPort))
-	client := tunnelClient(socksAddr, time.Duration(maxSeconds+5)*time.Second, nil)
+	client := tunnelClient(socksAddr, hardLimit, nil)
 
 	url := fmt.Sprintf(speedTestURLTemplate, maxBytes)
 	req, err := http.NewRequestWithContext(runCtx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0, 0, err
+		return sample, err
 	}
 
-	start := time.Now()
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, 0, err
+		return sample, err
 	}
 	defer resp.Body.Close()
 
-	read, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxBytes))
-	elapsed := time.Since(start)
-
-	// A deadline hit is the normal way a capped measurement ends: whatever was
-	// transferred is still a valid sample.
-	if err != nil && read == 0 {
-		return 0, 0, err
-	}
-	if elapsed <= 0 || read <= 0 {
-		return 0, read, errors.New("no data transferred")
+	if resp.StatusCode != http.StatusOK {
+		return sample, fmt.Errorf("speed endpoint answered %d", resp.StatusCode)
 	}
 
-	bps := int64(float64(read) / elapsed.Seconds())
-	return bps, read, nil
+	sample = readSpeedBody(resp.Body, maxBytes, window)
+	if sample.Bps <= 0 {
+		return sample, errors.New("no data transferred")
+	}
+	return sample, nil
+}
+
+// readSpeedBody drains the response and times only the steady part of it. The
+// clock starts after the warm-up bytes and stops at the measurement window, so
+// neither the handshake nor the ramp-up is charged to the node as slowness.
+func readSpeedBody(body io.Reader, maxBytes int64, window time.Duration) SpeedSample {
+	warmup := maxBytes / speedWarmupShare
+	if warmup > speedWarmupMaxBytes {
+		warmup = speedWarmupMaxBytes
+	}
+
+	buf := make([]byte, speedReadChunk)
+	opened := time.Now()
+
+	var sample SpeedSample
+	var timed int64
+	var started, deadline time.Time
+
+	for {
+		n, err := body.Read(buf)
+		if n > 0 {
+			sample.Transferred += int64(n)
+			if started.IsZero() {
+				if sample.Transferred >= warmup {
+					started = time.Now()
+					deadline = started.Add(window)
+				}
+			} else {
+				timed += int64(n)
+			}
+		}
+		if err != nil {
+			break
+		}
+		if sample.Transferred >= maxBytes {
+			break
+		}
+		if !started.IsZero() && !time.Now().Before(deadline) {
+			break
+		}
+	}
+
+	// The server is asked for exactly maxBytes, so reaching the end of the body
+	// means the cap ended the run, not the link running out of steam.
+	sample.Capped = sample.Transferred >= maxBytes
+
+	elapsed := time.Since(started)
+	if started.IsZero() || timed <= 0 || elapsed <= 0 {
+		// Too little arrived to drop a warm-up, or it went by faster than the
+		// clock can resolve. Timing the whole body is still closer to the truth
+		// than timing the handshake along with it.
+		timed = sample.Transferred
+		elapsed = time.Since(opened)
+	}
+	if elapsed > 0 && timed > 0 {
+		sample.Bps = int64(float64(timed) / elapsed.Seconds())
+	}
+	return sample
 }

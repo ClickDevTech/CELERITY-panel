@@ -54,7 +54,7 @@ const SETTINGS = {
         transportIntervalSec: 300,
         targetsIntervalSec: 3600,
         reportIntervalSec: 900,
-        speedTest: { enabled: true, maxBytes: 1024, maxSeconds: 5, dailyBudgetBytes: 4096 },
+        speedTest: { enabled: true, intervalSec: 5400, maxBytes: 1024, maxSeconds: 5, dailyBudgetBytes: 4096 },
         targets: [
             { id: 'google', url: 'https://www.google.com/generate_204', enabled: true },
             { id: 'disabled-one', url: 'https://example.com', enabled: false },
@@ -168,6 +168,9 @@ async function withStubs(run) {
 
         assert.strictEqual(manifest.intervals.transportSec, 300);
         assert.strictEqual(manifest.speedTest.dailyBudgetBytes, 4096);
+        // The probe divides this period by the fleet size to pace itself, so it
+        // has to travel with the plan rather than being hardcoded there.
+        assert.strictEqual(manifest.speedTest.intervalSec, 5400, 'the measuring period reaches the probe');
     });
 
     // The manifest is only trustworthy while the subscription actually exports

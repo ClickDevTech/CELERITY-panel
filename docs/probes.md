@@ -97,11 +97,11 @@ The core is [sing-box-lx](https://github.com/Leadaxe/sing-box-lx) — the same b
 | Report interval           | 900 s   | How often windows are shipped to the panel                          |
 | Retention                 | 30 days | Raw windows; hourly rollups are kept three times longer             |
 | Probe traffic limit       | 5 GB    | Cap on the hidden user, applied to existing probes too              |
-| Speed test                | off     | Bounded by 20 MB and 5 s per run, and 1 GB per day across all nodes |
+| Speed test                | off     | Every node every 180 min, 20 MB and 5 s per run, 1 GB per day       |
 | Resource checklist        | empty   | One `id` + `url` pair per row, checked through every node           |
 
 
-Speed measurement burns real traffic on your own nodes, so it is bounded three ways, and its daily budget is spent round-robin across nodes.
+Throughput runs on its own cadence: you set how often one node should be measured, the probe spreads that period across the inbounds it watches, and the daily budget stays as the backstop. The size cap also sets the ceiling — the opening quarter of each run, up to 512 KB, is discarded as warm-up, and a run that fills the cap before the time limit is a lower bound and is printed as `≥ X Mbit/s`; the settings page computes that ceiling and the daily traffic as you type.
 
 **Scale note.** The number of stored series is *probes × nodes × resources*. The panel warns when that product grows past a few thousand; at that point lengthen the intervals.
 
@@ -110,6 +110,12 @@ Speed measurement burns real traffic on your own nodes, so it is bounded three w
 ## 🔍 Reading the Results
 
 Results are always presented **per vantage point**, and probe verdicts never change `node.status`. A failed check can also come from the probe's own uplink; telling the two apart needs a quorum of probes on different networks.
+
+**Probes → History** opens the report for one vantage point over 6 hours, 24 hours, 7 days or 30 days. It leads with the numbers for the whole range — success rate, p50/p95 latency, handshake and time to first byte, throughput, how many nodes are unhappy, how many checklist resources are blocked, and how long the probe reported nothing at all — followed by the failure breakdown, which is what turns a red strip into a specific action.
+
+Below that, one section per node, worst first, healthy ones collapsed. Every node inbound gets a strip on a fixed time grid: one segment per window, coloured by verdict, with a latency line underneath drawn on the same grid. Because the grid is fixed, a stretch where the probe was silent stays a visible hole rather than closing ranks. Clicking a segment opens that window in full: attempts and successes, the failure counters, p50/p95, handshake, time to first byte, throughput, exit address, and for a virtual node the leaf the balancer actually picked.
+
+Ranges past 12 hours are served from hourly rollups, so a month costs the same to read as a day. A fleet large enough to overflow one read loses the far end of the range, never the recent windows, and the panel says so.
 
 Failure codes map directly to an action:
 
@@ -124,7 +130,9 @@ Failure codes map directly to an action:
 | `core_down`        | The probe's own sing-box was not running | The fault is on the probe host                              |
 
 
-Resource results are kept separate: a blocked resource points to a geo-block or a blacklisted exit address. Only 403 and 451 count as a block; a 500 or a transport error is recorded as a failed check.
+Resource results are kept separate: a blocked resource points to a geo-block or a blacklisted exit address. Only 403 and 451 count as a block; a 500 or a transport error is recorded as a failed check. Each resource carries its own strip, the URL it was fetched from, the last HTTP status and the last recorded error.
+
+Throughput gets its own block, because it is sampled round-robin inside a daily budget and is therefore sparse and irregular. Instead of a strip that would be almost entirely empty, it lists only the nodes that were actually measured, slowest first, with the median over real measurements, the peak, the sample count and the time of the last one, plotted at the moment each sample was taken. Windows with no measurement are excluded from the median rather than counted as zero, hourly rollups keep the median of the hour rather than its best minute so a sustained drop cannot hide behind one lucky burst, and a `≥` marks a reading that filled the size cap before the time cap.
 
 Two warnings worth acting on:
 

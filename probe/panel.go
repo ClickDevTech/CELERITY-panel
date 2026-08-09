@@ -99,7 +99,11 @@ type Manifest struct {
 	} `json:"intervals"`
 
 	SpeedTest struct {
-		Enabled          bool  `json:"enabled"`
+		Enabled bool `json:"enabled"`
+		// IntervalSec is how often one node is measured. The probe divides it
+		// by the number of inbounds it watches to get the gap between two
+		// individual runs.
+		IntervalSec      int   `json:"intervalSec"`
 		MaxBytes         int64 `json:"maxBytes"`
 		MaxSeconds       int   `json:"maxSeconds"`
 		DailyBudgetBytes int64 `json:"dailyBudgetBytes"`

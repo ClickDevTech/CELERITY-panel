@@ -134,6 +134,9 @@ async function withStubs(state, run) {
                 codes: { handshakeFailed: 1, bogusCode: 99, netUnreachable: -5 },
                 latencyP50: 120,
                 latencyP95: 400,
+                speedBps: 9_000_000,
+                speedSamples: 2,
+                speedCapped: true,
                 lastCode: 'handshake_failed',
             }),
             'this line is not json',
@@ -206,6 +209,14 @@ async function withStubs(state, run) {
             degraded: 0,
             coreDown: 0,
         }, 'codes normalized into the fixed taxonomy');
+
+        // A reading that stopped on the size cap is a floor, and the panel can
+        // only say so if the flag survives ingest. An older probe sends no
+        // maximum, so the reading itself stands in for it.
+        const speed = state.transport[0].data;
+        assert.strictEqual(speed.speedBps, 9_000_000, 'the throughput reading is stored');
+        assert.strictEqual(speed.speedBpsMax, 9_000_000, 'a missing peak falls back to the reading');
+        assert.strictEqual(speed.speedCapped, true, 'the lower-bound mark is kept');
 
         assert.strictEqual(state.targets[0].data.blocked, 1, 'target block recorded');
         assert.strictEqual(state.targets[0].key.targetId, 'openai', 'target keyed by resource');

@@ -60,8 +60,14 @@ const probeResultSchema = new mongoose.Schema({
     ttfbMs: { type: Number, default: 0 },
 
     // Bounded speed test. Zero when no measurement happened in this window.
+    // `speedBps` is the typical reading (mean inside a raw window, median of
+    // the windows in an hourly rollup) and `speedBpsMax` the best one, so a
+    // single lucky burst cannot hide a sustained drop. `speedCapped` marks a
+    // reading that stopped on the size cap and is therefore a lower bound.
     speedBps: { type: Number, default: 0 },
+    speedBpsMax: { type: Number, default: 0 },
     speedSamples: { type: Number, default: 0 },
+    speedCapped: { type: Boolean, default: false },
 
     exitIp: { type: String, default: '' },
 
@@ -144,16 +150,22 @@ probeResultSchema.statics.getLatestForNode = async function(nodeId, sinceMs = 30
  * Windows over a period, oldest first, for the history view. Short ranges read
  * raw windows; longer ones read hourly rollups so a week-wide question never
  * pulls thousands of documents.
+ *
+ * The read is ordered newest first and reversed afterwards: a fleet large
+ * enough to exceed the limit must lose the far end of the range, never the
+ * measurements taken minutes ago.
  */
 probeResultSchema.statics.getHistory = async function({ probeId, nodeId, since, bucket, limit = 6000 }) {
     const filter = { bucket, ts: { $gte: since } };
     if (probeId) filter.probeId = probeId;
     if (nodeId) filter.nodeId = String(nodeId);
 
-    return this.find(filter)
-        .sort({ ts: 1 })
+    const docs = await this.find(filter)
+        .sort({ ts: -1 })
         .limit(limit)
         .lean();
+
+    return docs.reverse();
 };
 
 /**

@@ -149,6 +149,7 @@ async function buildManifest(probe, subscriptionToken) {
         },
         speedTest: {
             enabled: !!probeSettings.speedTest?.enabled,
+            intervalSec: probeSettings.speedTest?.intervalSec || 3 * 3600,
             maxBytes: probeSettings.speedTest?.maxBytes || 0,
             maxSeconds: probeSettings.speedTest?.maxSeconds || 5,
             dailyBudgetBytes: probeSettings.speedTest?.dailyBudgetBytes || 0,

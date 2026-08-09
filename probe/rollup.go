@@ -78,11 +78,20 @@ type transportWindow struct {
 	handshakes []int
 	ttfbs      []int
 
-	speedBps     int64
+	speedSum     int64
+	speedMax     int64
 	speedSamples int
+	speedCapped  int
 
 	exitIP         string
 	selectedNodeID string
+}
+
+func (w *transportWindow) meanSpeed() int64 {
+	if w.speedSamples == 0 {
+		return 0
+	}
+	return w.speedSum / int64(w.speedSamples)
 }
 
 type targetWindow struct {
@@ -122,8 +131,13 @@ type Record struct {
 	LatencyMs   int `json:"latencyMs,omitempty"`
 	HTTPStatus  int `json:"httpStatus,omitempty"`
 
+	// SpeedBps is the mean over the samples taken in this window, SpeedBpsMax
+	// the best one. The mean is what a reader should judge the node by; the max
+	// only says what the link reached at its luckiest moment.
 	SpeedBps     int64 `json:"speedBps,omitempty"`
+	SpeedBpsMax  int64 `json:"speedBpsMax,omitempty"`
 	SpeedSamples int   `json:"speedSamples,omitempty"`
+	SpeedCapped  bool  `json:"speedCapped,omitempty"`
 
 	ExitIP    string `json:"exitIp,omitempty"`
 	LastCode  string `json:"lastCode,omitempty"`
@@ -284,7 +298,7 @@ func (a *Aggregator) AddTarget(res TargetResult) {
 }
 
 // AddSpeed attaches a throughput sample to the current window of a binding.
-func (a *Aggregator) AddSpeed(b Binding, bps int64) {
+func (a *Aggregator) AddSpeed(b Binding, s SpeedSample) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -294,10 +308,14 @@ func (a *Aggregator) AddSpeed(b Binding, bps int64) {
 		w = &transportWindow{nodeID: b.NodeID, inboundID: b.InboundID, inboundTag: b.InboundTag}
 		a.transport[key] = w
 	}
-	if bps > w.speedBps {
-		w.speedBps = bps
-	}
+	w.speedSum += s.Bps
 	w.speedSamples++
+	if s.Bps > w.speedMax {
+		w.speedMax = s.Bps
+	}
+	if s.Capped {
+		w.speedCapped++
+	}
 }
 
 // Snapshot turns the accumulated windows into records and returns a commit
@@ -330,8 +348,10 @@ func (a *Aggregator) Snapshot(netFingerprint string) ([]Record, func()) {
 			LatencyP95:     percentile(w.latencies, 95),
 			HandshakeMs:    percentile(w.handshakes, 50),
 			TTFBMs:         percentile(w.ttfbs, 50),
-			SpeedBps:       w.speedBps,
+			SpeedBps:       w.meanSpeed(),
+			SpeedBpsMax:    w.speedMax,
 			SpeedSamples:   w.speedSamples,
+			SpeedCapped:    w.speedCapped > 0,
 			ExitIP:         w.exitIP,
 			LastCode:       codes.dominant(),
 		})

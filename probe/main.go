@@ -144,10 +144,14 @@ func run(cfg *Config) error {
 	transportEvery := interval(rt.manifest.Intervals.TransportSec, 300)
 	targetsEvery := interval(rt.manifest.Intervals.TargetsSec, 3600)
 	reportEvery := interval(rt.manifest.Intervals.ReportSec, 900)
+	speedEvery := speedStep(rt)
 
 	transportTicker := time.NewTicker(transportEvery)
 	targetsTicker := time.NewTicker(targetsEvery)
 	reportTicker := time.NewTicker(reportEvery)
+	// Throughput runs on its own cadence: it is the one check whose frequency
+	// the operator pays for in traffic, so it must not be tied to another pass.
+	speedTicker := time.NewTicker(tickEvery(speedEvery))
 	// Settings edited in the panel reach a probe only through this poll, so it
 	// runs far more often than the checks themselves: the profile is a small
 	// document, and an operator who changed a setting expects it to take hold.
@@ -155,6 +159,7 @@ func run(cfg *Config) error {
 	defer transportTicker.Stop()
 	defer targetsTicker.Stop()
 	defer reportTicker.Stop()
+	defer speedTicker.Stop()
 	defer manifestTicker.Stop()
 
 	// First pass immediately, so a fresh install produces data at once instead
@@ -173,10 +178,13 @@ func run(cfg *Config) error {
 
 		case <-targetsTicker.C:
 			ensureCore(ctx, rt)
-			// The slow pass also refreshes exit addresses and spends the speed
-			// budget: all the expensive work happens on one cadence.
+			// The slow pass also refreshes exit addresses: both are expensive
+			// and neither is worth doing on the fast cadence.
 			runTransportPass(ctx, rt, aggregator, true)
 			runTargetPass(ctx, rt, aggregator)
+
+		case <-speedTicker.C:
+			ensureCore(ctx, rt)
 			runSpeedPass(ctx, rt, aggregator, budget)
 
 		case <-reportTicker.C:
@@ -209,6 +217,17 @@ func run(cfg *Config) error {
 				reportTicker.Reset(d)
 				logInfo("reports now ship every %s", d)
 			}
+			// The step also moves when the fleet grows or shrinks, since it is
+			// the per-node period spread over the inbounds being watched.
+			if d := speedStep(rt); d != speedEvery {
+				speedEvery = d
+				speedTicker.Reset(tickEvery(d))
+				if d > 0 {
+					logInfo("speed tests now run every %s", d)
+				} else {
+					logInfo("speed tests are off")
+				}
+			}
 		}
 	}
 }
@@ -221,6 +240,47 @@ func interval(seconds, fallback int) time.Duration {
 		seconds = fallback
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+// Two measurements never run closer together than this, whatever the operator
+// asks for: back-to-back downloads would drain the daily budget in minutes and
+// would also be measuring each other's congestion.
+const speedMinStep = 30 * time.Second
+
+// speedStep is the gap between two individual measurements. The operator sets
+// how often a single node should be measured; the probe walks the fleet
+// round-robin, so the gap is that period divided by the number of inbounds.
+// Zero means throughput measurement is off.
+func speedStep(rt *probeRuntime) time.Duration {
+	if !rt.manifest.SpeedTest.Enabled {
+		return 0
+	}
+
+	count := 0
+	for _, b := range rt.coreCfg.Bindings {
+		if !b.IsGroup {
+			count++
+		}
+	}
+	if count == 0 {
+		return 0
+	}
+
+	step := interval(rt.manifest.SpeedTest.IntervalSec, 10800) / time.Duration(count)
+	if step < speedMinStep {
+		step = speedMinStep
+	}
+	return step
+}
+
+// tickEvery keeps a disabled cadence off the hot path without juggling nil
+// tickers: time.NewTicker rejects a non-positive period, and the pass behind an
+// idle ticker returns immediately anyway.
+func tickEvery(d time.Duration) time.Duration {
+	if d <= 0 {
+		return time.Hour
+	}
+	return d
 }
 
 // ensureCore brings the core back after a crash. Checks running against a dead
@@ -440,15 +500,21 @@ func runSpeedPass(ctx context.Context, rt *probeRuntime, agg *Aggregator, budget
 	}
 	binding := candidates[idx]
 
-	bps, transferred, err := MeasureSpeed(ctx, binding, settings.MaxBytes, settings.MaxSeconds)
-	budget.Spend(transferred)
+	sample, err := MeasureSpeed(ctx, binding, settings.MaxBytes, settings.MaxSeconds)
+	budget.Spend(sample.Transferred)
 	if err != nil {
 		logDebug("speed test on %s failed: %v", binding.NodeName, err)
 		return
 	}
 
-	agg.AddSpeed(binding, bps)
-	logInfo("speed on %s: %.2f Mbit/s", binding.NodeName, float64(bps*8)/1e6)
+	agg.AddSpeed(binding, sample)
+
+	mbits := float64(sample.Bps*8) / 1e6
+	if sample.Capped {
+		logInfo("speed on %s: at least %.2f Mbit/s, stopped by the size cap", binding.NodeName, mbits)
+	} else {
+		logInfo("speed on %s: %.2f Mbit/s", binding.NodeName, mbits)
+	}
 }
 
 // flushAndShip folds the window, appends the self-report and hands the batch to

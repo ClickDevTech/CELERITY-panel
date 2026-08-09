@@ -442,6 +442,8 @@ router.post('/settings', async (req, res) => {
                 intInRange(req.body['probes.probeTrafficLimitGB'], 5, 0, 10000) * 1024 * 1024 * 1024;
 
             updates['probes.speedTest.enabled'] = req.body['probes.speedTest.enabled'] === 'on';
+            updates['probes.speedTest.intervalSec'] =
+                intInRange(req.body['probes.speedTest.intervalMin'], 180, 5, 1440) * 60;
             updates['probes.speedTest.maxBytes'] =
                 intInRange(req.body['probes.speedTest.maxMB'], 20, 1, 1024) * 1024 * 1024;
             updates['probes.speedTest.maxSeconds'] = intInRange(req.body['probes.speedTest.maxSeconds'], 5, 1, 60);

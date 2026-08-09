@@ -118,8 +118,10 @@ async function withStubs(state, run) {
                 latencyP95: 940,
                 handshakeMs: 61.2,
                 ttfbMs: 210.7,
-                speedBps: 8_000_000,
-                speedSamples: 2,
+                speedValues: [0, 4_000_000, 9_000_000, 5_000_000, 0],
+                speedBpsMax: 11_000_000,
+                speedSamples: 3,
+                speedCapped: 1,
                 exitIp: '203.0.113.9',
                 lastCode: 'handshake_failed',
             },
@@ -161,6 +163,10 @@ async function withStubs(state, run) {
         assert.strictEqual(match.ts.$gte.getTime(), expectedFrom.getTime());
         assert.strictEqual(match.ts.$lt.getTime(), expectedTo.getTime());
 
+        const group = state.transportPipeline[1].$group;
+        assert.ok(group.speedValues, 'window readings are collected so a median can be taken');
+        assert.ok(!group.speedBps, 'the hourly speed is no longer the best window of the hour');
+
         const upsert = state.transportUpserts[0];
         assert.strictEqual(upsert.key.bucket, 'hourly', 'result lands in the hourly bucket');
         assert.strictEqual(upsert.key.ts.getTime(), expectedFrom.getTime(), 'stamped with the hour start');
@@ -183,6 +189,15 @@ async function withStubs(state, run) {
         assert.strictEqual(upsert.data.latencyP50, 118, 'p50 averaged over the hour');
         assert.strictEqual(upsert.data.latencyP95, 940, 'p95 keeps the worst window');
         assert.strictEqual(upsert.data.lastCode, 'handshake_failed');
+
+        // Throughput is summarised by the median of the windows that measured
+        // something. Taking the maximum, as this once did, let a single lucky
+        // burst hide an hour of sagging; the zeros are windows with no run and
+        // must not drag the number down either.
+        assert.strictEqual(upsert.data.speedBps, 5_000_000, 'the hour keeps the median measurement');
+        assert.strictEqual(upsert.data.speedBpsMax, 11_000_000, 'the peak survives alongside it');
+        assert.strictEqual(upsert.data.speedSamples, 3, 'samples are summed');
+        assert.strictEqual(upsert.data.speedCapped, true, 'a capped window makes the hour a lower bound');
 
         assert.strictEqual(state.targetUpserts[0].key.targetId, 'openai');
         assert.strictEqual(state.targetUpserts[0].data.blocked, 3);

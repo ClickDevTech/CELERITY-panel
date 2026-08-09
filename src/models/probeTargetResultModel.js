@@ -107,17 +107,21 @@ probeTargetResultSchema.statics.getLatestForNode = async function(nodeId, sinceM
 };
 
 /**
- * Windows over a period, oldest first, for the history view.
+ * Windows over a period, oldest first, for the history view. Read newest first
+ * and reversed, so an overflowing limit drops the oldest windows rather than
+ * the most recent ones.
  */
 probeTargetResultSchema.statics.getHistory = async function({ probeId, nodeId, since, bucket, limit = 6000 }) {
     const filter = { bucket, ts: { $gte: since } };
     if (probeId) filter.probeId = probeId;
     if (nodeId) filter.nodeId = String(nodeId);
 
-    return this.find(filter)
-        .sort({ ts: 1 })
+    const docs = await this.find(filter)
+        .sort({ ts: -1 })
         .limit(limit)
         .lean();
+
+    return docs.reverse();
 };
 
 probeTargetResultSchema.statics.cleanup = async function(retentionDays = 30) {

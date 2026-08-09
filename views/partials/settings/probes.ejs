@@ -73,6 +73,11 @@
 
                             <div class="settings-grid" style="margin-top: 10px;">
                                 <div class="form-group">
+                                    <label for="probes.speedTest.intervalMin"><%= t('probes.speedInterval') %></label>
+                                    <input type="number" name="probes.speedTest.intervalMin" id="probes.speedTest.intervalMin"
+                                           value="<%= Math.round((prSpeed.intervalSec || 10800) / 60) %>" min="5" max="1440">
+                                </div>
+                                <div class="form-group">
                                     <label for="probes.speedTest.maxMB"><%= t('probes.speedMaxMb') %></label>
                                     <input type="number" name="probes.speedTest.maxMB" id="probes.speedTest.maxMB"
                                            value="<%= Math.round((prSpeed.maxBytes || 0) / (1024*1024)) %>" min="1" max="1024">
@@ -88,6 +93,9 @@
                                            value="<%= Math.round((prSpeed.dailyBudgetBytes || 0) / (1024*1024*1024)) %>" min="0" max="1000">
                                 </div>
                             </div>
+
+                            <div class="alert alert-info" id="speedEstimate"
+                                 style="margin-top: 10px; padding: 10px 12px; font-size: 12.5px; line-height: 1.6;"></div>
 
                             <hr class="settings-divider">
 
@@ -126,5 +134,64 @@
             box.style.display = this.checked ? '' : 'none';
         });
     }
+
+    // Throughput settings interact in ways that are easy to get wrong: the size
+    // cap decides how fast a link can be measured at all, and together with the
+    // period it decides the traffic bill. Both are spelled out as the operator
+    // types instead of being left as mental arithmetic.
+    const t = {
+        load: <%- JSON.stringify(t('probes.speedEstimateLoad') || '') %>,
+        ceiling: <%- JSON.stringify(t('probes.speedEstimateCeiling') || '') %>,
+        budgetOff: <%- JSON.stringify(t('probes.speedEstimateNoBudget') || '') %>,
+    };
+
+    const estimate = document.getElementById('speedEstimate');
+    const intervalInput = document.getElementById('probes.speedTest.intervalMin');
+    const sizeInput = document.getElementById('probes.speedTest.maxMB');
+    const secondsInput = document.getElementById('probes.speedTest.maxSeconds');
+    const budgetInput = document.getElementById('probes.speedTest.dailyBudgetGB');
+    if (!estimate || !intervalInput || !sizeInput || !secondsInput || !budgetInput) return;
+
+    const MB = 1024 * 1024;
+
+    function fill(template, values) {
+        return String(template).replace(/\{(\w+)\}/g, (match, key) => (
+            Object.prototype.hasOwnProperty.call(values, key) ? values[key] : match
+        ));
+    }
+
+    function fmtSize(mb) {
+        return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB';
+    }
+
+    function refresh() {
+        const periodMin = Math.max(Number(intervalInput.value) || 0, 1);
+        const sizeMB = Math.max(Number(sizeInput.value) || 0, 1);
+        const seconds = Math.max(Number(secondsInput.value) || 0, 1);
+        const budgetGB = Math.max(Number(budgetInput.value) || 0, 0);
+
+        const runsPerDay = Math.max(Math.floor(1440 / periodMin), 1);
+        const dailyMB = runsPerDay * sizeMB;
+
+        // The opening quarter of the transfer, capped at 512 KB, is warm-up and
+        // is thrown away, so only the rest is actually timed. Mirrors the probe.
+        const warmup = Math.min((sizeMB * MB) / 4, 512 * 1024);
+        const ceiling = (((sizeMB * MB) - warmup) * 8) / seconds / 1e6;
+
+        const budget = budgetGB > 0
+            ? fill(t.budgetOff, { runs: Math.floor((budgetGB * 1024) / sizeMB) })
+            : '';
+
+        estimate.innerHTML =
+            fill(t.load, { size: fmtSize(sizeMB), runs: runsPerDay, daily: fmtSize(dailyMB) }) +
+            (budget ? ' ' + budget : '') +
+            '<br>' +
+            fill(t.ceiling, { ceiling: ceiling.toFixed(0) });
+    }
+
+    [intervalInput, sizeInput, secondsInput, budgetInput].forEach((input) => {
+        input.addEventListener('input', refresh);
+    });
+    refresh();
 })();
 </script>

@@ -21,6 +21,17 @@ function hourStart(date) {
 }
 
 /**
+ * Middle value of a list, averaging the two middle ones on an even count.
+ */
+function median(values) {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if (sorted.length % 2) return sorted[mid];
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
  * Aggregate raw transport windows of one hour into a single hourly document
  * per (probe, node, inbound).
  *
@@ -48,8 +59,14 @@ async function rollupTransport(from, to) {
                 latencyP95: { $max: '$latencyP95' },
                 handshakeMs: { $avg: '$handshakeMs' },
                 ttfbMs: { $avg: '$ttfbMs' },
-                speedBps: { $max: '$speedBps' },
+                // Throughput is summarised by the median of the windows that
+                // actually measured something. Keeping the maximum here, as
+                // this once did, let one lucky burst paper over an hour of
+                // sustained drops.
+                speedValues: { $push: '$speedBps' },
+                speedBpsMax: { $max: '$speedBpsMax' },
                 speedSamples: { $sum: '$speedSamples' },
+                speedCapped: { $max: { $cond: ['$speedCapped', 1, 0] } },
                 exitIp: { $last: '$exitIp' },
                 lastCode: { $last: '$lastCode' },
             },
@@ -81,8 +98,12 @@ async function rollupTransport(from, to) {
             latencyP95: Math.round(row.latencyP95 || 0),
             handshakeMs: Math.round(row.handshakeMs || 0),
             ttfbMs: Math.round(row.ttfbMs || 0),
-            speedBps: row.speedBps || 0,
+            // A window without a measurement carries a zero and must not drag
+            // the median down.
+            speedBps: Math.round(median((row.speedValues || []).filter((v) => v > 0))),
+            speedBpsMax: row.speedBpsMax || 0,
             speedSamples: row.speedSamples || 0,
+            speedCapped: !!row.speedCapped,
             exitIp: row.exitIp || '',
             lastCode: row.lastCode || '',
         },

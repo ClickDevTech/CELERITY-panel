@@ -4719,8 +4719,12 @@ body {
 .probe-empty { padding: 24px; text-align: center; color: var(--text-muted); }
 
 /* History panel: one strip of segments per inbound and per checklist resource */
+.probe-item { display: block; }
+.probe-item .probe-row { border-radius: 10px; }
+.probe-item:has(.probe-history) .probe-row { border-radius: 10px 10px 0 0; }
+
 .probe-history {
-    margin: -4px 0 4px;
+    margin: -1px 0 4px;
     padding: 14px;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
@@ -4752,17 +4756,161 @@ body {
 .probe-range:hover { color: var(--text-primary); }
 .probe-range.is-active { color: var(--accent); border-color: var(--accent); }
 
-.probe-history-node { padding: 10px 0; border-top: 1px solid var(--border); }
-.probe-history-node:first-child { border-top: none; padding-top: 0; }
+/* Range, granularity and the colour key. Without a legend the strip is a row
+   of unlabelled colours that nobody can read. */
+.probe-history-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
 
-.probe-history-node-name {
-    font-size: 13px;
+.probe-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+}
+
+.probe-chip-warn { color: var(--warning); border-color: var(--warning); }
+
+.probe-legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-left: auto;
+    font-size: 11.5px;
+    color: var(--text-muted);
+}
+
+.probe-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+
+.probe-legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    background: var(--text-muted);
+}
+
+/* Headline numbers for the whole range */
+.probe-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.probe-kpi {
+    padding: 10px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.probe-kpi-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+}
+
+.probe-kpi-value {
+    margin-top: 5px;
+    font-size: 18px;
     font-weight: 600;
     color: var(--text-primary);
+}
+
+.probe-kpi-sub { margin-top: 2px; font-size: 11.5px; color: var(--text-muted); }
+
+/* Failure taxonomy: the part that turns "something is red" into an action */
+.probe-codes { margin-bottom: 14px; }
+
+.probe-codes-clean {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    color: var(--success);
+    background: var(--success-bg);
+    border-radius: 8px;
+}
+
+.probe-codes-bar {
+    display: flex;
+    gap: 2px;
+    height: 8px;
     margin-bottom: 8px;
 }
 
-.probe-history-node-name i { margin-right: 6px; color: var(--text-muted); }
+.probe-codes-seg { border-radius: 2px; min-width: 3px; background: var(--text-muted); }
+
+.probe-code-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.probe-code-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+}
+
+.probe-code-chip b { color: var(--text-primary); }
+.probe-code-chip small { color: var(--text-muted); }
+
+.probe-code-netUnreachable { background: var(--danger); }
+.probe-code-handshakeFailed { background: #f97316; }
+.probe-code-authRejected { background: #a855f7; }
+.probe-code-tunnelNoData { background: var(--warning); }
+.probe-code-degraded { background: #14b8a6; }
+.probe-code-coreDown { background: var(--text-muted); }
+
+/* Per-node section, collapsed while healthy */
+.probe-history-node { padding: 8px 0; border-top: 1px solid var(--border); }
+.probe-history-node:first-of-type { border-top: none; }
+
+.probe-history-node-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 0;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    color: var(--text-primary);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.probe-history-node-name > i { color: var(--text-muted); }
+.probe-node-title { flex: 1 1 auto; }
+
+.probe-node-health { font-weight: 600; font-size: 12px; }
+.probe-node-health.is-ok { color: var(--success); }
+.probe-node-health.is-warn { color: var(--warning); }
+.probe-node-health.is-bad { color: var(--danger); }
+
+.probe-node-exit { font-size: 11.5px; font-weight: 400; color: var(--text-muted); }
+
+.probe-history-node-body { padding-top: 8px; }
 
 .probe-history-sub {
     margin: 10px 0 6px;
@@ -4772,7 +4920,7 @@ body {
     color: var(--text-muted);
 }
 
-.probe-series { margin-bottom: 10px; }
+.probe-series { margin-bottom: 12px; }
 
 .probe-series-head {
     display: flex;
@@ -4784,7 +4932,22 @@ body {
 }
 
 .probe-series-name { color: var(--text-secondary); }
-.probe-series-facts { display: flex; gap: 12px; color: var(--text-muted); }
+
+.probe-series-name small {
+    margin-left: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.probe-series-facts { display: flex; gap: 12px; flex-wrap: wrap; color: var(--text-muted); }
+.probe-series-facts em { font-style: normal; opacity: 0.7; }
+
+.probe-series-error {
+    margin-top: 5px;
+    font-size: 11.5px;
+    color: var(--danger);
+    word-break: break-word;
+}
 
 .probe-strip {
     display: flex;
@@ -4803,16 +4966,128 @@ body {
     min-width: 2px;
     border-radius: 2px;
     background: var(--text-muted);
+    cursor: pointer;
     transition: transform 0.1s ease;
 }
 
 .probe-seg:hover { transform: scaleY(1.15); }
 
+.probe-seg.is-selected {
+    outline: 2px solid var(--text-primary);
+    outline-offset: 1px;
+}
+
 .probe-seg-ok { background: var(--success); }
 .probe-seg-warn { background: var(--warning); }
 .probe-seg-fail { background: var(--danger); }
+.probe-seg-block { background: #d946ef; }
 .probe-seg-core { background: var(--text-muted); }
 .probe-seg-none { background: var(--bg-tertiary); }
+
+/* Latency drawn on the same grid as the strip above it */
+.probe-spark {
+    display: block;
+    width: 100%;
+    height: 26px;
+    margin-top: 2px;
+    overflow: visible;
+}
+
+.probe-spark polyline {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* Everything measured in one window, opened by clicking a segment */
+.probe-window {
+    margin-top: 8px;
+    padding: 10px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+}
+
+.probe-window-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 12.5px;
+    color: var(--text-primary);
+}
+
+.probe-window-verdict {
+    padding: 1px 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border-radius: 999px;
+}
+
+.probe-window-close {
+    margin-left: auto;
+    font-size: 18px;
+    line-height: 1;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.probe-window-close:hover { color: var(--text-primary); }
+
+.probe-window-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px 14px;
+    margin-bottom: 6px;
+}
+
+.probe-window-grid span {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.probe-window-grid b { font-size: 12.5px; color: var(--text-primary); }
+
+/* Throughput: sparse by design, so measurements are dots at their real time
+   rather than segments on the grid */
+.probe-speed-row { margin-bottom: 12px; }
+
+.probe-speed-track {
+    position: relative;
+    height: 34px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.probe-speed-dot {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    margin-left: -3.5px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.probe-speed-off {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+}
+
+.probe-speed-off a { color: var(--accent); }
 
 /* Placeholder rows shown until the first list response arrives */
 .skeleton-row {

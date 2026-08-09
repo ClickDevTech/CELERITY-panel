@@ -133,6 +133,9 @@ async function queryProbes(args) {
             latencyP50: r.latencyP50,
             latencyP95: r.latencyP95,
             speedBps: r.speedBps,
+            // The reading stopped on the size cap, so it is a floor rather than
+            // the speed of the link.
+            speedCapped: !!r.speedCapped,
             exitIp: r.exitIp,
         })),
     };

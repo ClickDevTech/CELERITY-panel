@@ -1192,8 +1192,7 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound) {
             service_name: inbound.grpcServiceName || 'grpc',
         };
     } else if (transport === 'xhttp') {
-        // Upstream sing-box has no XHTTP; the Click Connect cores (Android AAR
-        // and the probe binary) run sing-box-lx, built with `with_xhttp`.
+        // sing-box 1.11+ supports XHTTP via transport.type=xhttp
         outbound.transport = {
             type: 'xhttp',
             path: inbound.xhttpPath || '/',

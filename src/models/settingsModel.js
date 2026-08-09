@@ -195,10 +195,12 @@ const settingsSchema = new mongoose.Schema({
         targetsIntervalSec: { type: Number, default: 3600 },
         reportIntervalSec: { type: Number, default: 900 },
         // Bounded throughput measurement. Off by default: it burns real node
-        // traffic the operator pays for. The scheduler spreads the daily byte
-        // budget across nodes round-robin instead of using a fixed interval.
+        // traffic the operator pays for. `intervalSec` is how often a single
+        // node is measured; the probe walks its fleet round-robin within that
+        // period, and the daily byte budget stays as the hard backstop.
         speedTest: {
             enabled: { type: Boolean, default: false },
+            intervalSec: { type: Number, default: 3 * 3600 },
             maxBytes: { type: Number, default: 20 * 1024 * 1024 },
             maxSeconds: { type: Number, default: 5 },
             dailyBudgetBytes: { type: Number, default: 1024 * 1024 * 1024 },
