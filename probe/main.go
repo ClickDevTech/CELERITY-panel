@@ -1,13 +1,8 @@
 // celerity-probe is an external diagnostic agent for a CELERITY panel.
 //
-// It is not a node agent and holds no privileges on nodes: it enrolls once,
-// pulls the subscription of a hidden probe user, and then behaves exactly like
-// a real client: dialling every node inbound through a real sing-box core and
-// reporting what actually happened.
-//
-// The panel already knows whether an agent is alive and whether users are in
-// sync. What it cannot know from the inside is whether a client sitting behind
-// a particular ISP can still connect. That is the gap this binary fills.
+// It holds no privileges on nodes: it enrolls once, pulls the subscription of a
+// hidden probe user, and then behaves like a real client, dialling every node
+// inbound through a real sing-box core and reporting the outcome.
 package main
 
 import (
@@ -153,7 +148,10 @@ func run(cfg *Config) error {
 	transportTicker := time.NewTicker(transportEvery)
 	targetsTicker := time.NewTicker(targetsEvery)
 	reportTicker := time.NewTicker(reportEvery)
-	manifestTicker := time.NewTicker(time.Hour)
+	// Settings edited in the panel reach a probe only through this poll, so it
+	// runs far more often than the checks themselves: the profile is a small
+	// document, and an operator who changed a setting expects it to take hold.
+	manifestTicker := time.NewTicker(manifestPollEvery)
 	defer transportTicker.Stop()
 	defer targetsTicker.Stop()
 	defer reportTicker.Stop()
@@ -186,15 +184,37 @@ func run(cfg *Config) error {
 
 		case <-manifestTicker.C:
 			identity = DetectNetIdentity(ctx)
-			if next, err := reloadRuntime(ctx, cfg, client, rt); err != nil {
+			next, err := reloadRuntime(ctx, cfg, client, rt)
+			if err != nil {
 				logWarn("manifest refresh failed: %v", err)
-			} else if next != nil {
-				rt = next
-				shipper.SetIngestURL(rt.manifest.IngestURL)
+				break
+			}
+			rt = next
+			shipper.SetIngestURL(rt.manifest.IngestURL)
+
+			// A ticker keeps the period it was created with, so cadence edits
+			// in the panel would otherwise wait for a restart of the service.
+			if d := interval(rt.manifest.Intervals.TransportSec, 300); d != transportEvery {
+				transportEvery = d
+				transportTicker.Reset(d)
+				logInfo("connection checks now run every %s", d)
+			}
+			if d := interval(rt.manifest.Intervals.TargetsSec, 3600); d != targetsEvery {
+				targetsEvery = d
+				targetsTicker.Reset(d)
+				logInfo("resource checks now run every %s", d)
+			}
+			if d := interval(rt.manifest.Intervals.ReportSec, 900); d != reportEvery {
+				reportEvery = d
+				reportTicker.Reset(d)
+				logInfo("reports now ship every %s", d)
 			}
 		}
 	}
 }
+
+// How often the checking plan is re-fetched from the panel.
+const manifestPollEvery = 5 * time.Minute
 
 func interval(seconds, fallback int) time.Duration {
 	if seconds <= 0 {
@@ -265,6 +285,7 @@ func startRuntime(ctx context.Context, cfg *Config, client *PanelClient) (*probe
 	}
 
 	core := NewSingboxProcess(cfg.SingboxPath, filepath.Join(cfg.DataDir, "core.json"), cfg.ClashAPIPort)
+	reportCore(core, cfg, manifest)
 	if err := core.Start(ctx, coreCfg.JSON); err != nil {
 		return nil, fmt.Errorf("start core: %w", err)
 	}
@@ -275,8 +296,40 @@ func startRuntime(ctx context.Context, cfg *Config, client *PanelClient) (*probe
 	return &probeRuntime{manifest: manifest, core: core, coreCfg: coreCfg}, nil
 }
 
-// reloadRuntime rebuilds the core when the fleet changed. It returns nil when
-// nothing needs restarting, so a stable fleet never sees a gap in coverage.
+// reportCore states which core is installed and warns when it cannot dial the
+// whole fleet. The probe is only worth its results while it runs the same core
+// as the clients: sing-box-lx, built with `with_xhttp`. Upstream sing-box
+// rejects an entire configuration that contains an XHTTP node, so a mismatch
+// has to be named before it turns into an unexplained startup failure.
+func reportCore(core *SingboxProcess, cfg *Config, manifest *Manifest) {
+	info := core.CoreInfo()
+	if info.Version == "" {
+		logWarn("core at %s did not answer 'version': check that the file exists and is executable", cfg.SingboxPath)
+		return
+	}
+	logInfo("core %s at %s", info.Version, cfg.SingboxPath)
+
+	if !info.HasTag("with_clash_api") {
+		logWarn("core is built without with_clash_api: the probe cannot tell which node a balancer selected")
+	}
+	if fleetUsesXhttp(manifest) && !info.HasTag("with_xhttp") {
+		logWarn("fleet contains XHTTP nodes and this core lacks with_xhttp: install sing-box-lx, or the core will refuse the configuration")
+	}
+}
+
+func fleetUsesXhttp(manifest *Manifest) bool {
+	for _, node := range manifest.Nodes {
+		for _, inbound := range node.Inbounds {
+			if inbound.Transport == "xhttp" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// reloadRuntime returns the current plan, restarting the core only when the
+// fleet changed, so a stable fleet never sees a gap in coverage.
 func reloadRuntime(ctx context.Context, cfg *Config, client *PanelClient, current *probeRuntime) (*probeRuntime, error) {
 	manifest, err := client.FetchManifest(ctx)
 	if err != nil {
@@ -293,9 +346,12 @@ func reloadRuntime(ctx context.Context, cfg *Config, client *PanelClient, curren
 		return nil, err
 	}
 
+	// The core only encodes the fleet, so an unchanged config still leaves the
+	// checklist, the speed budget and the intervals to pick up. Keep the running
+	// core and swap the plan around it.
 	if string(coreCfg.JSON) == string(current.coreCfg.JSON) && current.core.Running() {
-		logDebug("manifest unchanged, keeping the running core")
-		return nil, nil
+		logDebug("fleet unchanged, keeping the running core")
+		return &probeRuntime{manifest: manifest, core: current.core, coreCfg: current.coreCfg}, nil
 	}
 
 	current.core.Stop()

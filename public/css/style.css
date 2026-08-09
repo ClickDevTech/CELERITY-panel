@@ -4718,6 +4718,102 @@ body {
 
 .probe-empty { padding: 24px; text-align: center; color: var(--text-muted); }
 
+/* History panel: one strip of segments per inbound and per checklist resource */
+.probe-history {
+    margin: -4px 0 4px;
+    padding: 14px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+}
+
+.probe-history-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.probe-ranges { display: flex; gap: 4px; flex-shrink: 0; }
+
+.probe-range {
+    padding: 4px 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.probe-range:hover { color: var(--text-primary); }
+.probe-range.is-active { color: var(--accent); border-color: var(--accent); }
+
+.probe-history-node { padding: 10px 0; border-top: 1px solid var(--border); }
+.probe-history-node:first-child { border-top: none; padding-top: 0; }
+
+.probe-history-node-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.probe-history-node-name i { margin-right: 6px; color: var(--text-muted); }
+
+.probe-history-sub {
+    margin: 10px 0 6px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.probe-series { margin-bottom: 10px; }
+
+.probe-series-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 4px;
+    font-size: 12px;
+}
+
+.probe-series-name { color: var(--text-secondary); }
+.probe-series-facts { display: flex; gap: 12px; color: var(--text-muted); }
+
+.probe-strip {
+    display: flex;
+    gap: 2px;
+    height: 22px;
+    align-items: stretch;
+}
+
+.probe-strip.is-empty {
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+}
+
+.probe-seg {
+    flex: 1 1 0;
+    min-width: 2px;
+    border-radius: 2px;
+    background: var(--text-muted);
+    transition: transform 0.1s ease;
+}
+
+.probe-seg:hover { transform: scaleY(1.15); }
+
+.probe-seg-ok { background: var(--success); }
+.probe-seg-warn { background: var(--warning); }
+.probe-seg-fail { background: var(--danger); }
+.probe-seg-core { background: var(--text-muted); }
+.probe-seg-none { background: var(--bg-tertiary); }
+
 /* Placeholder rows shown until the first list response arrives */
 .skeleton-row {
     height: 56px;

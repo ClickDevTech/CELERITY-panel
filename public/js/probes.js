@@ -53,6 +53,7 @@
     function renderProbe(probe) {
         const status = statusOf(probe);
         const location = [probe.country, probe.asn].filter(Boolean).join(' · ');
+        const open = expanded.has(String(probe._id));
 
         return `
             <div class="probe-row" data-id="${esc(probe._id)}">
@@ -74,6 +75,9 @@
                     ${probe.os ? `<span><i class="ti ti-device-desktop"></i> ${esc(probe.os)}/${esc(probe.arch)}</span>` : ''}
                 </div>
                 <div class="probe-actions">
+                    <button type="button" class="btn btn-sm ${open ? 'btn-active' : ''}" data-probe-history>
+                        <i class="ti ti-timeline"></i> ${esc(open ? (I18N.historyClose || 'Hide') : (I18N.historyOpen || 'History'))}
+                    </button>
                     <button type="button" class="btn btn-sm" data-probe-reissue>
                         <i class="ti ti-refresh"></i> ${esc(I18N.reinstall || 'Reinstall')}
                     </button>
@@ -81,7 +85,171 @@
                         <i class="ti ti-trash"></i> ${esc(I18N.remove || 'Delete')}
                     </button>
                 </div>
+            </div>
+            ${open ? renderHistoryShell(probe) : ''}`;
+    }
+
+    // ── History ──────────────────────────────────────────────────────────────
+    //
+    // One segment per check window, coloured by the dominant verdict. Ranges are
+    // rendered from whatever the API returns: past 12 hours it answers with
+    // hourly rollups, so a month fits into the same strip as a day.
+
+    const expanded = new Set();
+    const historyRange = new Map();
+    const historyData = new Map();
+
+    const RANGES = [
+        { hours: 6, key: 'range6h' },
+        { hours: 24, key: 'range24h' },
+        { hours: 168, key: 'range7d' },
+        { hours: 720, key: 'range30d' },
+    ];
+
+    function rangeOf(probeId) {
+        return historyRange.get(String(probeId)) || 24;
+    }
+
+    function renderHistoryShell(probe) {
+        const id = String(probe._id);
+        const hours = rangeOf(id);
+        const tabs = RANGES.map((r) => `
+            <button type="button" class="probe-range ${r.hours === hours ? 'is-active' : ''}"
+                    data-probe-range="${r.hours}">${esc(I18N[r.key] || (r.hours + 'h'))}</button>`).join('');
+
+        return `
+            <div class="probe-history" data-history-for="${esc(id)}">
+                <div class="probe-history-head">
+                    <div>
+                        <strong>${esc(I18N.history || 'Check history')}</strong>
+                        <small class="hint" style="display:block;">${esc(I18N.historyHint || '')}</small>
+                    </div>
+                    <div class="probe-ranges">${tabs}</div>
+                </div>
+                <div class="probe-history-body">${renderHistoryBody(probe)}</div>
             </div>`;
+    }
+
+    function renderHistoryBody(probe) {
+        const id = String(probe._id);
+        if (!probe.enrolledAt) {
+            return `<div class="probe-empty">${esc(I18N.historyPending || '')}</div>`;
+        }
+
+        const data = historyData.get(id);
+        if (!data) {
+            return '<div class="skeleton-row"></div><div class="skeleton-row"></div>';
+        }
+        if (!data.nodes || data.nodes.length === 0) {
+            return `<div class="probe-empty">${esc(I18N.historyEmpty || '')}</div>`;
+        }
+
+        return data.nodes.map(renderHistoryNode).join('');
+    }
+
+    function pct(ok, attempts) {
+        if (!attempts) return null;
+        return Math.round((ok / attempts) * 100);
+    }
+
+    function segmentClass(point) {
+        if (!point.attempts) return 'probe-seg-none';
+        if (point.ok >= point.attempts) return 'probe-seg-ok';
+        if (point.code === 'core_down') return 'probe-seg-core';
+        if (point.ok > 0 || point.code === 'degraded') return 'probe-seg-warn';
+        return 'probe-seg-fail';
+    }
+
+    function fmtTime(ts) {
+        const date = new Date(ts);
+        if (Number.isNaN(date.getTime())) return '';
+        return date.toLocaleString();
+    }
+
+    function renderStrip(points, describe) {
+        if (!points.length) return `<div class="probe-strip is-empty"></div>`;
+        return `<div class="probe-strip">${points.map((p) => `
+            <span class="probe-seg ${segmentClass(p)}" title="${esc(describe(p))}"></span>`).join('')}</div>`;
+    }
+
+    function renderHistoryNode(node) {
+        const inbounds = node.inbounds.map((inbound) => {
+            const share = pct(inbound.ok, inbound.attempts);
+            const describe = (p) => {
+                const verdict = !p.attempts
+                    ? (I18N.noData || 'no data')
+                    : (p.ok >= p.attempts ? (I18N.ok || 'ok') : (I18N[p.code] || p.code || ''));
+                return `${fmtTime(p.ts)} · ${verdict} · ${p.ok}/${p.attempts}`;
+            };
+
+            return `
+                <div class="probe-series">
+                    <div class="probe-series-head">
+                        <span class="probe-series-name">${esc(inbound.inboundTag || inbound.inboundId)}</span>
+                        <span class="probe-series-facts">
+                            ${share === null ? '' : `<span>${share}% ${esc(I18N.uptime || '')}</span>`}
+                            ${inbound.latencyP95 ? `<span>${esc(I18N.latencyP95 || 'p95')} ${inbound.latencyP95} ms</span>` : ''}
+                        </span>
+                    </div>
+                    ${renderStrip(inbound.points, describe)}
+                </div>`;
+        }).join('');
+
+        const targets = node.targets.map((target) => {
+            const share = pct(target.ok, target.attempts);
+            const describe = (p) => {
+                const verdict = !p.attempts
+                    ? (I18N.noData || 'no data')
+                    : (p.blocked > 0
+                        ? (I18N.target_blocked || 'blocked')
+                        : (p.ok >= p.attempts ? (I18N.ok || 'ok') : (p.httpStatus ? 'HTTP ' + p.httpStatus : '')));
+                return `${fmtTime(p.ts)} · ${verdict}`;
+            };
+
+            return `
+                <div class="probe-series">
+                    <div class="probe-series-head">
+                        <span class="probe-series-name">${esc(target.targetId)}</span>
+                        <span class="probe-series-facts">
+                            ${share === null ? '' : `<span>${share}% ${esc(I18N.uptime || '')}</span>`}
+                        </span>
+                    </div>
+                    ${renderStrip(target.points.map((p) => ({
+                        ts: p.ts,
+                        attempts: p.attempts,
+                        ok: p.blocked > 0 ? 0 : p.ok,
+                        code: p.blocked > 0 ? 'target_blocked' : '',
+                        blocked: p.blocked,
+                        httpStatus: p.httpStatus,
+                    })), describe)}
+                </div>`;
+        }).join('');
+
+        return `
+            <div class="probe-history-node">
+                <div class="probe-history-node-name">
+                    <i class="ti ti-server"></i> ${esc(node.nodeName)}
+                </div>
+                ${inbounds}
+                ${targets ? `<div class="probe-history-sub">${esc(I18N.resources || 'Resources')}</div>${targets}` : ''}
+            </div>`;
+    }
+
+    async function loadHistory(probeId) {
+        const id = String(probeId);
+        try {
+            const res = await fetch(`/panel/probes/api/${encodeURIComponent(id)}/history?hours=${rangeOf(id)}`, {
+                credentials: 'include',
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'failed to load history');
+
+            historyData.set(id, data);
+        } catch (err) {
+            historyData.set(id, { nodes: [] });
+            toast(String(err.message || err), 'error');
+        }
+        loadProbes();
     }
 
     async function loadProbes() {
@@ -199,8 +367,31 @@
 
         if (event.target.closest('[data-probe-close]')) return hideInstall();
 
+        const rangeBtn = event.target.closest('[data-probe-range]');
+        if (rangeBtn) {
+            const panel = rangeBtn.closest('[data-history-for]');
+            if (!panel) return;
+            const id = panel.dataset.historyFor;
+            historyRange.set(id, Number(rangeBtn.dataset.probeRange) || 24);
+            historyData.delete(id);
+            loadProbes();
+            return loadHistory(id);
+        }
+
         const row = event.target.closest('.probe-row');
         if (!row) return;
+
+        if (event.target.closest('[data-probe-history]')) {
+            const id = row.dataset.id;
+            if (expanded.has(id)) {
+                expanded.delete(id);
+                historyData.delete(id);
+                return loadProbes();
+            }
+            expanded.add(id);
+            loadProbes();
+            return loadHistory(id);
+        }
 
         if (event.target.closest('[data-probe-reissue]')) return reissue(row.dataset.id);
         if (event.target.closest('[data-probe-delete]')) return removeProbe(row.dataset.id);

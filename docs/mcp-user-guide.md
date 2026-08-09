@@ -195,7 +195,7 @@ Allowed statement types: `SELECT`, `WITH`, `EXPLAIN`, `DESCRIBE`, `SHOW`. Mutati
 
 > `probes:read` scope required. Requires probes enabled in panel settings.
 
-Returns what external probes observed by dialling your nodes through a real sing-box core, which is the one thing control-plane data cannot answer: whether a client behind a given ISP can actually connect. See the [probes guide](probes.md).
+Returns what external probes observed while dialling your nodes through a real sing-box core, which shows what a client behind a given ISP sees. See the [probes guide](probes.md).
 
 **Parameters:**
 
@@ -207,7 +207,7 @@ Returns what external probes observed by dialling your nodes through a real sing
 | `hours` | ❌ No | Look-back window, 1–720 (default 1). Over 24 h reads hourly rollups |
 | `limit` | ❌ No | 1–500 (default 100) |
 
-Verdicts: `net_unreachable`, `handshake_failed`, `auth_rejected`, `tunnel_no_data`, `degraded`, `core_down` (the probe's own core failed — this says nothing about the node).
+Verdicts: `net_unreachable`, `handshake_failed`, `auth_rejected`, `tunnel_no_data`, `degraded`, `core_down` (the probe's own core failed, so the fault is on the probe host).
 
 <details>
 <summary>📖 Example: Why users complain about one node</summary>

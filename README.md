@@ -633,16 +633,16 @@ is sent once free space climbs back above the warning level.
 
 A probe is a separate Go binary installed on your own server. It receives a
 hidden subscription, runs a real sing-box core and connects to your nodes the
-same way a customer does, so it answers the question node status cannot: *does
-this node actually work from this network?*
+same way a customer does, which shows whether a node is reachable from that
+particular network.
 
 Enable it under **Settings → Probes**, then add a probe and run the generated
 install command on the host you want to check from. Every result is stored per
-vantage point and never overrides `node.status` — a single probe cannot tell a
-dead node from its own broken uplink.
+vantage point and never overrides `node.status`, since a failure can also come
+from the probe's own uplink.
 
-Failure codes are actionable rather than generic: `net_unreachable` (port
-filtered on the path), `handshake_failed` (dead REALITY destination or DPI),
+Each failure code points at a specific cause: `net_unreachable` (port filtered
+on the path), `handshake_failed` (dead REALITY destination or DPI),
 `auth_rejected` (user not pushed to the running core), `tunnel_no_data` (broken
 outbound or ACL), `degraded`, and `core_down` for a failure of the probe's own
 core.

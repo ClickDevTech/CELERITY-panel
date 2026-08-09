@@ -475,6 +475,9 @@ router.post('/settings', async (req, res) => {
         await Settings.update(updates);
         
         await invalidateSettingsCache();
+        // Sidebar entries for optional features are cached per process; drop it
+        // so a toggled feature appears in the menu on the next page load.
+        require('../../utils/featureFlags').invalidateFeatureFlags();
         if (req.body['_backupSettings'] || req.body['backup.enabled'] !== undefined) {
             require('../../services/backupService').resetS3Client();
         }

@@ -106,6 +106,20 @@ probeTargetResultSchema.statics.getLatestForNode = async function(nodeId, sinceM
     ]);
 };
 
+/**
+ * Windows over a period, oldest first, for the history view.
+ */
+probeTargetResultSchema.statics.getHistory = async function({ probeId, nodeId, since, bucket, limit = 6000 }) {
+    const filter = { bucket, ts: { $gte: since } };
+    if (probeId) filter.probeId = probeId;
+    if (nodeId) filter.nodeId = String(nodeId);
+
+    return this.find(filter)
+        .sort({ ts: 1 })
+        .limit(limit)
+        .lean();
+};
+
 probeTargetResultSchema.statics.cleanup = async function(retentionDays = 30) {
     const now = Date.now();
     const rawExpiry = new Date(now - retentionDays * 24 * 60 * 60 * 1000);

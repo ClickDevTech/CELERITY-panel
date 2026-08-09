@@ -139,25 +139,14 @@ app.use((req, res, next) => {
 });
 
 // Expose optional-feature flags to views (they drive the sidebar nav entries).
-// Cached briefly so it is effectively free per request; only computed for panel
-// HTML routes to avoid work on API/static traffic.
-let _featureNavCache = { accessLogs: false, probes: false, at: 0 };
-const FEATURE_NAV_TTL_MS = 30 * 1000;
+// Only computed for panel HTML routes to avoid work on API/static traffic.
+const { getFeatureFlags } = require('./src/utils/featureFlags');
 app.use(async (req, res, next) => {
     if (!req.path.startsWith('/panel')) return next();
     try {
-        const now = Date.now();
-        if (now - _featureNavCache.at > FEATURE_NAV_TTL_MS) {
-            const Settings = require('./src/models/settingsModel');
-            const s = await Settings.get();
-            _featureNavCache = {
-                accessLogs: !!s?.accessLogs?.enabled,
-                probes: !!s?.probes?.enabled,
-                at: now,
-            };
-        }
-        res.locals.accessLogsEnabled = _featureNavCache.accessLogs;
-        res.locals.probesEnabled = _featureNavCache.probes;
+        const flags = await getFeatureFlags();
+        res.locals.accessLogsEnabled = flags.accessLogs;
+        res.locals.probesEnabled = flags.probes;
     } catch (_) {
         res.locals.accessLogsEnabled = false;
         res.locals.probesEnabled = false;

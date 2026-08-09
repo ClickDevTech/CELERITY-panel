@@ -199,6 +199,19 @@ func (r *logRing) since(t time.Time) []string {
 	return out
 }
 
+// tail returns the last n lines regardless of when they were written. Startup
+// diagnostics use it because the interesting output of a core that dies on a
+// bad config appears before any time window a caller would think to ask for.
+func (r *logRing) tail(n int) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]string, 0, n)
+	for _, l := range r.lines {
+		out = append(out, l.text)
+	}
+	return lastN(out, n)
+}
+
 // SingboxProcess supervises the core as a child process.
 type SingboxProcess struct {
 	binary     string
@@ -210,6 +223,11 @@ type SingboxProcess struct {
 	exited chan struct{}
 	config []byte
 	logs   *logRing
+
+	// Written by the reaper goroutine while startLocked still holds mu, so the
+	// exit status needs a lock of its own.
+	exitMu  sync.Mutex
+	exitErr error
 }
 
 func NewSingboxProcess(binary, configPath string, clashPort int) *SingboxProcess {
@@ -221,23 +239,53 @@ func NewSingboxProcess(binary, configPath string, clashPort int) *SingboxProcess
 	}
 }
 
-// CoreVersion reports the version string of the installed core.
-func (s *SingboxProcess) CoreVersion() string {
+// CoreInfo describes the installed core. The build tags matter as much as the
+// version: a core without `with_xhttp` cannot load a configuration containing
+// an XHTTP node, and one without `with_clash_api` never answers the control
+// port the probe uses to attribute group results.
+type CoreInfo struct {
+	Version string
+	Tags    []string
+}
+
+func (i CoreInfo) HasTag(tag string) bool {
+	for _, t := range i.Tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// CoreInfo runs `sing-box version` and parses what it reports.
+func (s *SingboxProcess) CoreInfo() CoreInfo {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	out, err := exec.CommandContext(ctx, s.binary, "version").Output()
 	if err != nil {
-		return ""
+		return CoreInfo{}
 	}
+
+	var info CoreInfo
 	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "Tags:"); ok {
+			info.Tags = strings.Split(strings.TrimSpace(rest), ",")
+			continue
+		}
 		fields := strings.Fields(line)
-		// "sing-box version 1.11.0"
+		// "sing-box version 1.14.0-lx.22"
 		if len(fields) >= 3 && fields[0] == "sing-box" && fields[1] == "version" {
-			return fields[2]
+			info.Version = fields[2]
 		}
 	}
-	return ""
+	return info
+}
+
+// CoreVersion reports the version string of the installed core.
+func (s *SingboxProcess) CoreVersion() string {
+	return s.CoreInfo().Version
 }
 
 // Start writes the config and launches the core, waiting until the Clash API
@@ -273,6 +321,7 @@ func (s *SingboxProcess) startLocked(ctx context.Context, config []byte) error {
 	s.config = config
 	exited := make(chan struct{})
 	s.exited = exited
+	s.setExitErr(nil)
 
 	var streams sync.WaitGroup
 	streams.Add(2)
@@ -283,15 +332,43 @@ func (s *SingboxProcess) startLocked(ctx context.Context, config []byte) error {
 	// process state is never filled in and a dead core looks alive forever.
 	go func() {
 		streams.Wait()
-		_ = cmd.Wait()
+		waitErr := cmd.Wait()
+		s.setExitErr(waitErr)
 		close(exited)
 	}()
 
-	if err := s.waitReady(ctx, 20*time.Second); err != nil {
+	if err := s.waitReady(ctx, 20*time.Second, exited); err != nil {
 		s.stopLocked()
 		return err
 	}
 	return nil
+}
+
+func (s *SingboxProcess) setExitErr(err error) {
+	s.exitMu.Lock()
+	s.exitErr = err
+	s.exitMu.Unlock()
+}
+
+// logSummary describes what the core said before it gave up. A start failure
+// with no explanation is the one thing an operator cannot act on, so an empty
+// log is reported as such together with what it usually means.
+func (s *SingboxProcess) logSummary() string {
+	lines := s.logs.tail(5)
+	if len(lines) == 0 {
+		return "core printed nothing (check that " + s.binary + " runs and supports the clash api)"
+	}
+	return strings.Join(lines, " | ")
+}
+
+func (s *SingboxProcess) exitReason() string {
+	s.exitMu.Lock()
+	err := s.exitErr
+	s.exitMu.Unlock()
+	if err == nil {
+		return "exited with status 0"
+	}
+	return err.Error()
 }
 
 func (s *SingboxProcess) consume(r io.Reader) {
@@ -302,7 +379,7 @@ func (s *SingboxProcess) consume(r io.Reader) {
 	}
 }
 
-func (s *SingboxProcess) waitReady(ctx context.Context, timeout time.Duration) error {
+func (s *SingboxProcess) waitReady(ctx context.Context, timeout time.Duration, exited <-chan struct{}) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 2 * time.Second}
 	endpoint := fmt.Sprintf("http://127.0.0.1:%d/version", s.clashPort)
@@ -311,6 +388,10 @@ func (s *SingboxProcess) waitReady(ctx context.Context, timeout time.Duration) e
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-exited:
+			// A core that rejects its config dies in well under a second, so
+			// waiting out the whole timeout would only delay the real message.
+			return fmt.Errorf("sing-box %s right after start: %s", s.exitReason(), s.logSummary())
 		default:
 		}
 
@@ -321,8 +402,8 @@ func (s *SingboxProcess) waitReady(ctx context.Context, timeout time.Duration) e
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	return fmt.Errorf("sing-box did not become ready in %s: %s",
-		timeout, strings.Join(lastN(s.logs.since(time.Now().Add(-timeout)), 5), " | "))
+	return fmt.Errorf("sing-box is running but its clash api on 127.0.0.1:%d stayed silent for %s: %s",
+		s.clashPort, timeout, s.logSummary())
 }
 
 // Running reports whether the child process is still alive.

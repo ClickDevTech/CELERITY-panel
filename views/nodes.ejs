@@ -251,7 +251,7 @@ function nodeMetaFor(node) {
                             %>
                             <% if (probeInfo) { %>
                                 <span class="probe-badge <%= probeInfo.failing > 0 ? 'probe-badge-fail' : 'probe-badge-ok' %>"
-                                      title="<%= t('probes.badgeTitle') || 'Внешние проверки' %>">
+                                      title="<%= t('probes.badgeTitle') %>">
                                     <i class="ti ti-radar"></i>
                                     <%= probeInfo.checks - probeInfo.failing %>/<%= probeInfo.checks %>
                                 </span>

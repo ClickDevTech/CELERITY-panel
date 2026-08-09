@@ -1,9 +1,7 @@
 /**
  * MCP Tools — external diagnostic probes
  *
- * Exposes what probes observed from the outside, which is the one thing the
- * panel cannot answer from its own control-plane data: whether a real client
- * behind a given ISP can still connect to a node.
+ * Exposes what probes observed while dialling nodes from outside networks.
  */
 
 const { z } = require('zod');
@@ -26,7 +24,7 @@ const queryProbesSchema = z.object({
 const TOOL_DESCRIPTION = [
     'Inspect results from external diagnostic probes.',
     'A probe is an operator-installed agent that dials nodes through a real sing-box core using a hidden subscription,',
-    'so it reports whether a client can actually connect rather than whether the node agent is alive.',
+    'so its results describe what a client sees when connecting from the probe network.',
     '',
     'Failure codes and what each one means:',
     '- net_unreachable: TCP/UDP never arrives — the address or port is filtered, or the node is down',
@@ -34,8 +32,8 @@ const TOOL_DESCRIPTION = [
     '- auth_rejected: the tunnel stands but credentials are refused — a sync problem',
     '- tunnel_no_data: authenticated but no data flows — broken outbound or ACL',
     '- degraded: works, but slowly',
-    '- core_down: the probe own client core was not running — says nothing about the node, fix the probe host',
-    'Target results are separate: a blocked resource means a geo-block or a blacklisted exit address, not an outage.',
+    '- core_down: the probe own client core was not running — the fault is on the probe host',
+    'Target results are separate: a blocked resource usually means a geo-block or a blacklisted exit address.',
     '',
     'Views: probes (vantage points), nodes (latest verdict per inbound), targets (checklist per node).',
 ].join(' ');

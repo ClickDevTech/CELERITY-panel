@@ -2,7 +2,7 @@
 # Celerity Probe installer (Linux with systemd, macOS with launchd).
 #
 # Usage (the panel generates this line with a single-use token):
-#   curl -fsSL .../celerity-probe-install.sh | PANEL_URL='https://panel' ENROLL_TOKEN='ce_...' sh
+#   curl -fsSL .../celerity-probe-install.sh | sudo PANEL_URL='https://panel' ENROLL_TOKEN='ce_...' sh
 #
 # Installs the probe binary, fetches a sing-box core, enrolls once and registers
 # a service. The probe needs no privileges on any node: it only holds client
@@ -59,43 +59,97 @@ fi
 
 echo "==> Installing celerity-probe ($OS/$ARCH)"
 
+# A reinstall runs against a live service: it holds the data directory open and
+# would keep reporting with the old credentials while this script rewrites them.
+if [ "$OS" = "darwin" ]; then
+    launchctl unload /Library/LaunchDaemons/tech.clickdev.celerity-probe.plist >/dev/null 2>&1 || true
+elif command -v systemctl >/dev/null 2>&1; then
+    systemctl stop celerity-probe >/dev/null 2>&1 || true
+fi
+
 mkdir -p "$DATA_DIR"
 chmod 700 "$DATA_DIR"
 
 PROBE_URL="$RELEASE_BASE/celerity-probe-$OS-$ARCH"
 echo "==> Downloading $PROBE_URL"
-curl -fsSL --max-time 180 "$PROBE_URL" -o "$BIN_DIR/celerity-probe"
-if [ ! -s "$BIN_DIR/celerity-probe" ]; then
+# Downloading straight onto the target fails with ETXTBSY while an older probe
+# is still executing that file. Write beside it and rename: the rename succeeds
+# even then, because the running process keeps the old inode.
+PROBE_TMP="$BIN_DIR/.celerity-probe.new"
+curl -fsSL --max-time 180 "$PROBE_URL" -o "$PROBE_TMP"
+if [ ! -s "$PROBE_TMP" ]; then
+    rm -f "$PROBE_TMP"
     echo "ERROR: probe download failed" >&2
     exit 1
 fi
-chmod 755 "$BIN_DIR/celerity-probe"
+chmod 755 "$PROBE_TMP"
+mv -f "$PROBE_TMP" "$BIN_DIR/celerity-probe"
 
-# The core is downloaded from its own upstream release. Asset names carry the
-# version, so the exact URL is resolved through the releases API.
-if [ ! -x "$DATA_DIR/sing-box" ]; then
-    echo "==> Resolving latest sing-box release"
-    SB_URL=$(curl -fsSL --max-time 60 https://api.github.com/repos/SagerNet/sing-box/releases/latest \
-        | grep -o "https://[^\"]*sing-box-[0-9.]*-$OS-$ARCH\.tar\.gz" \
+# The core must be the same build the Click Connect clients run: sing-box-lx,
+# built with `with_xhttp`. Upstream sing-box refuses a configuration containing
+# an XHTTP outbound, so a probe on upstream cannot check an XHTTP node — and
+# a probe that checks something other than what users run is worthless.
+CORE_REPO="${CORE_REPO:-Leadaxe/sing-box-lx}"
+CORE_BIN="$DATA_DIR/sing-box"
+
+core_is_usable() {
+    [ -x "$CORE_BIN" ] || return 1
+    # Covers the upgrade path from an earlier install that pulled upstream.
+    "$CORE_BIN" version 2>/dev/null | grep -q "with_xhttp" || return 1
+    return 0
+}
+
+if core_is_usable; then
+    echo "==> Core already installed: $("$CORE_BIN" version 2>/dev/null | head -n 1)"
+else
+    echo "==> Resolving latest $CORE_REPO release"
+    # Versions look like 1.14.0-lx.22, so the pattern cannot assume digits only.
+    SB_URL=$(curl -fsSL --max-time 60 "https://api.github.com/repos/$CORE_REPO/releases/latest" \
+        | grep -o "https://[^\"]*/sing-box-[^\"]*-$OS-$ARCH\.tar\.gz" \
         | head -n 1)
 
     if [ -z "$SB_URL" ]; then
-        echo "ERROR: could not resolve a sing-box download URL" >&2
+        echo "ERROR: could not resolve a core download URL for $OS/$ARCH" >&2
         exit 1
     fi
 
     echo "==> Downloading $SB_URL"
     TMP_DIR=$(mktemp -d)
-    curl -fsSL --max-time 300 "$SB_URL" -o "$TMP_DIR/sing-box.tar.gz"
-    tar -xzf "$TMP_DIR/sing-box.tar.gz" -C "$TMP_DIR"
-    find "$TMP_DIR" -type f -name sing-box -exec cp {} "$DATA_DIR/sing-box" \;
+    SB_FILE=$(basename "$SB_URL")
+    curl -fsSL --max-time 300 "$SB_URL" -o "$TMP_DIR/$SB_FILE"
+
+    # The release publishes SHA256SUMS; verifying it costs one request and
+    # turns a corrupted or substituted archive into a failed install.
+    if curl -fsSL --max-time 60 "$(dirname "$SB_URL")/SHA256SUMS" -o "$TMP_DIR/SHA256SUMS" 2>/dev/null; then
+        EXPECTED=$(grep " $SB_FILE\$" "$TMP_DIR/SHA256SUMS" | awk '{print $1}' | head -n 1)
+        if [ -n "$EXPECTED" ]; then
+            if command -v sha256sum >/dev/null 2>&1; then
+                ACTUAL=$(sha256sum "$TMP_DIR/$SB_FILE" | awk '{print $1}')
+            else
+                ACTUAL=$(shasum -a 256 "$TMP_DIR/$SB_FILE" | awk '{print $1}')
+            fi
+            if [ "$EXPECTED" != "$ACTUAL" ]; then
+                rm -rf "$TMP_DIR"
+                echo "ERROR: core checksum mismatch" >&2
+                exit 1
+            fi
+            echo "==> Checksum verified"
+        fi
+    fi
+
+    tar -xzf "$TMP_DIR/$SB_FILE" -C "$TMP_DIR"
+    find "$TMP_DIR" -type f -name sing-box -exec cp {} "$CORE_BIN.new" \;
     rm -rf "$TMP_DIR"
 
-    if [ ! -s "$DATA_DIR/sing-box" ]; then
-        echo "ERROR: sing-box extraction failed" >&2
+    if [ ! -s "$CORE_BIN.new" ]; then
+        rm -f "$CORE_BIN.new"
+        echo "ERROR: core extraction failed" >&2
         exit 1
     fi
-    chmod 755 "$DATA_DIR/sing-box"
+    chmod 755 "$CORE_BIN.new"
+    # Same ETXTBSY reasoning as the probe binary above.
+    mv -f "$CORE_BIN.new" "$CORE_BIN"
+    echo "==> Core installed: $("$CORE_BIN" version 2>/dev/null | head -n 1)"
 fi
 
 echo "==> Enrolling with $PANEL_URL"

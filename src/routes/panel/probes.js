@@ -7,6 +7,7 @@
  *   POST   /panel/probes/api/create         -> create a probe, return install command
  *   POST   /panel/probes/api/:id/reissue    -> new one-time enrollment token
  *   DELETE /panel/probes/api/:id            -> delete probe, user and results
+ *   GET    /panel/probes/api/:id/history    -> check history for one probe
  *   GET    /panel/nodes/:id/probe-status    -> external checks block on a node card
  *
  * Probe verdicts are deliberately kept out of node.status: with a single probe
@@ -29,17 +30,25 @@ const { getSettings } = require('../../utils/helpers');
 
 const RELEASE_BASE = 'https://github.com/ClickDevTech/CELERITY-panel/releases/latest/download';
 
+// Beyond this range the history switches from 5-minute windows to hourly
+// rollups: a day of raw windows is already ~288 points per inbound.
+const HISTORY_RAW_MAX_HOURS = 12;
+
 /**
  * Build the one-liners the operator runs on the probe host. The enrollment
  * token is embedded and is single-use, so a command is only valid until the
  * first run.
+ *
+ * The installer writes to /usr/local/bin and registers a service, so it needs
+ * root. `sudo` has to wrap the interpreter rather than curl: in a pipeline the
+ * shell runs both sides itself, and privileges on the download side are useless.
  */
 function buildInstallCommands(baseUrl, enrollToken) {
     const shUrl = `${RELEASE_BASE}/celerity-probe-install.sh`;
     const ps1Url = `${RELEASE_BASE}/celerity-probe-install.ps1`;
 
     return {
-        unix: `curl -fsSL ${shUrl} | PANEL_URL='${baseUrl}' ENROLL_TOKEN='${enrollToken}' sh`,
+        unix: `curl -fsSL ${shUrl} | sudo PANEL_URL='${baseUrl}' ENROLL_TOKEN='${enrollToken}' sh`,
         windows: `$env:PANEL_URL='${baseUrl}'; $env:ENROLL_TOKEN='${enrollToken}'; irm ${ps1Url} | iex`,
     };
 }
@@ -199,6 +208,132 @@ router.delete('/probes/api/:id', async (req, res) => {
         return res.status(500).json({ error: error.message });
     }
 });
+
+/**
+ * Check history for one probe, grouped by node and inbound.
+ *
+ * Short ranges read the raw 5-minute windows; anything longer reads the hourly
+ * rollups, so a week-wide question costs the same as a day-wide one.
+ */
+router.get('/probes/api/:id/history', async (req, res) => {
+    try {
+        if (!validObjectId(req.params.id)) {
+            return res.status(400).json({ error: 'invalid probe id' });
+        }
+
+        const hours = Math.min(Math.max(parseInt(req.query.hours, 10) || 24, 1), 720);
+        const bucket = hours > HISTORY_RAW_MAX_HOURS ? 'hourly' : 'raw';
+        const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+        const probeId = new (require('mongoose').Types.ObjectId)(req.params.id);
+
+        const [transport, targets] = await Promise.all([
+            ProbeResult.getHistory({ probeId, since, bucket }),
+            ProbeTargetResult.getHistory({ probeId, since, bucket }),
+        ]);
+
+        const nodeIds = [...new Set([...transport, ...targets].map((r) => r.nodeId).filter(Boolean))];
+        const nodes = nodeIds.length
+            ? await HyNode.find({ _id: { $in: nodeIds } }).select('name type').lean()
+            : [];
+        const nodeById = new Map(nodes.map((n) => [String(n._id), n]));
+
+        return res.json({
+            bucket,
+            hours,
+            since,
+            nodes: buildHistoryTree(transport, targets, nodeById),
+        });
+    } catch (error) {
+        logger.error('[Panel] probe history error:', error.message);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Fold raw windows into one entry per node, with a series per inbound and a
+ * series per checklist resource. Percentages are computed over the whole range
+ * so the summary does not depend on how the series is rendered.
+ */
+function buildHistoryTree(transport, targets, nodeById) {
+    const nodes = new Map();
+
+    const nodeEntry = (nodeId) => {
+        if (!nodes.has(nodeId)) {
+            const node = nodeById.get(nodeId);
+            nodes.set(nodeId, {
+                nodeId,
+                nodeName: node?.name || nodeId,
+                nodeType: node?.type || '',
+                inbounds: [],
+                targets: [],
+            });
+        }
+        return nodes.get(nodeId);
+    };
+
+    const series = new Map();
+    for (const row of transport) {
+        const nodeId = String(row.nodeId);
+        const key = `${nodeId}::${row.inboundId}`;
+        if (!series.has(key)) {
+            const entry = {
+                inboundId: row.inboundId,
+                inboundTag: row.inboundTag || '',
+                attempts: 0,
+                ok: 0,
+                latencyP95: 0,
+                speedBps: 0,
+                points: [],
+            };
+            series.set(key, entry);
+            nodeEntry(nodeId).inbounds.push(entry);
+        }
+
+        const entry = series.get(key);
+        entry.attempts += row.attempts || 0;
+        entry.ok += row.ok || 0;
+        entry.latencyP95 = Math.max(entry.latencyP95, row.latencyP95 || 0);
+        if (row.speedBps) entry.speedBps = row.speedBps;
+        entry.points.push({
+            ts: row.ts,
+            attempts: row.attempts || 0,
+            ok: row.ok || 0,
+            code: row.lastCode || '',
+        });
+    }
+
+    const targetSeries = new Map();
+    for (const row of targets) {
+        const nodeId = String(row.nodeId);
+        const key = `${nodeId}::${row.targetId}`;
+        if (!targetSeries.has(key)) {
+            const entry = {
+                targetId: row.targetId,
+                attempts: 0,
+                ok: 0,
+                blocked: 0,
+                points: [],
+            };
+            targetSeries.set(key, entry);
+            nodeEntry(nodeId).targets.push(entry);
+        }
+
+        const entry = targetSeries.get(key);
+        entry.attempts += row.attempts || 0;
+        entry.ok += row.ok || 0;
+        entry.blocked += row.blocked || 0;
+        entry.points.push({
+            ts: row.ts,
+            attempts: row.attempts || 0,
+            ok: row.ok || 0,
+            blocked: row.blocked || 0,
+            httpStatus: row.httpStatus || 0,
+        });
+    }
+
+    return Array.from(nodes.values())
+        .sort((a, b) => a.nodeName.localeCompare(b.nodeName));
+}
 
 /**
  * External checks for a single node, grouped per probe. Feeds the node card.

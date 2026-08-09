@@ -89,6 +89,31 @@ function encodeTitle(text) {
 }
 
 /**
+ * Build a Content-Disposition value for a subscription filename (RFC 6266).
+ *
+ * Node rejects any header value containing bytes outside ISO-8859-1, so a
+ * username written in Cyrillic (probe users are named after the probe) would
+ * throw and turn the whole subscription into a 500. The ASCII form keeps old
+ * clients working, `filename*` carries the original name for the rest.
+ */
+/**
+ * Keep a header value only when it is safe to send as-is. Stripping characters
+ * from a URL would produce a broken link, so a value with anything outside
+ * printable ASCII is dropped and the header is omitted.
+ */
+function asciiHeaderValue(value) {
+    const raw = String(value || '').trim();
+    return /^[\x20-\x7e]*$/.test(raw) ? raw : '';
+}
+
+function buildContentDisposition(name) {
+    const raw = String(name || '').trim() || 'subscription';
+    const ascii = raw.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_').trim() || 'subscription';
+    const encoded = encodeURIComponent(raw).replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
+/**
  * Get active nodes (with caching)
  */
 async function getActiveNodesWithCache() {
@@ -1167,7 +1192,8 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound) {
             service_name: inbound.grpcServiceName || 'grpc',
         };
     } else if (transport === 'xhttp') {
-        // sing-box 1.11+ supports XHTTP via transport.type=xhttp
+        // Upstream sing-box has no XHTTP; the Click Connect cores (Android AAR
+        // and the probe binary) run sing-box-lx, built with `with_xhttp`.
         outbound.transport = {
             type: 'xhttp',
             path: inbound.xhttpPath || '/',
@@ -2985,7 +3011,7 @@ function sendCachedSubscription(res, data, format, userAgent, settings, hwidExtr
     
     const headers = {
         'Content-Type': `${contentType}; charset=utf-8`,
-        'Content-Disposition': `attachment; filename="${data.username}"`,
+        'Content-Disposition': buildContentDisposition(data.username),
         'Profile-Title': encodeTitle(data.profileTitle),
         'Profile-Update-Interval': String(settings?.subscription?.updateInterval || 12),
         'Subscription-Userinfo': [
@@ -2997,9 +3023,14 @@ function sendCachedSubscription(res, data, format, userAgent, settings, hwidExtr
     };
 
     const sub = settings?.subscription;
-    if (sub?.supportUrl)     headers['support-url']          = sub.supportUrl;
-    if (sub?.webPageUrl)     headers['profile-web-page-url'] = sub.webPageUrl;
-    if (sub?.happProviderId) headers['providerid']            = sub.happProviderId;
+    // Admin-supplied values land in raw headers, where a single non-ASCII byte
+    // makes Node throw and takes the whole subscription down with it.
+    const supportUrl = asciiHeaderValue(sub?.supportUrl);
+    const webPageUrl = asciiHeaderValue(sub?.webPageUrl);
+    const providerId = asciiHeaderValue(sub?.happProviderId);
+    if (supportUrl) headers['support-url']          = supportUrl;
+    if (webPageUrl) headers['profile-web-page-url'] = webPageUrl;
+    if (providerId) headers['providerid']            = providerId;
 
     let content = data.content;
 

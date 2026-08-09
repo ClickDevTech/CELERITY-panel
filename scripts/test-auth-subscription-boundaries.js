@@ -223,6 +223,17 @@ function makeAuthReq(auth) {
     };
 }
 
+function makeFilesReq(token, format) {
+    return {
+        params: { token },
+        headers: { 'user-agent': 'sing-box' },
+        query: { format },
+        protocol: 'https',
+        get: () => 'panel.example.com',
+        path: `/api/files/${token}`,
+    };
+}
+
 function makeSubReq(token) {
     return {
         params: { token },
@@ -256,13 +267,55 @@ async function main() {
         nodes: [{ active: true, type: 'hysteria', status: 'online', groups: [] }],
     };
 
+    // Probe users are named after the probe, so a Cyrillic name reaches the
+    // response headers and used to make Node reject the whole response.
+    const probe = {
+        userId: 'probe-1',
+        username: 'Probe: скайнет, спб',
+        subscriptionToken: 'probe-token',
+        password: 'probe-secret',
+        enabled: true,
+        trafficLimit: 0,
+        maxDevices: 0,
+        isProbe: true,
+        xrayUuid: '11111111-2222-3333-4444-555555555555',
+        groups: [],
+        nodes: [
+            { _id: 'node-1', name: 'Питер', active: true, type: 'hysteria', status: 'online', domain: 'node.example.com', port: 443, groups: [] },
+            {
+                _id: 'node-2',
+                name: 'Reality',
+                active: true,
+                type: 'xray',
+                status: 'online',
+                domain: 'reality.example.com',
+                port: 443,
+                groups: [],
+                xray: { transport: 'tcp', security: 'reality', realityPublicKey: 'pk', realitySni: ['www.example.com'], realityShortIds: ['ab'] },
+            },
+            {
+                _id: 'node-3',
+                name: 'Xhttp',
+                active: true,
+                type: 'xray',
+                status: 'online',
+                domain: 'xhttp.example.com',
+                port: 443,
+                groups: [],
+                xray: { transport: 'xhttp', security: 'reality', realityPublicKey: 'pk', realitySni: ['www.example.com'], realityShortIds: ['ab'], xhttpPath: '/x' },
+            },
+        ],
+    };
+
     const usersById = new Map([
         ['alice', alice],
         ['bob', bob],
+        ['probe-1', probe],
     ]);
     const usersByToken = new Map([
         ['safe-token', alice],
         ['bob-token', bob],
+        ['probe-token', probe],
     ]);
 
     await withRouteStubs(usersById, usersByToken, async ({ warnings }) => {
@@ -300,6 +353,35 @@ async function main() {
         res = await invokeRoute(subscriptionRouter, 'get', '/info/:token', makeSubReq('alice'));
         assert.strictEqual(res.statusCode, 404, 'userId must not work as a subscription token');
         assert.deepStrictEqual(res.body, { error: 'Not found' });
+
+        res = await invokeRoute(subscriptionRouter, 'get', '/files/:token', makeFilesReq('probe-token', 'singbox'));
+        assert.strictEqual(res.statusCode, 200, 'a Cyrillic username must not break the subscription');
+        for (const [name, value] of Object.entries(res.headers)) {
+            assert(
+                /^[\x20-\x7e]*$/.test(String(value)),
+                `header ${name} must contain printable ASCII only, got: ${value}`
+            );
+        }
+        const disposition = res.headers['Content-Disposition'];
+        assert(
+            disposition.includes("filename*=UTF-8''"),
+            'the original name must survive in the RFC 6266 extended form'
+        );
+        assert(
+            disposition.includes(encodeURIComponent('скайнет')),
+            'the extended form must carry the percent-encoded username'
+        );
+
+        // The Click Connect cores run sing-box-lx, built with `with_xhttp`, so
+        // XHTTP nodes belong in the sing-box output.
+        const singbox = JSON.parse(res.body);
+        const byTag = new Map(singbox.outbounds.map(o => [o.tag, o]));
+        assert(byTag.has('Reality'), 'a REALITY node must be published');
+        assert.deepStrictEqual(
+            byTag.get('Xhttp')?.transport,
+            { type: 'xhttp', path: '/x', mode: 'auto' },
+            'an XHTTP node must carry the transport sing-box-lx expects'
+        );
     });
 
     await withRateLimiterStubs(async () => {

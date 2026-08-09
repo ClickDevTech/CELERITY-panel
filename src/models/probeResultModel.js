@@ -141,6 +141,22 @@ probeResultSchema.statics.getLatestForNode = async function(nodeId, sinceMs = 30
 };
 
 /**
+ * Windows over a period, oldest first, for the history view. Short ranges read
+ * raw windows; longer ones read hourly rollups so a week-wide question never
+ * pulls thousands of documents.
+ */
+probeResultSchema.statics.getHistory = async function({ probeId, nodeId, since, bucket, limit = 6000 }) {
+    const filter = { bucket, ts: { $gte: since } };
+    if (probeId) filter.probeId = probeId;
+    if (nodeId) filter.nodeId = String(nodeId);
+
+    return this.find(filter)
+        .sort({ ts: 1 })
+        .limit(limit)
+        .lean();
+};
+
+/**
  * Delete rows past retention. Raw windows expire with the configured
  * retention, hourly rollups are kept three times longer as the read index.
  */
