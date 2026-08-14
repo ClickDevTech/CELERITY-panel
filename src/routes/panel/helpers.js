@@ -582,6 +582,46 @@ function parseAclRulesInput(raw) {
         .filter(Boolean);
 }
 
+// Mirrors the outboundSchema enum: `block` is an ACL action, not an outbound,
+// and letting it through would fail validation on HyNode.create().
+const OUTBOUND_TYPES = ['direct', 'socks5', 'http'];
+const OUTBOUND_MAX = 20;
+
+/**
+ * Parse repeated `outbound_*` inputs from the Outbounds page or the Xray
+ * create form. Rows without a name or with an unknown type are dropped.
+ * @param {object} body - Express request body
+ * @returns {Array<object>}
+ */
+function parseOutboundsFormFields(body) {
+    if (!body || !body.outbound_name) return [];
+
+    const asArray = value => (Array.isArray(value) ? value : [value]);
+    const names = asArray(body.outbound_name);
+    const types = asArray(body.outbound_type);
+    const addrs = asArray(body.outbound_addr || '');
+    const usernames = asArray(body.outbound_username || '');
+    const passwords = asArray(body.outbound_password || '');
+
+    const outbounds = [];
+    for (let i = 0; i < names.length && outbounds.length < OUTBOUND_MAX; i++) {
+        const name = String(names[i] || '').trim();
+        const type = String(types[i] || '').trim();
+
+        if (!name || !OUTBOUND_TYPES.includes(type)) continue;
+
+        outbounds.push({
+            name,
+            type,
+            addr: String(addrs[i] || '').trim(),
+            username: String(usernames[i] || '').trim(),
+            password: String(passwords[i] || '').trim(),
+        });
+    }
+
+    return outbounds;
+}
+
 function getHysteriaAclInlineState(node) {
     if (!node || node.type === 'xray' || node.type === 'virtual') {
         return { editable: true, reason: '' };
@@ -1213,6 +1253,20 @@ const requireOnboarding = async (req, res, next) => {
     }
 };
 
+// Only the Xray create form carries outbounds over to a clone. A Hysteria
+// clone starts without them, so a rule routing to a custom outbound would be
+// pushed to a node where that outbound does not exist — Hysteria rejects such
+// a config on load, while Xray only skips the rule. Keep built-in actions.
+const CLONEABLE_ACL_ACTIONS = new Set(['reject', 'direct']);
+
+function cloneableAclRules(rules) {
+    if (!Array.isArray(rules)) return [];
+    return rules.filter((rule) => {
+        const action = String(rule || '').trim().match(/^([\w-]+)\(/);
+        return !!action && CLONEABLE_ACL_ACTIONS.has(action[1]);
+    });
+}
+
 /**
  * Build a create-form prefill from an existing node (issue #117 clone).
  * Copies protocol/config fields and strips identity, SSH, runtime, and secrets.
@@ -1222,6 +1276,7 @@ const requireOnboarding = async (req, res, next) => {
 function buildClonedNodePrefill(source) {
     if (!source || typeof source !== 'object') return null;
 
+    const isXray = source.type === 'xray';
     const freshKeys = cryptoService.generateX25519KeysLocal();
     const xray = { ...(source.xray || {}) };
     delete xray.agentToken;
@@ -1250,7 +1305,9 @@ function buildClonedNodePrefill(source) {
         comment: source.comment || '',
         country: source.country || '',
         ip: '',
-        domain: source.domain || '',
+        // Host identity stays empty: a second node answering on the same domain
+        // fights over the ACME certificate and the subscription links.
+        domain: '',
         sni: source.sni || '',
         port: source.port,
         portRange: source.portRange,
@@ -1275,8 +1332,10 @@ function buildClonedNodePrefill(source) {
         groups: source.groups || [],
         ssh: { port: 22, username: 'root', privateKey: '', password: '' },
         paths: source.paths,
-        outbounds: Array.isArray(source.outbounds) ? source.outbounds : [],
-        aclRules: Array.isArray(source.aclRules) ? source.aclRules : [],
+        outbounds: isXray && Array.isArray(source.outbounds) ? source.outbounds : [],
+        aclRules: isXray
+            ? (Array.isArray(source.aclRules) ? source.aclRules : [])
+            : cloneableAclRules(source.aclRules),
         active: source.active !== false,
         rankingCoefficient: source.rankingCoefficient,
         settings: source.settings,
@@ -1305,6 +1364,8 @@ module.exports = {
     parseBool,
     parseHeaderMap,
     parseHysteriaFormFields,
+    parseAclRulesInput,
+    parseOutboundsFormFields,
     getHysteriaAclInlineState,
     validateHysteriaFormFields,
     checkIpWhitelist,

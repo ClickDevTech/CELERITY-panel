@@ -27,7 +27,8 @@
             <span><%= t('nodes.restart') %></span>
         </button>
         <% } %>
-        <a class="node-more-item" role="menuitem" href="/panel/nodes/add?cloneConfig=<%= node._id %>">
+        <a class="node-more-item" role="menuitem" href="/panel/nodes/add?cloneConfig=<%= node._id %>"
+           title="<%= t('nodes.cloneNodeHint') %>">
             <i class="ti ti-copy"></i>
             <span><%= t('nodes.cloneNode') %></span>
         </a>

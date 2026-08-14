@@ -427,7 +427,7 @@
     "ipTypeConflict": "已存在使用此 IP 的 {protocol} 节点",
     "addPairedProtocol": "在此服务器上添加第二个协议",
     "cloneNode": "克隆节点",
-    "cloneNodeHint": "用此配置打开创建表单。IP、SSH 和密钥保持为空。",
+    "cloneNodeHint": "用此配置打开创建表单。IP、域名、SSH 和密钥保持为空。",
     "moreActions": "更多操作",
     "restartHint": "重启服务器上的 Hysteria 或 Xray 服务",
     "dualProtocol": "双协议",

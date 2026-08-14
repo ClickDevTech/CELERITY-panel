@@ -1252,9 +1252,12 @@ html {
     color: var(--accent);
 }
 
+/* Rendered as a child of <body> while open (see nodes.ejs), so it is never
+   clipped by the card and its coordinates are viewport-based. */
 .node-more-menu {
     position: fixed;
     min-width: 240px;
+    max-width: calc(100vw - 16px);
     padding: 6px;
     background: rgba(20, 20, 23, 0.94);
     backdrop-filter: var(--glass-blur);
@@ -1262,7 +1265,12 @@ html {
     border: 1px solid var(--glass-border-strong);
     border-radius: var(--radius);
     box-shadow: var(--glass-shadow-lg);
-    z-index: 80;
+    z-index: 200;
+    animation: fadeIn 0.12s ease-out;
+}
+
+.node-more-menu[hidden] {
+    display: none;
 }
 
 .node-more-item {
@@ -5305,3 +5313,119 @@ body {
 }
 .probe-badge-fail { color: var(--danger); }
 .probe-badge-ok { color: var(--success); }
+
+/* ============================================================
+ * OUTBOUNDS / ACL EDITOR
+ * Shared by the node Outbounds page and the Xray create form.
+ * ============================================================ */
+
+.presets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 10px; margin-top: 12px; }
+.presets-grid.is-disabled { opacity: 0.5; pointer-events: none; }
+.preset-card {
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 14px 16px; cursor: pointer; transition: all 0.15s;
+    background: var(--bg-secondary); user-select: none;
+}
+.preset-card:hover { border-color: var(--accent); background: var(--accent-bg, rgba(59,130,246,0.05)); }
+.preset-card:active { transform: scale(0.98); }
+.preset-card.flash { border-color: var(--success, #22c55e); background: rgba(34,197,94,0.08); }
+.preset-icon { font-size: 20px; margin-bottom: 6px; }
+.preset-icon i { font-size: 20px; }
+.preset-title { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.preset-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+
+.acl-editor {
+    font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    width: 100%;
+    resize: vertical;
+    min-height: 160px;
+    line-height: 1.8;
+}
+.acl-editor:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-glow); }
+
+.acl-hint-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.acl-tag {
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: 4px; padding: 3px 9px; font-size: 12px;
+    font-family: monospace; cursor: pointer; color: var(--text-muted);
+    transition: all 0.15s;
+}
+.acl-tag:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+.proxy-section { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.proxy-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; cursor: pointer; background: var(--bg-secondary);
+    border: none; width: 100%; text-align: left; font-size: 14px; color: var(--text-primary);
+    transition: background 0.15s;
+}
+.proxy-toggle span:first-child { display: flex; align-items: center; gap: 8px; }
+.proxy-toggle:hover { background: var(--bg-tertiary); }
+.proxy-toggle-arrow { color: var(--text-muted); transition: transform 0.2s; display: inline-flex; }
+.preview-toggle #previewArrow { display: inline-flex; }
+.proxy-toggle.open .proxy-toggle-arrow { transform: rotate(180deg); }
+.proxy-body { display: none; padding: 16px; border-top: 1px solid var(--border); }
+.proxy-body.open { display: block; }
+
+.ob-cards { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.ob-card {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 8px 12px; font-size: 13px;
+}
+.ob-type-badge {
+    padding: 2px 7px; border-radius: 20px; font-size: 11px; font-weight: 600;
+}
+.ob-type-socks5 { background: rgba(99,102,241,0.15); color: #818cf8; }
+.ob-type-http   { background: rgba(251,191,36,0.15);  color: #fbbf24; }
+.ob-card-del {
+    background: none; border: none; color: var(--text-muted);
+    cursor: pointer; padding: 0 2px; font-size: 14px; line-height: 1;
+    transition: color 0.15s;
+}
+.ob-card-del:hover { color: #ff6b6b; }
+
+.add-proxy-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.add-proxy-row .form-group { margin: 0; }
+
+.preview-toggle {
+    display: flex; align-items: center; gap: 6px; cursor: pointer;
+    font-size: 12px; color: var(--text-muted); margin-top: 12px;
+    background: none; border: none; padding: 0;
+}
+.preview-toggle:hover { color: var(--text-primary); }
+.preview-yaml {
+    background: #1a1a2e; color: #a9dc76; padding: 12px;
+    border-radius: var(--radius-sm); font-family: monospace; font-size: 12px;
+    line-height: 1.6; white-space: pre-wrap; max-height: 260px; overflow-y: auto; margin-top: 8px;
+}
+
+/* Create-form proxy rows: the inputs themselves are the state, so a row is
+   removed by deleting the element — no hidden mirror inputs to keep in sync. */
+.ob-form-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    padding: 10px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+}
+.ob-form-row .form-group { margin: 0; }
+.ob-form-row .form-group.ob-grow { flex: 1 1 130px; min-width: 110px; }
+.ob-form-row .form-group.ob-fixed { flex: 0 0 110px; }
+
+@media (max-width: 600px) {
+    .presets-grid { grid-template-columns: 1fr 1fr; }
+    .add-proxy-row { flex-direction: column; }
+    .ob-form-row { flex-direction: column; align-items: stretch; }
+    .ob-form-row .form-group.ob-fixed { flex: 1 1 auto; }
+}

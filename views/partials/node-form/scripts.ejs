@@ -683,7 +683,11 @@ function updateXrayFingerprintModeUI() {
 
 function updateXraySecurityUI() {
     const security = document.getElementById('xraySecurity').value;
-    document.getElementById('realityFields').style.display = security === 'reality' ? '' : 'none';
+    // Reality-only groups live in two places: the main block and the advanced
+    // spoiler (short IDs, spiderX), so they are toggled by attribute.
+    document.querySelectorAll('[data-reality-only]').forEach(el => {
+        el.style.display = security === 'reality' ? '' : 'none';
+    });
     document.getElementById('alpnGroup').style.display = security === 'tls' ? '' : 'none';
     const tlsConfig = document.getElementById('xrayTlsConfig');
     if (tlsConfig) tlsConfig.style.display = _anyXrayTlsInboundActive() ? '' : 'none';

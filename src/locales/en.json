@@ -427,7 +427,7 @@
     "ipTypeConflict": "A {protocol} node with this IP already exists",
     "addPairedProtocol": "Add second protocol on this server",
     "cloneNode": "Clone node",
-    "cloneNodeHint": "Open a create form with this config. IP, SSH and secrets stay empty.",
+    "cloneNodeHint": "Open a create form with this config. IP, domain, SSH and secrets stay empty.",
     "moreActions": "More actions",
     "restartHint": "Restart the Hysteria or Xray service on the server",
     "dualProtocol": "Dual protocol",

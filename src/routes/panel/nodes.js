@@ -30,6 +30,8 @@ const {
     sanitizeXrayForRender,
     parseBool,
     parseHysteriaFormFields,
+    parseAclRulesInput,
+    parseOutboundsFormFields,
     getHysteriaAclInlineState,
     validateHysteriaFormFields,
     buildSshKeyFilename,
@@ -451,6 +453,11 @@ router.post('/nodes', async (req, res) => {
                 return res.redirect(`/panel/nodes/add?error=${encodeURIComponent(xrayError)}`);
             }
             ensureExtraInboundRealityKeys(nodeData.xray);
+            // Only the Xray create form renders the outbounds/ACL block. The
+            // hidden Hysteria and virtual sections post their own fields, so
+            // these are read inside this branch and nowhere else.
+            nodeData.outbounds = parseOutboundsFormFields(req.body);
+            nodeData.aclRules = parseAclRulesInput(req.body.xrayAclRules);
             if (nodeData.cascadeRole !== 'bridge' && !nodeData.xray.agentToken) {
                 nodeData.xray.agentToken = nodeSetup.generateAgentToken();
             }
@@ -1094,39 +1101,12 @@ router.post('/nodes/:id/outbounds', async (req, res) => {
 
         const aclInlineState = getHysteriaAclInlineState(node);
         
-        const outbounds = [];
         const rawBody = req.body;
-        
-        if (rawBody.outbound_name) {
-            const names = Array.isArray(rawBody.outbound_name) ? rawBody.outbound_name : [rawBody.outbound_name];
-            const types = Array.isArray(rawBody.outbound_type) ? rawBody.outbound_type : [rawBody.outbound_type];
-            const addrs = Array.isArray(rawBody.outbound_addr) ? rawBody.outbound_addr : [rawBody.outbound_addr || ''];
-            const usernames = Array.isArray(rawBody.outbound_username) ? rawBody.outbound_username : [rawBody.outbound_username || ''];
-            const passwords = Array.isArray(rawBody.outbound_password) ? rawBody.outbound_password : [rawBody.outbound_password || ''];
-            
-            for (let i = 0; i < names.length; i++) {
-                const name = (names[i] || '').trim();
-                const type = (types[i] || '').trim();
-                
-                if (!name || !type) continue;
-                if (!['direct', 'block', 'socks5', 'http'].includes(type)) continue;
-                
-                outbounds.push({
-                    name,
-                    type,
-                    addr: (addrs[i] || '').trim(),
-                    username: (usernames[i] || '').trim(),
-                    password: (passwords[i] || '').trim(),
-                });
-            }
-        }
-        
+        const outbounds = parseOutboundsFormFields(rawBody);
+
         let aclRules = Array.isArray(node.aclRules) ? node.aclRules : [];
         if (aclInlineState.editable) {
-            const aclRaw = (rawBody.aclRules || '').trim();
-            aclRules = aclRaw
-                ? aclRaw.split('\n').map(r => r.trim()).filter(Boolean)
-                : [];
+            aclRules = parseAclRulesInput(rawBody.aclRules);
         }
         
         await HyNode.findByIdAndUpdate(req.params.id, {

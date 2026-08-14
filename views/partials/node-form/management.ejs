@@ -164,21 +164,20 @@
 </div>
 <% } %>
 
-<%# ========== Management (edit only) ========== %>
-<% if (node?._id) { %>
+<%# ========== Management (edit only — hidden for virtual: nothing to setup/restart/terminal-into) ========== %>
+<% if (node?._id && node.type !== 'virtual') { %>
 <div class="card mt-3">
     <div class="card-header">
         <h2><%= t('nodes.management') %></h2>
     </div>
     <div class="card-body">
-        <% if (node.type !== 'virtual' && !node.ssh?.password && !node.ssh?.privateKey) { %>
+        <% if (!node.ssh?.password && !node.ssh?.privateKey) { %>
         <div class="ssh-warning" id="sshWarning">
             <span class="ssh-warning-icon"><i class="ti ti-alert-triangle"></i></span>
             <span><%= t('nodes.sshNotConfigured') %></span>
         </div>
         <% } %>
         <div class="actions-grid">
-            <% if (node.type !== 'virtual') { %>
             <button class="action-btn" onclick="setupNode()" id="btnSetup" <%= !node.ssh?.password && !node.ssh?.privateKey ? 'disabled title="Configure SSH first"' : '' %>>
                 <span class="action-icon"><i class="ti ti-settings"></i></span>
                 <span><%= t('nodes.autoSetup') %></span>
@@ -189,7 +188,6 @@
                 <span class="action-icon"><i class="ti ti-refresh"></i></span>
                 <span><%= t('nodes.restart') %></span>
             </button>
-            <% } %>
             <a href="/panel/nodes/add?cloneConfig=<%= node._id %>" class="action-btn" style="text-decoration:none;text-align:center;" title="<%= t('nodes.cloneNodeHint') %>">
                 <span class="action-icon"><i class="ti ti-copy"></i></span>
                 <span><%= t('nodes.cloneNode') %></span>
@@ -200,7 +198,6 @@
                 <span><%= t('nodes.addPairedProtocol') %></span>
             </a>
             <% } %>
-            <% if (node.type !== 'virtual') { %>
             <% if (outboundsAclLocked) { %>
             <span class="action-btn is-disabled" style="text-decoration:none;text-align:center;" title="<%= t('nodes.outboundsAclLockedDisabled') %>" aria-disabled="true">
                 <span class="action-icon"><i class="ti ti-arrow-up-right"></i></span>
@@ -250,7 +247,6 @@
                 <span class="action-icon"><i class="ti ti-refresh"></i></span>
                 <span><%= t('nodes.resetStatus') %></span>
             </button>
-            <% } %>
         </div>
         <% if (outboundsAclLocked) { %>
         <div class="alert alert-warning mt-2">
@@ -265,6 +261,23 @@
                 <button class="btn btn-sm" onclick="clearLogs()"><%= t('common.clear') %></button>
             </div>
             <pre class="logs-output" id="logsOutput"></pre>
+        </div>
+    </div>
+</div>
+<% } %>
+
+<%# Virtual nodes have no server to manage, but their routing config is worth cloning %>
+<% if (node?._id && node.type === 'virtual') { %>
+<div class="card mt-3">
+    <div class="card-header">
+        <h2><%= t('nodes.management') %></h2>
+    </div>
+    <div class="card-body">
+        <div class="actions-grid">
+            <a href="/panel/nodes/add?cloneConfig=<%= node._id %>" class="action-btn" style="text-decoration:none;text-align:center;" title="<%= t('nodes.cloneNodeHint') %>">
+                <span class="action-icon"><i class="ti ti-copy"></i></span>
+                <span><%= t('nodes.cloneNode') %></span>
+            </a>
         </div>
     </div>
 </div>

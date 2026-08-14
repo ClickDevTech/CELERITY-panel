@@ -1,0 +1,194 @@
+<%#
+    Outbounds + routing rules for the Xray create form.
+    Rendered only when the node does not exist yet: a saved node edits the same
+    fields on /panel/nodes/:id/outbounds, and having two editors for one field
+    would let a form save overwrite what was set there.
+%>
+<%
+    const prefillOutbounds = (node?.outbounds || []).filter(ob => ob && (ob.type === 'socks5' || ob.type === 'http'));
+    const prefillRules = (node?.aclRules || []).join('\n');
+%>
+<div class="form-section">
+    <h3><%= t('outbounds.title') %></h3>
+    <small class="section-hint"><%= t('outbounds.pageDesc') %></small>
+
+    <div class="presets-grid">
+        <div class="preset-card" onclick="xrayObPreset('block-ads', this)">
+            <div class="preset-icon"><i class="ti ti-ban"></i></div>
+            <div class="preset-title"><%= t('outbounds.blockAds') %></div>
+            <div class="preset-desc"><%= t('outbounds.blockAdsDesc') %></div>
+        </div>
+        <div class="preset-card" onclick="xrayObPreset('block-cn', this)">
+            <div class="preset-icon"><i class="ti ti-shield"></i></div>
+            <div class="preset-title"><%= t('outbounds.blockCn') %></div>
+            <div class="preset-desc"><%= t('outbounds.blockCnDesc') %></div>
+        </div>
+        <div class="preset-card" onclick="xrayObPreset('direct-all', this)">
+            <div class="preset-icon"><i class="ti ti-arrow-up-right"></i></div>
+            <div class="preset-title"><%= t('outbounds.directAll') %></div>
+            <div class="preset-desc"><%= t('outbounds.directAllDesc') %></div>
+        </div>
+        <div class="preset-card" onclick="xrayObPreset('clear', this)">
+            <div class="preset-icon"><i class="ti ti-trash"></i></div>
+            <div class="preset-title"><%= t('outbounds.reset') %></div>
+            <div class="preset-desc"><%= t('outbounds.resetDesc') %></div>
+        </div>
+    </div>
+
+    <div class="form-group" style="margin-top:16px;">
+        <label for="xrayAclRules"><%= t('outbounds.rules') %></label>
+        <%# Deliberately not named `aclRules`: parseHysteriaFormFields falls back
+            to that field, and this block is in the DOM even when Hysteria is
+            the selected protocol. %>
+        <textarea id="xrayAclRules" name="xrayAclRules" class="acl-editor" rows="8"
+                  placeholder="reject(geoip:cn)&#10;reject(geoip:private)&#10;direct(all)"><%= prefillRules %></textarea>
+        <small class="hint"><%- t('outbounds.rulesHint') %></small>
+        <div class="acl-hint-tags">
+            <span class="acl-tag" onclick="xrayObInsertRule('direct(all)')">direct(all)</span>
+            <span class="acl-tag" onclick="xrayObInsertRule('reject(geoip:cn)')">reject(geoip:cn)</span>
+            <span class="acl-tag" onclick="xrayObInsertRule('reject(geoip:private)')">reject(geoip:private)</span>
+            <span class="acl-tag" onclick="xrayObInsertRule('reject(geoip:ru)')">reject(geoip:ru)</span>
+            <span class="acl-tag" onclick="xrayObInsertRule('direct(geoip:ru)')">direct(geoip:ru)</span>
+            <span class="acl-tag" onclick="xrayObInsertRule('reject(suffix:doubleclick.net)')">reject(suffix:doubleclick.net)</span>
+        </div>
+    </div>
+
+    <div class="proxy-section">
+        <button type="button" class="proxy-toggle<%= prefillOutbounds.length ? ' open' : '' %>" id="xrayObToggleBtn" onclick="xrayObToggleSection()">
+            <span>
+                <i class="ti ti-refresh"></i> <%= t('outbounds.proxyServers') %>
+                <small style="color:var(--text-muted); font-weight:400; margin-left:6px;"><%= t('outbounds.proxyServersHint') %></small>
+            </span>
+            <span class="proxy-toggle-arrow"><i class="ti ti-chevron-down"></i></span>
+        </button>
+        <div class="proxy-body<%= prefillOutbounds.length ? ' open' : '' %>" id="xrayObBody">
+            <p class="hint" style="margin-bottom:14px;"><%- t('outbounds.proxyDesc') %></p>
+            <div id="xrayObRows">
+                <% prefillOutbounds.forEach(ob => { %>
+                <div class="ob-form-row">
+                    <div class="form-group ob-grow">
+                        <label><%= t('outbounds.proxyName') %></label>
+                        <input type="text" name="outbound_name" value="<%= ob.name || '' %>" placeholder="my-proxy" maxlength="40">
+                    </div>
+                    <div class="form-group ob-fixed">
+                        <label><%= t('outbounds.proxyType') %></label>
+                        <select name="outbound_type">
+                            <option value="socks5" <%= ob.type === 'socks5' ? 'selected' : '' %>>SOCKS5</option>
+                            <option value="http" <%= ob.type === 'http' ? 'selected' : '' %>>HTTP</option>
+                        </select>
+                    </div>
+                    <div class="form-group ob-grow">
+                        <label><%= t('outbounds.proxyAddr') %></label>
+                        <input type="text" name="outbound_addr" value="<%= ob.addr || '' %>" placeholder="1.2.3.4:1080">
+                    </div>
+                    <div class="form-group ob-grow">
+                        <label><%= t('outbounds.proxyLogin') %></label>
+                        <input type="text" name="outbound_username" value="<%= ob.username || '' %>" placeholder="<%= t('outbounds.proxyOptional') %>" autocomplete="off">
+                    </div>
+                    <div class="form-group ob-grow">
+                        <label><%= t('outbounds.proxyPassword') %></label>
+                        <input type="text" name="outbound_password" value="<%= ob.password || '' %>" placeholder="<%= t('outbounds.proxyOptional') %>" autocomplete="off">
+                    </div>
+                    <div class="form-group" style="flex:0 0 auto;">
+                        <label>&nbsp;</label>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="xrayObRemoveRow(this)" title="<%= t('common.delete') %>"><i class="ti ti-x"></i></button>
+                    </div>
+                </div>
+                <% }); %>
+            </div>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="xrayObAddRow()">
+                <i class="ti ti-plus"></i> <%= t('outbounds.addProxy') %>
+            </button>
+        </div>
+    </div>
+
+    <%# Inputs inside a template are inert and never submitted %>
+    <template id="xrayObRowTemplate">
+        <div class="ob-form-row">
+            <div class="form-group ob-grow">
+                <label><%= t('outbounds.proxyName') %></label>
+                <input type="text" name="outbound_name" placeholder="my-proxy" maxlength="40">
+            </div>
+            <div class="form-group ob-fixed">
+                <label><%= t('outbounds.proxyType') %></label>
+                <select name="outbound_type">
+                    <option value="socks5">SOCKS5</option>
+                    <option value="http">HTTP</option>
+                </select>
+            </div>
+            <div class="form-group ob-grow">
+                <label><%= t('outbounds.proxyAddr') %></label>
+                <input type="text" name="outbound_addr" placeholder="1.2.3.4:1080">
+            </div>
+            <div class="form-group ob-grow">
+                <label><%= t('outbounds.proxyLogin') %></label>
+                <input type="text" name="outbound_username" placeholder="<%= t('outbounds.proxyOptional') %>" autocomplete="off">
+            </div>
+            <div class="form-group ob-grow">
+                <label><%= t('outbounds.proxyPassword') %></label>
+                <input type="text" name="outbound_password" placeholder="<%= t('outbounds.proxyOptional') %>" autocomplete="off">
+            </div>
+            <div class="form-group" style="flex:0 0 auto;">
+                <label>&nbsp;</label>
+                <button type="button" class="btn btn-sm btn-danger" onclick="xrayObRemoveRow(this)" title="<%= t('common.delete') %>"><i class="ti ti-x"></i></button>
+            </div>
+        </div>
+    </template>
+</div>
+
+<script>
+const XRAY_OB_PRESETS = {
+    'block-ads': [
+        'reject(suffix:doubleclick.net)',
+        'reject(suffix:googlesyndication.com)',
+        'reject(suffix:googleadservices.com)',
+        'reject(suffix:adnxs.com)',
+        'reject(suffix:moatads.com)',
+        'direct(all)',
+    ],
+    'block-cn': ['reject(geoip:cn)', 'reject(geoip:private)', 'direct(all)'],
+    'direct-all': ['direct(all)'],
+    'clear': [],
+};
+const XRAY_OB_REPLACE_CONFIRM = <%- JSON.stringify(t('outbounds.replaceRules')) %>;
+
+function xrayObPreset(key, card) {
+    const rules = XRAY_OB_PRESETS[key];
+    if (!rules) return;
+    const ta = document.getElementById('xrayAclRules');
+    if (key !== 'clear' && ta.value.trim() && !confirm(XRAY_OB_REPLACE_CONFIRM)) return;
+    ta.value = rules.join('\n');
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 800);
+}
+
+function xrayObInsertRule(rule) {
+    const ta = document.getElementById('xrayAclRules');
+    const lines = ta.value.split('\n').map(line => line.trim()).filter(Boolean);
+    if (lines.includes(rule)) return;
+    lines.push(rule);
+    ta.value = lines.join('\n');
+}
+
+function xrayObToggleSection() {
+    const body = document.getElementById('xrayObBody');
+    const btn = document.getElementById('xrayObToggleBtn');
+    const open = !body.classList.contains('open');
+    body.classList.toggle('open', open);
+    btn.classList.toggle('open', open);
+}
+
+function xrayObAddRow() {
+    const template = document.getElementById('xrayObRowTemplate');
+    const rows = document.getElementById('xrayObRows');
+    rows.appendChild(template.content.cloneNode(true));
+    const added = rows.lastElementChild;
+    const nameInput = added && added.querySelector('input[name="outbound_name"]');
+    if (nameInput) nameInput.focus();
+}
+
+function xrayObRemoveRow(btn) {
+    const row = btn.closest('.ob-form-row');
+    if (row) row.remove();
+}
+</script>

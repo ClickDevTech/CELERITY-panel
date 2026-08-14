@@ -1062,34 +1062,50 @@ async function toggleNodeActive(nodeId, active) {
     }
 }
 
+// The menu is moved to <body> while open: .card sets overflow:hidden and a
+// backdrop-filter, which both clips the popup and makes the card — not the
+// viewport — the containing block for position:fixed children.
 function closeAllNodeMore() {
-    document.querySelectorAll('.node-more.is-open').forEach((wrap) => {
-        wrap.classList.remove('is-open');
-        const toggle = wrap.querySelector('[data-node-more-toggle]');
-        const menu = wrap.querySelector('.node-more-menu');
+    document.querySelectorAll('.node-more-menu[data-node-more-open]').forEach((menu) => {
+        menu.removeAttribute('data-node-more-open');
+        menu.hidden = true;
+        menu.style.left = '';
+        menu.style.top = '';
+
+        const owner = menu.nodeMoreOwner;
+        if (!owner) return;
+        owner.classList.remove('is-open');
+        const toggle = owner.querySelector('[data-node-more-toggle]');
         if (toggle) toggle.setAttribute('aria-expanded', 'false');
-        if (menu) {
-            menu.hidden = true;
-            menu.style.top = '';
-            menu.style.bottom = '';
-            menu.style.left = '';
-        }
+        owner.appendChild(menu);
     });
 }
 
 function placeNodeMoreMenu(toggle, menu) {
     const rect = toggle.getBoundingClientRect();
-    const menuWidth = 240;
-    const left = Math.min(Math.max(8, rect.right - menuWidth), window.innerWidth - menuWidth - 8);
-    menu.style.left = left + 'px';
+    const width = menu.offsetWidth || 240;
+    const height = menu.offsetHeight || 0;
+    const maxLeft = Math.max(8, window.innerWidth - width - 8);
+    menu.style.left = Math.min(Math.max(8, rect.right - width), maxLeft) + 'px';
+
     const spaceBelow = window.innerHeight - rect.bottom;
-    if (spaceBelow < 200 && rect.top > spaceBelow) {
-        menu.style.top = 'auto';
-        menu.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
-    } else {
-        menu.style.bottom = 'auto';
-        menu.style.top = (rect.bottom + 6) + 'px';
-    }
+    const openUpwards = spaceBelow < height + 12 && rect.top > spaceBelow;
+    menu.style.top = (openUpwards ? Math.max(8, rect.top - height - 6) : rect.bottom + 6) + 'px';
+}
+
+function openNodeMore(toggle) {
+    const owner = toggle.closest('.node-more');
+    const menu = owner && owner.querySelector('.node-more-menu');
+    if (!menu) return;
+
+    menu.nodeMoreOwner = owner;
+    owner.classList.add('is-open');
+    toggle.setAttribute('aria-expanded', 'true');
+
+    document.body.appendChild(menu);
+    menu.hidden = false;
+    menu.setAttribute('data-node-more-open', '');
+    placeNodeMoreMenu(toggle, menu);
 }
 
 document.addEventListener('click', (event) => {
@@ -1097,16 +1113,9 @@ document.addEventListener('click', (event) => {
     if (toggle) {
         event.preventDefault();
         event.stopPropagation();
-        const wrap = toggle.closest('.node-more');
-        const menu = wrap && wrap.querySelector('.node-more-menu');
-        const alreadyOpen = wrap && wrap.classList.contains('is-open');
+        const wasOpen = toggle.getAttribute('aria-expanded') === 'true';
         closeAllNodeMore();
-        if (!alreadyOpen && wrap && menu) {
-            wrap.classList.add('is-open');
-            toggle.setAttribute('aria-expanded', 'true');
-            menu.hidden = false;
-            placeNodeMoreMenu(toggle, menu);
-        }
+        if (!wasOpen) openNodeMore(toggle);
         return;
     }
     if (!event.target.closest('.node-more-menu')) closeAllNodeMore();
@@ -1120,7 +1129,7 @@ window.addEventListener('resize', closeAllNodeMore);
 window.addEventListener('scroll', closeAllNodeMore, true);
 
 async function restartNode(id, ev) {
-    const btn = (ev && ev.currentTarget) || (typeof event !== 'undefined' ? event.currentTarget : null);
+    const btn = ev && ev.currentTarget ? ev.currentTarget : null;
     const originalHtml = btn ? btn.innerHTML : '';
     if (btn) {
         btn.innerHTML = '<i class="ti ti-loader-2"></i><span>' + i18n.restart + '</span>';
@@ -1136,12 +1145,9 @@ async function restartNode(id, ev) {
 
         if (data.success) {
             showToast(i18n.restartSuccess);
-            const row = btn && (btn.closest('tr') || btn.closest('.mobile-node-card'));
-            const badge = row && row.querySelector('.badge');
-            if (badge) {
-                badge.className = 'badge badge-success';
-                badge.textContent = 'online';
-            }
+            // The menu lives in <body> while open, so the row is resolved by
+            // node id rather than by walking up from the button.
+            setNodeStatusUi(id, 'online');
             closeAllNodeMore();
         } else {
             showToast(i18n.restartFailed + ': ' + (data.error || ''), 'error');
