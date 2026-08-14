@@ -90,6 +90,8 @@ const settingsSchema = new mongoose.Schema({
         happProviderId: { type: String, default: '' },
         logoUrl:        { type: String, default: '' },
         pageTitle:      { type: String, default: '' },
+        // Instruction shown under the title on the public subscription page.
+        pageNote:       { type: String, default: '', maxlength: 2000 },
         updateInterval: { type: Number, default: 12 },
         buttons: {
             type: [{

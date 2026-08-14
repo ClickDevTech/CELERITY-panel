@@ -22,6 +22,7 @@ const homepageService = require('../../services/homepageService');
 const syncService = require('../../services/syncService');
 const updateService = require('../../services/updateService');
 const { invalidateSettingsCache } = require('../../utils/helpers');
+const { sanitizePageNote } = require('../../utils/textSanitize');
 const config = require('../../../config');
 const logger = require('../../utils/logger');
 const {
@@ -229,6 +230,7 @@ router.post('/settings', async (req, res) => {
             setIfPresent('subscription.happProviderId', trim);
             setIfPresent('subscription.logoUrl',        trim);
             setIfPresent('subscription.pageTitle',      trim);
+            setIfPresent('subscription.pageNote',       sanitizePageNote);
 
             setIfPresent('subscription.updateInterval', (v) => {
                 const n = parseInt(v, 10);

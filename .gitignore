@@ -62,3 +62,9 @@ Rules.md
 TODO.md
 TEST-CHECKLIST.md
 docs/abuse-signatures.ru.md 
+# Added by code-review-graph
+.code-review-graph/
+.code-review-graphignore
+.cursor/
+.cursorrules
+AGENTS.md

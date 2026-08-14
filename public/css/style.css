@@ -1087,6 +1087,15 @@ html {
     color: var(--text-muted);
 }
 
+.user-comment {
+    font-size: 11px;
+    color: var(--text-muted);
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .plan-badge {
     display: inline-block;
     padding: 4px 12px;

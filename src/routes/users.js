@@ -1,5 +1,5 @@
 /**
- * API для управления пользователями Hysteria + Xray
+ * REST API for Hysteria + Xray user management
  */
 
 const express = require('express');
@@ -13,6 +13,7 @@ const hwidDeviceService = require('../services/hwidDeviceService');
 const logger = require('../utils/logger');
 const { getNodesByGroups, invalidateUserCache, invalidateUsersBulkCache } = require('../utils/helpers');
 const { recomputeEnabled } = require('../utils/userActivity');
+const { sanitizeUserComment } = require('../utils/textSanitize');
 const expireScheduler = require('../services/expireScheduler');
 const { requireScope } = require('../middleware/auth');
 const webhook = require('../services/webhookService');
@@ -254,12 +255,13 @@ router.get('/:userId', requireScope('users:read'), async (req, res) => {
 });
 
 /**
- * POST /users - Создать пользователя
- * Body: { userId, username?, groups?, enabled?, trafficLimit?, maxDevices?, expireAt? }
+ * POST /users - Create a user
+ * Body: { userId, username?, comment?, groups?, enabled?, trafficLimit?, maxDevices?, expireAt? }
  */
 router.post('/', requireScope('users:write'), async (req, res) => {
     try {
         const { userId, username, groups, enabled, trafficLimit, expireAt, maxDevices } = req.body;
+        const comment = sanitizeUserComment(req.body.comment);
         
         if (!userId) {
             return res.status(400).json({ error: 'userId обязателен' });
@@ -272,28 +274,27 @@ router.post('/', requireScope('users:write'), async (req, res) => {
             maxDevicesValue = Number.isFinite(parsed) ? Math.max(-1, parsed) : 0;
         }
         
-        // Проверяем существование
         const existing = await HyUser.findOne({ userId });
         if (existing) {
             return res.status(409).json({ error: 'Пользователь уже существует', user: existing });
         }
-        
-        // Генерируем пароль
+
         const password = cryptoService.generatePassword(userId);
-        
-        // Группы (массив ObjectId)
+
+        // Group ObjectIds
         const userGroups = groups || [];
         
         const user = new HyUser({
             userId,
             username: username || '',
+            comment,
             password,
             groups: userGroups,
             enabled: enabled !== undefined ? enabled : false,
             trafficLimit: trafficLimit || 0,
             maxDevices: maxDevicesValue,
             expireAt: expireAt || null,
-            nodes: [], // Ноды автоматически по группам
+            nodes: [], // Nodes are resolved from groups at subscription time
         });
         
         await user.save();
@@ -317,7 +318,7 @@ router.post('/', requireScope('users:write'), async (req, res) => {
 });
 
 /**
- * PUT /users/:userId - Обновить пользователя
+ * PUT /users/:userId - Update a user
  */
 router.put('/:userId', requireScope('users:write'), async (req, res) => {
     try {
@@ -336,6 +337,10 @@ router.put('/:userId', requireScope('users:write'), async (req, res) => {
         
         if (username !== undefined) {
             updates.username = username;
+        }
+
+        if (req.body.comment !== undefined) {
+            updates.comment = sanitizeUserComment(req.body.comment);
         }
         
         if (trafficLimit !== undefined) {
@@ -622,7 +627,7 @@ router.delete('/:userId/groups/:groupId', requireScope('users:write'), async (re
 });
 
 /**
- * POST /users/sync-from-main - Синхронизация с основной БД
+ * POST /users/sync-from-main - Sync users from the main database
  * Body: { users: [{ userId, username, enabled, groups }] }
  */
 router.post('/sync-from-main', requireScope('users:write'), async (req, res) => {
@@ -639,18 +644,21 @@ router.post('/sync-from-main', requireScope('users:write'), async (req, res) => 
         for (const userData of users) {
             try {
                 const { userId, username, enabled, groups } = userData;
+                const comment = userData.comment !== undefined
+                    ? sanitizeUserComment(userData.comment)
+                    : undefined;
                 
                 if (!userId) continue;
                 
                 const existing = await HyUser.findOne({ userId });
                 
                 if (existing) {
-                    // Обновляем
                     const updates = {};
                     if (enabled !== undefined && enabled !== existing.enabled) {
                         updates.enabled = enabled;
                     }
                     if (username) updates.username = username;
+                    if (comment !== undefined) updates.comment = comment;
                     if (groups !== undefined) {
                         updates.groups = groups;
                     }
@@ -675,12 +683,12 @@ router.post('/sync-from-main', requireScope('users:write'), async (req, res) => 
                         }
                     }
                 } else {
-                    // Создаём нового
                     const password = cryptoService.generatePassword(userId);
                     
                     const createdUser = await HyUser.create({
                         userId,
                         username: username || '',
+                        comment: comment || '',
                         password,
                         groups: groups || [],
                         enabled: enabled || false,

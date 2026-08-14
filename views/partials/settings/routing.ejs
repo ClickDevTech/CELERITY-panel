@@ -194,17 +194,21 @@
     border-color: var(--accent);
 }
 .rule-num { color: var(--text-muted); font-size: 11px; width: 24px; text-align: right; }
-.rule-del-btn {
+.rule-del-btn, .rule-move-btn {
     background: none; border: none; color: var(--text-muted);
     cursor: pointer; padding: 2px 4px; font-size: 14px; line-height: 1;
     transition: color 0.15s;
 }
 .rule-del-btn:hover { color: #ff6b6b; }
+.rule-move-btn:hover:not(:disabled) { color: var(--accent); }
+.rule-move-btn:disabled { opacity: 0.3; cursor: default; }
 </style>
 
 <script>
 (function() {
     var CLEAR_CONFIRM = <%- JSON.stringify(t('settings.clearRulesConfirm')) %>;
+    var MOVE_UP_TITLE = <%- JSON.stringify(t('settings.routingMoveUp')) %>;
+    var MOVE_DOWN_TITLE = <%- JSON.stringify(t('settings.routingMoveDown')) %>;
 
     var PRESETS = {
         'bypass-ru': [
@@ -298,7 +302,15 @@
                 + '<td><input type="text" value="' + escHtml(r.value) + '" oninput="updateRule(' + i + ', \'value\', this.value)" style="width:100%; min-width:120px;" placeholder="category-ru / .ru / 1.2.3.0/24"></td>'
                 + '<td><input type="text" value="' + escHtml(r.comment) + '" oninput="updateRule(' + i + ', \'comment\', this.value)" style="width:100%; min-width:90px;"></td>'
                 + '<td style="text-align:center;"><input type="checkbox"' + (r.enabled ? ' checked' : '') + ' onchange="updateRule(' + i + ', \'enabled\', this.checked)"></td>'
-                + '<td><button type="button" class="rule-del-btn" onclick="deleteRule(' + i + ')"><i class="ti ti-x"></i></button></td>'
+                + '<td style="white-space:nowrap;">'
+                +   '<button type="button" class="rule-move-btn" onclick="moveRule(' + i + ', -1)"'
+                +     (i === 0 ? ' disabled' : '') + ' title="' + escHtml(MOVE_UP_TITLE) + '" aria-label="' + escHtml(MOVE_UP_TITLE) + '">'
+                +     '<i class="ti ti-arrow-up"></i></button>'
+                +   '<button type="button" class="rule-move-btn" onclick="moveRule(' + i + ', 1)"'
+                +     (i === rules.length - 1 ? ' disabled' : '') + ' title="' + escHtml(MOVE_DOWN_TITLE) + '" aria-label="' + escHtml(MOVE_DOWN_TITLE) + '">'
+                +     '<i class="ti ti-arrow-down"></i></button>'
+                +   '<button type="button" class="rule-del-btn" onclick="deleteRule(' + i + ')"><i class="ti ti-x"></i></button>'
+                + '</td>'
                 + '</tr>';
         }).join('');
 
@@ -312,6 +324,15 @@
 
     window.deleteRule = function(i) {
         rules.splice(i, 1);
+        renderRules();
+    };
+
+    window.moveRule = function(i, dir) {
+        var j = i + dir;
+        if (j < 0 || j >= rules.length) return;
+        var tmp = rules[i];
+        rules[i] = rules[j];
+        rules[j] = tmp;
         renderRules();
     };
 

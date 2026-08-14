@@ -24,6 +24,10 @@
                         <span class="value"><%= user.username || '—' %></span>
                     </div>
                     <div class="detail-item">
+                        <label><%= t('users.comment') %></label>
+                        <span class="value"><%= user.comment || '—' %></span>
+                    </div>
+                    <div class="detail-item">
                         <label><%= t('users.hysteriaPassword') %></label>
                         <code class="value"><%= user.password %></code>
                     </div>

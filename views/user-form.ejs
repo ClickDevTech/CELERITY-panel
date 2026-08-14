@@ -42,6 +42,15 @@ const expireAtIso = hasExpireAt ? new Date(user.expireAt).toISOString() : '';
                     <small><%= t('users.usernameHint') %></small>
                 </div>
             </div>
+
+            <div class="form-group">
+                <label for="comment"><%= t('users.comment') %></label>
+                <input type="text" id="comment" name="comment"
+                       value="<%= isEditMode ? (user.comment || '') : '' %>"
+                       placeholder="<%= t('users.commentPlaceholder') %>"
+                       maxlength="500" autocomplete="off">
+                <small><%= t('users.commentHint') %></small>
+            </div>
             
                 <div class="form-group">
                 <label><%= t('users.groups') %></label>

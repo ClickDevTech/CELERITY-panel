@@ -23,6 +23,15 @@ const hyUserSchema = new mongoose.Schema({
         type: String,
         default: '',
     },
+
+    // Free-form operator note. Displayed in the panel only — never used
+    // in Hysteria/Xray auth, subscription URIs, or protocol identifiers.
+    comment: {
+        type: String,
+        default: '',
+        trim: true,
+        maxlength: 500,
+    },
     
     password: {
         type: String,

@@ -12,6 +12,7 @@ const webhookService = require('../../services/webhookService');
 const { render } = require('./helpers');
 const { getActiveGroups, invalidateGroupsCache, getSettings, invalidateUserCache, invalidateNodesCache } = require('../../utils/helpers');
 const { recomputeEnabled } = require('../../utils/userActivity');
+const { sanitizeUserComment } = require('../../utils/textSanitize');
 const logger = require('../../utils/logger');
 
 // Whether the global HWID feature is enabled (permissive/strict).
@@ -166,6 +167,7 @@ router.get('/users/:userId/edit', async (req, res) => {
 router.post('/users', async (req, res) => {
     try {
         const { userId, username, trafficLimitGB, expireDays, expireAt: expireAtRaw, enabled, maxDevices } = req.body;
+        const comment = sanitizeUserComment(req.body.comment);
         
         if (!userId) {
             return res.status(400).send('userId обязателен');
@@ -218,6 +220,7 @@ router.post('/users', async (req, res) => {
         const newUser = await HyUser.create({
             userId,
             username: username || '',
+            comment,
             password,
             groups,
             enabled: enabled === 'on',
@@ -256,6 +259,7 @@ router.post('/users', async (req, res) => {
 router.post('/users/:userId', async (req, res) => {
     try {
         const { username, trafficLimitGB, expireDays, expireAt: expireAtRaw, enabled, maxDevices } = req.body;
+        const comment = sanitizeUserComment(req.body.comment);
         const [user, availableGroups] = await Promise.all([
             HyUser.findOne({ userId: req.params.userId }),
             getActiveGroups(),
@@ -275,6 +279,7 @@ router.post('/users/:userId', async (req, res) => {
         const draftUser = {
             ...user.toObject(),
             username: username || '',
+            comment,
             groups,
             enabled: enabled === 'on',
             trafficLimit,
@@ -315,6 +320,7 @@ router.post('/users/:userId', async (req, res) => {
 
         const updates = {
             username: username || '',
+            comment,
             groups,
             trafficLimit,
             expireAt,

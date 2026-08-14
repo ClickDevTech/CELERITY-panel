@@ -899,6 +899,7 @@ These endpoints are not under \`/api\` and are not part of this specification:
                     _id:               { type: 'string', example: '64a1b2c3d4e5f6a7b8c9d0e1' },
                     userId:            { type: 'string', example: '123456789' },
                     username:          { type: 'string', example: 'JohnDoe' },
+                    comment:           { type: 'string', maxLength: 500, example: 'VIP, paid till June', description: 'Free-form operator note shown in panel UI. Not used in auth.' },
                     password:          { type: 'string', description: 'VPN password (auto-generated on create; returned on read/write responses)' },
                     xrayUuid:          { type: 'string', format: 'uuid', description: 'VLESS UUID for Xray nodes' },
                     enabled:           { type: 'boolean', example: true },
@@ -927,6 +928,7 @@ These endpoints are not under \`/api\` and are not part of this specification:
                 properties: {
                     userId:       { type: 'string', example: '123456789', description: 'Unique user ID (e.g. Telegram ID)' },
                     username:     { type: 'string', example: 'JohnDoe' },
+                    comment:      { type: 'string', maxLength: 500, description: 'Free-form operator note (panel only).' },
                     enabled:      { type: 'boolean', default: false },
                     groups:       { type: 'array', items: { type: 'string' }, example: [] },
                     trafficLimit: { type: 'integer', example: 0, description: 'Bytes, 0 = unlimited' },
@@ -938,6 +940,7 @@ These endpoints are not under \`/api\` and are not part of this specification:
                 type: 'object',
                 properties: {
                     username:     { type: 'string' },
+                    comment:      { type: 'string', maxLength: 500 },
                     enabled:      { type: 'boolean' },
                     groups:       { type: 'array', items: { type: 'string' } },
                     trafficLimit: { type: 'integer' },

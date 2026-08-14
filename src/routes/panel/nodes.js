@@ -36,6 +36,7 @@ const {
     connectNodeSSH,
     generateSshKeyLimiter,
     sniScanLimiter,
+    buildClonedNodePrefill,
 } = require('./helpers');
 
 const sniScanner = require('../../services/sniScanner');
@@ -236,8 +237,10 @@ router.get('/nodes', async (req, res) => {
 });
 
 // GET /panel/nodes/add - Node creation form
-// Supports ?cloneFrom=<nodeId> to pre-fill IP, SSH, groups, flag and country from an existing node
-// and automatically switch to the opposite protocol type.
+// Supports ?cloneFrom=<nodeId> to pre-fill IP, groups, flag and country from an
+// existing node and switch to the opposite protocol (paired protocol on the
+// same host). Supports ?cloneConfig=<nodeId> to copy protocol/config fields
+// onto a new create form, leaving IP/SSH/secrets empty (issue #117).
 router.get('/nodes/add', async (req, res) => {
     try {
         const [groups, settings, candidateNodes] = await Promise.all([
@@ -266,6 +269,16 @@ router.get('/nodes/add', async (req, res) => {
                     groups: source.groups || [],
                     type: source.type === 'xray' ? 'hysteria' : 'xray',
                 };
+            }
+        } else if (req.query.cloneConfig) {
+            try {
+                const source = await HyNode.findById(req.query.cloneConfig)
+                    .select('-ssh.password -ssh.privateKey -statsSecret -xray.agentToken -xray.manualKey -xray.accessLogs')
+                    .populate('groups', '_id name color')
+                    .lean();
+                prefillNode = buildClonedNodePrefill(source);
+            } catch (cloneErr) {
+                logger.warn(`[Panel] cloneConfig ignored: ${cloneErr.message}`);
             }
         }
 

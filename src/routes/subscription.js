@@ -17,6 +17,7 @@ const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
 const appConfig = require('../../config');
 const { getNodesByGroups, getSettings, parseDurationSeconds, normalizeHopInterval } = require('../utils/helpers');
+const { escapeHtml, formatPageNoteHtml } = require('../utils/textSanitize');
 const { formatTraffic } = require('../utils/formatTraffic');
 const { getDateLocale, normalizeLanguage } = require('../middleware/i18n');
 const uaStats = require('../services/uaStatsService');
@@ -1870,7 +1871,10 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
     // Customization from settings
     const sub = settings?.subscription || {};
     const logoUrl   = sub.logoUrl   || '';
-    const pageTitle = (softBlock && softBlock.title) || sub.pageTitle || text.pageTitle;
+    const pageTitle = escapeHtml((softBlock && softBlock.title) || sub.pageTitle || text.pageTitle);
+    const pageNoteHtml = sub.pageNote
+        ? formatPageNoteHtml(sub.pageNote)
+        : escapeHtml(text.personalConfig);
 
     const logoHtml = logoUrl
         ? `<img src="${logoUrl}" class="brand-logo" onerror="this.style.display='none'">`
@@ -2372,7 +2376,7 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
     <div class="container">
         <div class="header">
             <h1>${logoHtml} <span>${pageTitle}</span></h1>
-            ${softBlock ? '' : `<p>${text.personalConfig}</p>`}
+            ${softBlock ? '' : `<p>${pageNoteHtml}</p>`}
         </div>
 
         ${softBlock ? '' : `<div class="stats">

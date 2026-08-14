@@ -14,6 +14,7 @@ const logger = require('../../utils/logger');
 const webhook = require('../../services/webhookService');
 const expireScheduler = require('../../services/expireScheduler');
 const { recomputeEnabled, isExpired, isOverLimit } = require('../../utils/userActivity');
+const { sanitizeUserComment } = require('../../utils/textSanitize');
 
 async function invalidateUserCache(userId, subscriptionToken) {
     await cache.invalidateUser(userId);
@@ -45,6 +46,7 @@ const manageUserSchema = z.object({
     userId: z.string().optional(),
     data: z.object({
         username: z.string().optional(),
+        comment: z.string().optional().describe('Free-form operator note (trimmed, max 500 chars)'),
         groups: z.array(z.string()).optional(),
         trafficLimit: z.number().min(0).optional().describe('Traffic limit in bytes, 0 = unlimited'),
         expireAt: z.string().datetime().nullable().optional(),
@@ -142,6 +144,7 @@ async function manageUser(args, emit) {
             const user = new HyUser({
                 userId,
                 username: data.username || '',
+                comment: sanitizeUserComment(data.comment),
                 password,
                 groups: data.groups || [],
                 enabled: data.enabled !== undefined ? data.enabled : false,
@@ -169,6 +172,7 @@ async function manageUser(args, emit) {
             const updates = {};
             if (data.enabled !== undefined) updates.enabled = data.enabled;
             if (data.username !== undefined) updates.username = data.username;
+            if (data.comment !== undefined) updates.comment = sanitizeUserComment(data.comment);
             if (data.trafficLimit !== undefined) updates.trafficLimit = data.trafficLimit;
             if (data.expireAt !== undefined) updates.expireAt = data.expireAt;
             if (data.groups !== undefined) updates.groups = data.groups;

@@ -264,6 +264,7 @@ function nodeMetaFor(node) {
                                     <a href="/panel/nodes/<%= node._id %>/terminal" class="btn-icon" title="<%= t('nodes.terminal') %>" <%= !node.ssh?.password ? 'style="pointer-events:none;opacity:0.5"' : '' %>><i class="ti ti-terminal-2"></i></a>
                                 <% } %>
                                 <a href="/panel/nodes/<%= node._id %>" class="btn-icon" title="<%= t('common.edit') %>"><i class="ti ti-pencil"></i></a>
+                                <a href="/panel/nodes/add?cloneConfig=<%= node._id %>" class="btn-icon" title="<%= t('nodes.cloneNode') %>"><i class="ti ti-copy"></i></a>
                                 <% if (node.type !== 'virtual' && (ipProtocolCount || {})[node.ip] < 2) { %>
                                 <a href="/panel/nodes/add?cloneFrom=<%= node._id %>" class="btn-icon" title="<%= t('nodes.addPairedProtocol') %>"><i class="ti ti-plug-connected"></i></a>
                                 <% } %>
@@ -374,6 +375,7 @@ function nodeMetaFor(node) {
                         <a href="/panel/nodes/<%= node._id %>/terminal" class="btn btn-sm" title="<%= t('nodes.terminal') %>" aria-label="<%= t('nodes.terminal') %>" <%= !node.ssh?.password ? 'style="pointer-events:none;opacity:0.5"' : '' %>><i class="ti ti-terminal-2"></i></a>
                         <% } %>
                         <a href="/panel/nodes/<%= node._id %>" class="btn btn-sm" title="<%= t('common.edit') %>" aria-label="<%= t('common.edit') %>"><i class="ti ti-pencil"></i></a>
+                        <a href="/panel/nodes/add?cloneConfig=<%= node._id %>" class="btn btn-sm" title="<%= t('nodes.cloneNode') %>" aria-label="<%= t('nodes.cloneNode') %>"><i class="ti ti-copy"></i></a>
                         <% if (node.type !== 'virtual' && (ipProtocolCount || {})[node.ip] < 2) { %>
                         <a href="/panel/nodes/add?cloneFrom=<%= node._id %>" class="btn btn-sm" title="<%= t('nodes.addPairedProtocol') %>" aria-label="<%= t('nodes.addPairedProtocol') %>"><i class="ti ti-plug-connected"></i></a>
                         <% } %>

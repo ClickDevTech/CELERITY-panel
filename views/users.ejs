@@ -78,6 +78,9 @@
                             <% if (user.username) { %>
                             <span class="user-name"><%= user.username %></span>
                             <% } %>
+                            <% if (user.comment) { %>
+                            <small class="user-comment" title="<%= user.comment %>"><i class="ti ti-message-circle"></i> <%= user.comment %></small>
+                            <% } %>
                         </div>
                     </td>
                     <td class="td-status">
@@ -161,6 +164,9 @@
                             <strong><%= user.userId %></strong>
                             <% if (user.username) { %>
                                 <code style="font-size: 11px; color: var(--text-muted);"><%= user.username %></code>
+                            <% } %>
+                            <% if (user.comment) { %>
+                                <small class="user-comment" title="<%= user.comment %>"><i class="ti ti-message-circle"></i> <%= user.comment %></small>
                             <% } %>
                         </div>
                     </div>

@@ -30,6 +30,12 @@
                                    placeholder="<%= t('settings.subPageTitlePlaceholder') %>">
                             <small class="hint"><%= t('settings.subPageTitleHint') || 'Текст над логотипом. По умолчанию: «Подключение».' %></small>
                         </div>
+                        <div class="form-group" style="margin-bottom: 0; margin-top: 14px;">
+                            <label><%= t('settings.subPageNote') %></label>
+                            <textarea name="subscription.pageNote" rows="3" maxlength="2000"
+                                      placeholder="<%= t('settings.subPageNotePlaceholder') %>"><%= settings?.subscription?.pageNote || '' %></textarea>
+                            <small class="hint"><%= t('settings.subPageNoteHint') %></small>
+                        </div>
                     </div>
                     <div class="col-4" style="display: flex; align-items: center; justify-content: center;">
                         <div style="width: 100%; min-height: 130px; display: flex; align-items: center; justify-content: center; padding: 18px; border-radius: var(--radius); background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.06)); border: 1px dashed var(--glass-border-strong);">

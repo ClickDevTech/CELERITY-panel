@@ -1213,6 +1213,82 @@ const requireOnboarding = async (req, res, next) => {
     }
 };
 
+/**
+ * Build a create-form prefill from an existing node (issue #117 clone).
+ * Copies protocol/config fields and strips identity, SSH, runtime, and secrets.
+ * @param {object} source - lean HyNode document
+ * @returns {object|null}
+ */
+function buildClonedNodePrefill(source) {
+    if (!source || typeof source !== 'object') return null;
+
+    const freshKeys = cryptoService.generateX25519KeysLocal();
+    const xray = { ...(source.xray || {}) };
+    delete xray.agentToken;
+    delete xray.accessLogs;
+    delete xray.manualCert;
+    delete xray.manualKey;
+    xray.realityPrivateKey = freshKeys.privateKey;
+    xray.realityPublicKey = freshKeys.publicKey;
+    if (Array.isArray(xray.extraInbounds)) {
+        xray.extraInbounds = xray.extraInbounds.map((inbound) => {
+            const copy = { ...inbound, id: crypto.randomUUID() };
+            if (copy.realityPrivateKey || copy.realityPublicKey || copy.security === 'reality') {
+                const extraKeys = cryptoService.generateX25519KeysLocal();
+                copy.realityPrivateKey = extraKeys.privateKey;
+                copy.realityPublicKey = extraKeys.publicKey;
+            }
+            return copy;
+        });
+    }
+
+    const name = String(source.name || 'node').trim() || 'node';
+    return {
+        type: source.type || 'hysteria',
+        name: `${name} (copy)`,
+        flag: source.flag || '',
+        comment: source.comment || '',
+        country: source.country || '',
+        ip: '',
+        domain: source.domain || '',
+        sni: source.sni || '',
+        port: source.port,
+        portRange: source.portRange,
+        hopInterval: source.hopInterval,
+        portConfigs: Array.isArray(source.portConfigs) ? source.portConfigs : [],
+        obfs: source.obfs,
+        acme: source.acme,
+        masquerade: source.masquerade,
+        bandwidth: source.bandwidth,
+        ignoreClientBandwidth: source.ignoreClientBandwidth,
+        speedTest: source.speedTest,
+        disableUDP: source.disableUDP,
+        udpIdleTimeout: source.udpIdleTimeout,
+        sniff: source.sniff,
+        quic: source.quic,
+        resolver: source.resolver,
+        acl: source.acl,
+        statsPort: source.statsPort,
+        statsSecret: '',
+        xray,
+        virtual: source.virtual,
+        groups: source.groups || [],
+        ssh: { port: 22, username: 'root', privateKey: '', password: '' },
+        paths: source.paths,
+        outbounds: Array.isArray(source.outbounds) ? source.outbounds : [],
+        aclRules: Array.isArray(source.aclRules) ? source.aclRules : [],
+        active: source.active !== false,
+        rankingCoefficient: source.rankingCoefficient,
+        settings: source.settings,
+        customConfig: source.customConfig || '',
+        useCustomConfig: !!source.useCustomConfig,
+        useTlsFiles: !!source.useTlsFiles,
+        initScript: source.initScript || '',
+        cascadeRole: source.cascadeRole || 'standalone',
+        maxOnlineUsers: source.maxOnlineUsers || 0,
+    };
+}
+
 module.exports = {
     backupUpload,
     buildSshKeyFilename,
@@ -1249,4 +1325,5 @@ module.exports = {
     renderPanelTotpPage,
     redirectSettingsSecurity,
     SETTINGS_TOTP_ACTIONS,
+    buildClonedNodePrefill,
 };
