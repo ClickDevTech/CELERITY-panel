@@ -451,6 +451,9 @@ const i18n = {
     resettingStatus: <%- JSON.stringify(t("nodes.resettingStatus")) %>,
     statusReset: <%- JSON.stringify(t("nodes.statusReset")) %>,
     autoSetup: <%- JSON.stringify(t("nodes.autoSetup")) %>,
+    restart: <%- JSON.stringify(t("nodes.restart")) %>,
+    restartSuccess: <%- JSON.stringify(t("nodes.restartSuccess")) %>,
+    restartFailed: <%- JSON.stringify(t("nodes.restartFailed")) %>,
     error: <%- JSON.stringify(t("common.error")) %>,
     confirmDeployCascade: <%- JSON.stringify(t("nodes.confirmDeployCascade")) %>,
     confirmUndeployCascade: <%- JSON.stringify(t("nodes.confirmUndeployCascade")) %>,
@@ -1331,6 +1334,35 @@ async function resetStatus() {
         document.getElementById('setupResult').innerHTML = '<div class="alert alert-error">' + i18n.error + ': ' + err.message + '</div>';
     }
 }
+
+<% if (node?._id && node.type !== 'virtual') { %>
+async function restartNodeService(btn) {
+    const target = btn || document.getElementById('btnRestart');
+    const original = target ? target.innerHTML : '';
+    if (target) {
+        target.disabled = true;
+        target.innerHTML = '<span class="action-icon"><i class="ti ti-loader-2"></i></span><span>' + i18n.restart + '</span>';
+    }
+    const result = document.getElementById('setupResult');
+    if (result) result.innerHTML = '<div class="alert">' + i18n.restart + '…</div>';
+    try {
+        const res = await fetch('/panel/nodes/<%= node._id %>/restart', { method: 'POST', credentials: 'include' });
+        const data = await res.json();
+        if (data.success) {
+            if (result) result.innerHTML = '<div class="alert alert-success"><i class="ti ti-check"></i> ' + i18n.restartSuccess + '</div>';
+        } else {
+            if (result) result.innerHTML = '<div class="alert alert-error"><i class="ti ti-x"></i> ' + i18n.restartFailed + ': ' + (data.error || i18n.error) + '</div>';
+        }
+    } catch (err) {
+        if (result) result.innerHTML = '<div class="alert alert-error"><i class="ti ti-x"></i> ' + i18n.restartFailed + ': ' + err.message + '</div>';
+    } finally {
+        if (target) {
+            target.disabled = false;
+            target.innerHTML = original || ('<span class="action-icon"><i class="ti ti-refresh"></i></span><span>' + i18n.restart + '</span>');
+        }
+    }
+}
+<% } %>
 
 <% } %>
 

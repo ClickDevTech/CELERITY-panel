@@ -1,0 +1,41 @@
+<%
+    const toggleClass = typeof moreToggleClass === 'string' ? moreToggleClass : 'btn-icon';
+    const hasSsh = !!(node.ssh?.password || node.ssh?.privateKey);
+    const canRestart = node.type !== 'virtual' && (hasSsh || (node.type === 'xray' && node.xray?.agentToken));
+    const showRestart = node.type !== 'virtual';
+    const showPair = node.type !== 'virtual' && (ipProtocolCount || {})[node.ip] < 2;
+%>
+<div class="node-more">
+    <button type="button"
+            class="<%= toggleClass %> node-more-toggle"
+            data-node-more-toggle
+            title="<%= t('nodes.moreActions') %>"
+            aria-label="<%= t('nodes.moreActions') %>"
+            aria-haspopup="menu"
+            aria-expanded="false">
+        <i class="ti ti-dots-vertical"></i>
+    </button>
+    <div class="node-more-menu" role="menu" hidden>
+        <% if (showRestart) { %>
+        <button type="button"
+                class="node-more-item"
+                role="menuitem"
+                onclick="restartNode('<%= node._id %>', event)"
+                <%= canRestart ? '' : 'disabled' %>
+                title="<%= t('nodes.restartHint') %>">
+            <i class="ti ti-refresh"></i>
+            <span><%= t('nodes.restart') %></span>
+        </button>
+        <% } %>
+        <a class="node-more-item" role="menuitem" href="/panel/nodes/add?cloneConfig=<%= node._id %>">
+            <i class="ti ti-copy"></i>
+            <span><%= t('nodes.cloneNode') %></span>
+        </a>
+        <% if (showPair) { %>
+        <a class="node-more-item" role="menuitem" href="/panel/nodes/add?cloneFrom=<%= node._id %>">
+            <i class="ti ti-plug-connected"></i>
+            <span><%= t('nodes.addPairedProtocol') %></span>
+        </a>
+        <% } %>
+    </div>
+</div>

@@ -117,6 +117,52 @@
                 </div>
             </div>
 
+            <%# ACL is a first-class create-form section: operators should see
+                the default reject rules without opening Advanced. %>
+            <div class="form-section hysteria-only" id="hysteriaAclSection" style="<%= node?.type === 'xray' ? 'display:none' : '' %>">
+                <h3><%= t('nodes.sectionAcl') %></h3>
+                <small class="section-hint"><%- renderDocsIcon('acl') %><%= t('nodes.sectionAclHint') %></small>
+                <label class="checkbox-label">
+                    <input type="hidden" name="acl.enabled" value="0">
+                    <input type="checkbox" id="aclEnabled" name="acl.enabled" <%= aclSectionEnabled ? 'checked' : '' %> onchange="toggleAclFields()">
+                    <span class="checkbox-text"><%= t('nodes.enableAcl') %></span>
+                </label>
+                <div class="optional-fields-wrap" id="aclFieldsWrap" style="<%= aclSectionEnabled ? '' : 'display:none' %>">
+                    <div class="form-row">
+                        <div class="form-group" id="aclTypeGroup" style="<%= aclSectionEnabled && node?.acl?.type === 'file' ? '' : 'grid-column: 1 / -1;' %>">
+                            <label for="aclType"><%= t('nodes.aclType') %></label>
+                            <select id="aclType" name="acl.type" onchange="toggleAclTypeFields()">
+                                <option value="inline" <%= (node?.acl?.type || 'inline') === 'inline' ? 'selected' : '' %>>inline</option>
+                                <option value="file" <%= node?.acl?.type === 'file' ? 'selected' : '' %>>file</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="aclFileGroup" style="<%= aclSectionEnabled && node?.acl?.type === 'file' ? '' : 'display:none' %>">
+                            <label for="aclFile"><%= t('nodes.aclFile') %></label>
+                            <input type="text" id="aclFile" name="acl.file" value="<%= node?.acl?.file || '' %>" placeholder="/etc/hysteria/acl.txt">
+                        </div>
+                    </div>
+                    <div class="form-group" id="aclInlineRulesGroup" style="<%= aclSectionEnabled && (node?.acl?.type || 'inline') === 'inline' ? '' : 'display:none' %>">
+                        <label for="aclInlineRules"><%= t('nodes.aclInlineRules') %></label>
+                        <textarea id="aclInlineRules" name="acl.inlineRules" rows="8" class="code-textarea" placeholder="reject(geoip:cn)&#10;reject(geoip:private)"><%= aclInlineRulesValue %></textarea>
+                        <small><%= t('nodes.aclInlineRulesHint') %></small>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="aclGeoip"><%= t('nodes.aclGeoip') %></label>
+                            <input type="text" id="aclGeoip" name="acl.geoip" value="<%= node?.acl?.geoip || '' %>" placeholder="/etc/hysteria/geoip.dat">
+                        </div>
+                        <div class="form-group">
+                            <label for="aclGeosite"><%= t('nodes.aclGeosite') %></label>
+                            <input type="text" id="aclGeosite" name="acl.geosite" value="<%= node?.acl?.geosite || '' %>" placeholder="/etc/hysteria/geosite.dat">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="aclGeoUpdateInterval"><%= t('nodes.aclGeoUpdateInterval') %></label>
+                        <input type="text" id="aclGeoUpdateInterval" name="acl.geoUpdateInterval" value="<%= node?.acl?.geoUpdateInterval || '' %>" placeholder="168h">
+                    </div>
+                </div>
+            </div>
+
             <%# ========== Advanced optional sections (collapsible) ========== %>
             <details class="hysteria-only node-advanced-details" id="hysteriaAdvancedDetails"
                      style="<%= node?.type === 'xray' ? 'display:none' : '' %>">
@@ -166,51 +212,6 @@
                             <label for="sniffUdpPorts"><%= t('nodes.sniffUdpPorts') %></label>
                             <input type="text" id="sniffUdpPorts" name="sniff.udpPorts" value="<%= node?.sniff?.udpPorts || '443,80,53' %>" placeholder="443,80,53">
                             <small><%= t('nodes.sniffPortsHint') %></small>
-                        </div>
-                    </div>
-                </div>
-
-                <%# ========== ACL Settings ========== %>
-                <div class="form-section" id="hysteriaAclSection">
-                    <h3><%= t('nodes.sectionAcl') %></h3>
-                    <small class="section-hint"><%- renderDocsIcon('acl') %><%= t('nodes.sectionAclHint') %></small>
-                    <label class="checkbox-label">
-                        <input type="hidden" name="acl.enabled" value="0">
-                        <input type="checkbox" id="aclEnabled" name="acl.enabled" <%= aclSectionEnabled ? 'checked' : '' %> onchange="toggleAclFields()">
-                        <span class="checkbox-text"><%= t('nodes.enableAcl') %></span>
-                    </label>
-                    <div class="optional-fields-wrap" id="aclFieldsWrap" style="<%= aclSectionEnabled ? '' : 'display:none' %>">
-                        <div class="form-row">
-                            <div class="form-group" id="aclTypeGroup" style="<%= aclSectionEnabled && node?.acl?.type === 'file' ? '' : 'grid-column: 1 / -1;' %>">
-                                <label for="aclType"><%= t('nodes.aclType') %></label>
-                                <select id="aclType" name="acl.type" onchange="toggleAclTypeFields()">
-                                    <option value="inline" <%= (node?.acl?.type || 'inline') === 'inline' ? 'selected' : '' %>>inline</option>
-                                    <option value="file" <%= node?.acl?.type === 'file' ? 'selected' : '' %>>file</option>
-                                </select>
-                            </div>
-                            <div class="form-group" id="aclFileGroup" style="<%= aclSectionEnabled && node?.acl?.type === 'file' ? '' : 'display:none' %>">
-                                <label for="aclFile"><%= t('nodes.aclFile') %></label>
-                                <input type="text" id="aclFile" name="acl.file" value="<%= node?.acl?.file || '' %>" placeholder="/etc/hysteria/acl.txt">
-                            </div>
-                        </div>
-                        <div class="form-group" id="aclInlineRulesGroup" style="<%= aclSectionEnabled && (node?.acl?.type || 'inline') === 'inline' ? '' : 'display:none' %>">
-                            <label for="aclInlineRules"><%= t('nodes.aclInlineRules') %></label>
-                            <textarea id="aclInlineRules" name="acl.inlineRules" rows="8" class="code-textarea" placeholder="reject(geoip:cn)&#10;reject(geoip:private)"><%= aclInlineRulesValue %></textarea>
-                            <small><%= t('nodes.aclInlineRulesHint') %></small>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="aclGeoip"><%= t('nodes.aclGeoip') %></label>
-                                <input type="text" id="aclGeoip" name="acl.geoip" value="<%= node?.acl?.geoip || '' %>" placeholder="/etc/hysteria/geoip.dat">
-                            </div>
-                            <div class="form-group">
-                                <label for="aclGeosite"><%= t('nodes.aclGeosite') %></label>
-                                <input type="text" id="aclGeosite" name="acl.geosite" value="<%= node?.acl?.geosite || '' %>" placeholder="/etc/hysteria/geosite.dat">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="aclGeoUpdateInterval"><%= t('nodes.aclGeoUpdateInterval') %></label>
-                            <input type="text" id="aclGeoUpdateInterval" name="acl.geoUpdateInterval" value="<%= node?.acl?.geoUpdateInterval || '' %>" placeholder="168h">
                         </div>
                     </div>
                 </div>

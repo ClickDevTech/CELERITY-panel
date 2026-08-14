@@ -1234,6 +1234,73 @@ html {
 .node-actions {
     display: flex;
     gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.td-actions {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.node-more {
+    position: relative;
+}
+
+.node-more-toggle[aria-expanded="true"] {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.node-more-menu {
+    position: fixed;
+    min-width: 240px;
+    padding: 6px;
+    background: rgba(20, 20, 23, 0.94);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--glass-shadow-lg);
+    z-index: 80;
+}
+
+.node-more-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: inherit;
+    line-height: 1.3;
+    border-radius: 8px;
+    text-decoration: none;
+    cursor: pointer;
+    text-align: left;
+}
+
+.node-more-item i {
+    font-size: 16px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.node-more-item:hover:not(:disabled) {
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--text-primary);
+}
+
+.node-more-item:hover:not(:disabled) i {
+    color: var(--accent);
+}
+
+.node-more-item:disabled {
+    opacity: 0.38;
+    cursor: default;
 }
 
 /* Quick Actions */
@@ -2927,21 +2994,29 @@ html {
         font-weight: 500;
     }
     
-    /* Equal-width icon buttons (restart / edit / delete). Each child
-       takes the same flex share so the row stays symmetric. */
+    /* Equal-width icon buttons (terminal / edit / more / delete). */
     .mobile-node-actions {
         display: flex;
         gap: 8px;
         padding-top: 12px;
         border-top: 1px solid var(--border);
     }
-    .mobile-node-actions > .btn {
+    .mobile-node-actions > .btn,
+    .mobile-node-actions > .node-more {
         flex: 1 1 0;
         min-width: 0;
+    }
+    .mobile-node-actions > .btn {
         padding: 10px 0;
         gap: 0;
     }
-    .mobile-node-actions > .btn i {
+    .mobile-node-actions > .node-more > .btn {
+        width: 100%;
+        padding: 10px 0;
+        gap: 0;
+    }
+    .mobile-node-actions > .btn i,
+    .mobile-node-actions > .node-more > .btn i {
         font-size: 18px;
     }
     

@@ -305,6 +305,7 @@ router.get('/nodes/add', async (req, res) => {
             panelDomain: config.PANEL_DOMAIN || '',
             panelAcmeEmail: config.ACME_EMAIL || '',
             lastInitScript: settings?.lastInitScript || '',
+            canAddPairedProtocol: false,
         });
     } catch (error) {
         logger.error('[Panel] GET /nodes/add error:', error.message);
@@ -635,6 +636,12 @@ router.get('/nodes/:id', async (req, res) => {
         const renderNode = (typeof node.toObject === 'function') ? node.toObject() : { ...node };
         renderNode.xray = sanitizeXrayForRender(node.xray);
 
+        let canAddPairedProtocol = false;
+        if (node.type !== 'virtual' && node.ip) {
+            const sibling = await HyNode.exists({ _id: { $ne: node._id }, ip: node.ip });
+            canAddPairedProtocol = !sibling;
+        }
+
         render(res, 'node-form', {
             title: `${res.locals.t('nodes.editNode')}: ${node.name}`,
             page: 'nodes',
@@ -647,6 +654,7 @@ router.get('/nodes/:id', async (req, res) => {
             panelDomain: config.PANEL_DOMAIN || '',
             panelAcmeEmail: config.ACME_EMAIL || '',
             lastInitScript: settings?.lastInitScript || '',
+            canAddPairedProtocol,
         });
     } catch (error) {
         res.status(500).send('Error: ' + error.message);

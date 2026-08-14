@@ -257,17 +257,13 @@ function nodeMetaFor(node) {
                                 </span>
                             <% } %>
                         </td>
-                        <td>
+                        <td class="td-actions">
                             <div class="node-actions">
                                 <% if (node.type !== 'virtual') { %>
-                                    <button class="btn-icon" onclick="restartNode('<%= node._id %>')" title="<%= t('nodes.restart') %>" <%= !node.ssh?.password ? 'disabled' : '' %>><i class="ti ti-refresh"></i></button>
-                                    <a href="/panel/nodes/<%= node._id %>/terminal" class="btn-icon" title="<%= t('nodes.terminal') %>" <%= !node.ssh?.password ? 'style="pointer-events:none;opacity:0.5"' : '' %>><i class="ti ti-terminal-2"></i></a>
+                                    <a href="/panel/nodes/<%= node._id %>/terminal" class="btn-icon" title="<%= t('nodes.terminal') %>" <%= !node.ssh?.password && !node.ssh?.privateKey ? 'style="pointer-events:none;opacity:0.5"' : '' %>><i class="ti ti-terminal-2"></i></a>
                                 <% } %>
                                 <a href="/panel/nodes/<%= node._id %>" class="btn-icon" title="<%= t('common.edit') %>"><i class="ti ti-pencil"></i></a>
-                                <a href="/panel/nodes/add?cloneConfig=<%= node._id %>" class="btn-icon" title="<%= t('nodes.cloneNode') %>"><i class="ti ti-copy"></i></a>
-                                <% if (node.type !== 'virtual' && (ipProtocolCount || {})[node.ip] < 2) { %>
-                                <a href="/panel/nodes/add?cloneFrom=<%= node._id %>" class="btn-icon" title="<%= t('nodes.addPairedProtocol') %>"><i class="ti ti-plug-connected"></i></a>
-                                <% } %>
+                                <%- include('partials/nodes/more-menu') %>
                                 <button class="btn-icon btn-icon-danger" onclick="deleteNode('<%= node._id %>')" title="<%= t('common.delete') %>"><i class="ti ti-trash"></i></button>
                             </div>
                         </td>
@@ -371,14 +367,10 @@ function nodeMetaFor(node) {
                     
                     <div class="mobile-node-actions">
                         <% if (node.type !== 'virtual') { %>
-                        <button class="btn btn-sm" onclick="restartNode('<%= node._id %>')" <%= !node.ssh?.password ? 'disabled' : '' %> title="<%= t('nodes.restart') %>" aria-label="<%= t('nodes.restart') %>"><i class="ti ti-refresh"></i></button>
-                        <a href="/panel/nodes/<%= node._id %>/terminal" class="btn btn-sm" title="<%= t('nodes.terminal') %>" aria-label="<%= t('nodes.terminal') %>" <%= !node.ssh?.password ? 'style="pointer-events:none;opacity:0.5"' : '' %>><i class="ti ti-terminal-2"></i></a>
+                        <a href="/panel/nodes/<%= node._id %>/terminal" class="btn btn-sm" title="<%= t('nodes.terminal') %>" aria-label="<%= t('nodes.terminal') %>" <%= !node.ssh?.password && !node.ssh?.privateKey ? 'style="pointer-events:none;opacity:0.5"' : '' %>><i class="ti ti-terminal-2"></i></a>
                         <% } %>
                         <a href="/panel/nodes/<%= node._id %>" class="btn btn-sm" title="<%= t('common.edit') %>" aria-label="<%= t('common.edit') %>"><i class="ti ti-pencil"></i></a>
-                        <a href="/panel/nodes/add?cloneConfig=<%= node._id %>" class="btn btn-sm" title="<%= t('nodes.cloneNode') %>" aria-label="<%= t('nodes.cloneNode') %>"><i class="ti ti-copy"></i></a>
-                        <% if (node.type !== 'virtual' && (ipProtocolCount || {})[node.ip] < 2) { %>
-                        <a href="/panel/nodes/add?cloneFrom=<%= node._id %>" class="btn btn-sm" title="<%= t('nodes.addPairedProtocol') %>" aria-label="<%= t('nodes.addPairedProtocol') %>"><i class="ti ti-plug-connected"></i></a>
-                        <% } %>
+                        <%- include('partials/nodes/more-menu', { moreToggleClass: 'btn btn-sm' }) %>
                         <button class="btn btn-sm btn-danger" onclick="deleteNode('<%= node._id %>')" title="<%= t('common.delete') %>" aria-label="<%= t('common.delete') %>"><i class="ti ti-trash"></i></button>
                     </div>
                 </div>
@@ -888,6 +880,7 @@ function nodeMetaFor(node) {
 const i18n = {
     confirmDelete: <%- JSON.stringify(t("nodes.confirmDelete")) %>,
     deleteError: <%- JSON.stringify(t("nodes.deleteError")) %>,
+    restart: <%- JSON.stringify(t("nodes.restart")) %>,
     restartSuccess: <%- JSON.stringify(t("nodes.restartSuccess")) %>,
     restartFailed: <%- JSON.stringify(t("nodes.restartFailed")) %>,
     total: <%- JSON.stringify(t("common.total")) %>,
@@ -1069,37 +1062,98 @@ async function toggleNodeActive(nodeId, active) {
     }
 }
 
-async function restartNode(id) {
-    const btn = event.target;
-    const originalText = btn.textContent;
-    btn.innerHTML = '<i class="ti ti-loader-2"></i>';
-    btn.disabled = true;
-    
+function closeAllNodeMore() {
+    document.querySelectorAll('.node-more.is-open').forEach((wrap) => {
+        wrap.classList.remove('is-open');
+        const toggle = wrap.querySelector('[data-node-more-toggle]');
+        const menu = wrap.querySelector('.node-more-menu');
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+        if (menu) {
+            menu.hidden = true;
+            menu.style.top = '';
+            menu.style.bottom = '';
+            menu.style.left = '';
+        }
+    });
+}
+
+function placeNodeMoreMenu(toggle, menu) {
+    const rect = toggle.getBoundingClientRect();
+    const menuWidth = 240;
+    const left = Math.min(Math.max(8, rect.right - menuWidth), window.innerWidth - menuWidth - 8);
+    menu.style.left = left + 'px';
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow < 200 && rect.top > spaceBelow) {
+        menu.style.top = 'auto';
+        menu.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+    } else {
+        menu.style.bottom = 'auto';
+        menu.style.top = (rect.bottom + 6) + 'px';
+    }
+}
+
+document.addEventListener('click', (event) => {
+    const toggle = event.target.closest('[data-node-more-toggle]');
+    if (toggle) {
+        event.preventDefault();
+        event.stopPropagation();
+        const wrap = toggle.closest('.node-more');
+        const menu = wrap && wrap.querySelector('.node-more-menu');
+        const alreadyOpen = wrap && wrap.classList.contains('is-open');
+        closeAllNodeMore();
+        if (!alreadyOpen && wrap && menu) {
+            wrap.classList.add('is-open');
+            toggle.setAttribute('aria-expanded', 'true');
+            menu.hidden = false;
+            placeNodeMoreMenu(toggle, menu);
+        }
+        return;
+    }
+    if (!event.target.closest('.node-more-menu')) closeAllNodeMore();
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeAllNodeMore();
+});
+
+window.addEventListener('resize', closeAllNodeMore);
+window.addEventListener('scroll', closeAllNodeMore, true);
+
+async function restartNode(id, ev) {
+    const btn = (ev && ev.currentTarget) || (typeof event !== 'undefined' ? event.currentTarget : null);
+    const originalHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.innerHTML = '<i class="ti ti-loader-2"></i><span>' + i18n.restart + '</span>';
+        btn.disabled = true;
+    }
+
     try {
         const res = await fetch(`/panel/nodes/${id}/restart`, {
             method: 'POST',
             credentials: 'include'
         });
         const data = await res.json();
-        
+
         if (data.success) {
             showToast(i18n.restartSuccess);
-            // Update status badge
-            const row = btn.closest('tr') || btn.closest('.mobile-node-card');
-            const badge = row.querySelector('.badge');
+            const row = btn && (btn.closest('tr') || btn.closest('.mobile-node-card'));
+            const badge = row && row.querySelector('.badge');
             if (badge) {
                 badge.className = 'badge badge-success';
                 badge.textContent = 'online';
             }
+            closeAllNodeMore();
         } else {
             showToast(i18n.restartFailed + ': ' + (data.error || ''), 'error');
         }
     } catch (e) {
         showToast(i18n.restartFailed, 'error');
     }
-    
-    btn.textContent = originalText;
-    btn.disabled = false;
+
+    if (btn) {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
 }
 
 async function deleteNode(id) {

@@ -164,24 +164,43 @@
 </div>
 <% } %>
 
-<%# ========== Management (edit only — hidden for virtual: nothing to setup/restart/terminal-into) ========== %>
-<% if (node?._id && node.type !== 'virtual') { %>
+<%# ========== Management (edit only) ========== %>
+<% if (node?._id) { %>
 <div class="card mt-3">
     <div class="card-header">
         <h2><%= t('nodes.management') %></h2>
     </div>
     <div class="card-body">
-        <% if (!node.ssh?.password && !node.ssh?.privateKey) { %>
+        <% if (node.type !== 'virtual' && !node.ssh?.password && !node.ssh?.privateKey) { %>
         <div class="ssh-warning" id="sshWarning">
             <span class="ssh-warning-icon"><i class="ti ti-alert-triangle"></i></span>
             <span><%= t('nodes.sshNotConfigured') %></span>
         </div>
         <% } %>
         <div class="actions-grid">
+            <% if (node.type !== 'virtual') { %>
             <button class="action-btn" onclick="setupNode()" id="btnSetup" <%= !node.ssh?.password && !node.ssh?.privateKey ? 'disabled title="Configure SSH first"' : '' %>>
                 <span class="action-icon"><i class="ti ti-settings"></i></span>
                 <span><%= t('nodes.autoSetup') %></span>
             </button>
+            <button class="action-btn" onclick="restartNodeService(this)" id="btnRestart"
+                    title="<%= t('nodes.restartHint') %>"
+                    <%= !(node.ssh?.password || node.ssh?.privateKey || (node.type === 'xray' && node.xray?.agentToken)) ? 'disabled' : '' %>>
+                <span class="action-icon"><i class="ti ti-refresh"></i></span>
+                <span><%= t('nodes.restart') %></span>
+            </button>
+            <% } %>
+            <a href="/panel/nodes/add?cloneConfig=<%= node._id %>" class="action-btn" style="text-decoration:none;text-align:center;" title="<%= t('nodes.cloneNodeHint') %>">
+                <span class="action-icon"><i class="ti ti-copy"></i></span>
+                <span><%= t('nodes.cloneNode') %></span>
+            </a>
+            <% if (typeof canAddPairedProtocol !== 'undefined' && canAddPairedProtocol) { %>
+            <a href="/panel/nodes/add?cloneFrom=<%= node._id %>" class="action-btn" style="text-decoration:none;text-align:center;" title="<%= t('nodes.addPairedProtocol') %>">
+                <span class="action-icon"><i class="ti ti-plug-connected"></i></span>
+                <span><%= t('nodes.addPairedProtocol') %></span>
+            </a>
+            <% } %>
+            <% if (node.type !== 'virtual') { %>
             <% if (outboundsAclLocked) { %>
             <span class="action-btn is-disabled" style="text-decoration:none;text-align:center;" title="<%= t('nodes.outboundsAclLockedDisabled') %>" aria-disabled="true">
                 <span class="action-icon"><i class="ti ti-arrow-up-right"></i></span>
@@ -231,6 +250,7 @@
                 <span class="action-icon"><i class="ti ti-refresh"></i></span>
                 <span><%= t('nodes.resetStatus') %></span>
             </button>
+            <% } %>
         </div>
         <% if (outboundsAclLocked) { %>
         <div class="alert alert-warning mt-2">
