@@ -272,8 +272,13 @@ router.get('/nodes/add', async (req, res) => {
             }
         } else if (req.query.cloneConfig) {
             try {
+                // Do not exclude `xray.accessLogs` here: the schema already
+                // marks `accessLogs.ingestTokenEncrypted` as select:false, and
+                // projecting both the parent and a child as 0 is a Mongo
+                // path collision — the query throws, the catch swallowed it,
+                // and the create form opened empty.
                 const source = await HyNode.findById(req.query.cloneConfig)
-                    .select('-ssh.password -ssh.privateKey -statsSecret -xray.agentToken -xray.manualKey -xray.accessLogs')
+                    .select('-ssh.password -ssh.privateKey -statsSecret -xray.agentToken')
                     .populate('groups', '_id name color')
                     .lean();
                 prefillNode = buildClonedNodePrefill(source);
