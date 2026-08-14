@@ -263,7 +263,7 @@ function nodeMetaFor(node) {
                                     <a href="/panel/nodes/<%= node._id %>/terminal" class="btn-icon" title="<%= t('nodes.terminal') %>" <%= !node.ssh?.password && !node.ssh?.privateKey ? 'style="pointer-events:none;opacity:0.5"' : '' %>><i class="ti ti-terminal-2"></i></a>
                                 <% } %>
                                 <a href="/panel/nodes/<%= node._id %>" class="btn-icon" title="<%= t('common.edit') %>"><i class="ti ti-pencil"></i></a>
-                                <%- include('partials/nodes/more-menu') %>
+                                <%- include('partials/nodes/more-menu', { node: node }) %>
                                 <button class="btn-icon btn-icon-danger" onclick="deleteNode('<%= node._id %>')" title="<%= t('common.delete') %>"><i class="ti ti-trash"></i></button>
                             </div>
                         </td>
@@ -370,7 +370,7 @@ function nodeMetaFor(node) {
                         <a href="/panel/nodes/<%= node._id %>/terminal" class="btn btn-sm" title="<%= t('nodes.terminal') %>" aria-label="<%= t('nodes.terminal') %>" <%= !node.ssh?.password && !node.ssh?.privateKey ? 'style="pointer-events:none;opacity:0.5"' : '' %>><i class="ti ti-terminal-2"></i></a>
                         <% } %>
                         <a href="/panel/nodes/<%= node._id %>" class="btn btn-sm" title="<%= t('common.edit') %>" aria-label="<%= t('common.edit') %>"><i class="ti ti-pencil"></i></a>
-                        <%- include('partials/nodes/more-menu', { moreToggleClass: 'btn btn-sm' }) %>
+                        <%- include('partials/nodes/more-menu', { node: node, moreToggleClass: 'btn btn-sm' }) %>
                         <button class="btn btn-sm btn-danger" onclick="deleteNode('<%= node._id %>')" title="<%= t('common.delete') %>" aria-label="<%= t('common.delete') %>"><i class="ti ti-trash"></i></button>
                     </div>
                 </div>
