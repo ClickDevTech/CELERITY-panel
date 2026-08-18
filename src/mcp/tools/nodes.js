@@ -61,6 +61,14 @@ const xrayInboundCommonZ = {
     xhttpPath: z.string().optional(),
     xhttpHost: z.string().optional(),
     xhttpMode: z.enum(['auto', 'packet-up', 'stream-up', 'stream-one']).optional(),
+    // Ranges use the Xray "min-max" string form (a bare number means min==max);
+    // empty keeps the core default. Values failing that shape are stored empty.
+    xhttpXPaddingBytes: z.string().optional().describe('XHTTP padding length range, e.g. "100-1000". Default 100-1000'),
+    xhttpScMaxEachPostBytes: z.string().optional().describe('packet-up upload split threshold in bytes, e.g. "1000000"'),
+    xhttpNoGrpcHeader: z.boolean().optional().describe('Omit the gRPC content-type on stream-up/stream-one requests (client-side only)'),
+    xhttpXmuxMaxConcurrency: z.string().optional().describe('XMUX streams per connection, e.g. "16-32" (client-side only)'),
+    xhttpXmuxHMaxRequestTimes: z.string().optional().describe('XMUX requests per connection, e.g. "600-900" (client-side only)'),
+    xhttpXmuxHMaxReusableSecs: z.string().optional().describe('XMUX connection lifetime in seconds, e.g. "1800-3000" (client-side only)'),
     fallbackDest: z.string().optional().describe('VLESS fallbacks[].dest — emitted only on tcp+tls'),
 };
 
@@ -110,6 +118,9 @@ const manageNodeSchema = z.object({
             sourceGroup: z.string().optional().describe('ServerGroup _id — required when selectMode==="group"'),
             strategy: z.enum(['random', 'roundRobin', 'leastPing', 'leastLoad']).optional().describe('Xray balancer strategy. leastPing/leastLoad require observatory'),
             fallbackToFirst: z.boolean().optional().describe('Use the first source as fallback when all observed peers are down (Xray fallbackTag)'),
+            tolerance: z.number().int().min(0).max(5000).optional().describe('Latency-test clients (sing-box urltest, Mihomo url-test): ms another source must beat the current pick by before switching. Ignored by Xray'),
+            idleTimeout: z.string().optional().describe('sing-box urltest only: stop probing after this long without traffic, e.g. "30m". Empty keeps the core default'),
+            interruptExistConnections: z.boolean().optional().describe('sing-box urltest only: drop open connections when the pick changes'),
             observatory: z.object({
                 destination: z.string().optional().describe('Probe URL returning HTTP 204 (default http://www.gstatic.com/generate_204)'),
                 connectivity: z.string().optional().describe('Local connectivity check URL — only probed when destination fails'),
@@ -330,6 +341,11 @@ async function manageNode(args, emit) {
                 if (existing) return { error: `A ${nodeType} node with this IP already exists`, code: 409 };
             }
 
+            const labelConflict = await HyNode.findLabelConflict(data.name, data.flag);
+            if (labelConflict) {
+                return { error: 'A node with this name and flag already exists — subscription tags must be unique', code: 409 };
+            }
+
             const statsSecret = cryptoService.generateNodeSecret();
 
             // Resolve SSH: virtual has no remote host; for hysteria/xray either use
@@ -372,6 +388,11 @@ async function manageNode(args, emit) {
                     sourceGroup: v.sourceGroup || null,
                     strategy: v.strategy || 'leastLoad',
                     fallbackToFirst: v.fallbackToFirst !== false,
+                    tolerance: Number.isFinite(v.tolerance)
+                        ? Math.min(Math.max(v.tolerance, 0), 5000)
+                        : 50,
+                    idleTimeout: (v.idleTimeout || '').trim(),
+                    interruptExistConnections: v.interruptExistConnections !== false,
                     observatory: {
                         destination: (v.observatory?.destination || '').trim() || 'http://www.gstatic.com/generate_204',
                         connectivity: (v.observatory?.connectivity || '').trim(),
@@ -439,8 +460,17 @@ async function manageNode(args, emit) {
 
             // findByIdAndUpdate skips pre('validate') hooks, so re-implement
             // type-aware invariants here. Mirror the behaviour of routes/nodes.js PUT.
-            const existing = await HyNode.findById(id).select('type ip virtual').lean();
+            const existing = await HyNode.findById(id).select('type ip virtual name flag').lean();
             if (!existing) return { error: `Node '${id}' not found`, code: 404 };
+
+            // Renames only — pre-existing duplicates stay editable (see panel route).
+            if (updates.name !== undefined
+                && String(updates.name).trim() !== String(existing.name || '').trim()) {
+                const labelConflict = await HyNode.findLabelConflict(updates.name, existing.flag, id);
+                if (labelConflict) {
+                    return { error: 'A node with this name and flag already exists — subscription tags must be unique', code: 409 };
+                }
+            }
 
             const nextType = updates.type || existing.type;
             const nextVirtual = updates.virtual !== undefined ? updates.virtual : existing.virtual;

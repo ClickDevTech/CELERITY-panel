@@ -145,6 +145,16 @@ const xrayExtraInboundSchema = new mongoose.Schema({
     xhttpPath: { type: String, default: '/' },
     xhttpHost: { type: String, default: '' },
     xhttpMode: { type: String, enum: ['auto', 'packet-up', 'stream-up', 'stream-one'], default: 'auto' },
+    // XHTTP tuning. Stored core-neutral: ranges as the Xray-style "min-max"
+    // string (a bare number means min==max), empty = let the core default.
+    // Generators map them to camelCase `extra` for Xray and snake_case for
+    // sing-box forks that implement the transport.
+    xhttpXPaddingBytes: { type: String, default: '' },
+    xhttpScMaxEachPostBytes: { type: String, default: '' },
+    xhttpNoGrpcHeader: { type: Boolean, default: false },
+    xhttpXmuxMaxConcurrency: { type: String, default: '' },
+    xhttpXmuxHMaxRequestTimes: { type: String, default: '' },
+    xhttpXmuxHMaxReusableSecs: { type: String, default: '' },
 
     // VLESS fallbacks[].dest — emitted only on tcp+tls; empty = no fallback.
     fallbackDest: { type: String, default: '', trim: true, maxlength: 253 },
@@ -186,6 +196,13 @@ const xrayConfigSchema = new mongoose.Schema({
     xhttpPath: { type: String, default: '/' },
     xhttpHost: { type: String, default: '' },
     xhttpMode: { type: String, enum: ['auto', 'packet-up', 'stream-up', 'stream-one'], default: 'auto' },
+    // See xrayExtraInboundSchema above for the storage format of these.
+    xhttpXPaddingBytes: { type: String, default: '' },
+    xhttpScMaxEachPostBytes: { type: String, default: '' },
+    xhttpNoGrpcHeader: { type: Boolean, default: false },
+    xhttpXmuxMaxConcurrency: { type: String, default: '' },
+    xhttpXmuxHMaxRequestTimes: { type: String, default: '' },
+    xhttpXmuxHMaxReusableSecs: { type: String, default: '' },
 
     // VLESS fallbacks[].dest — emitted only on tcp+tls; empty = no fallback.
     fallbackDest: { type: String, default: '', trim: true, maxlength: 253 },
@@ -272,6 +289,18 @@ const virtualConfigSchema = new mongoose.Schema({
         timeout: { type: String, default: '5s' },
         sampling: { type: Number, default: 3 },
     },
+    // Clients that resolve the balancer with a latency test (sing-box urltest,
+    // Mihomo url-test) rather than Xray's observatory. Xray ignores these and
+    // keeps using `strategy` + `observatory` above.
+    // Milliseconds a candidate must beat the current pick by before switching —
+    // guards against flapping between nodes of near-equal latency.
+    tolerance: { type: Number, default: 50, min: 0, max: 5000 },
+    // Pause probing after this long without traffic (sing-box only). Empty keeps
+    // the core default.
+    idleTimeout: { type: String, default: '' },
+    // Drop established connections when the pick changes, so traffic actually
+    // moves to the new node instead of staying on the old one.
+    interruptExistConnections: { type: Boolean, default: true },
 }, { _id: false });
 
 const hyNodeSchema = new mongoose.Schema({
@@ -412,6 +441,28 @@ hyNodeSchema.pre('validate', function(next) {
     }
     return next();
 });
+
+/**
+ * Report a node that would produce the same subscription label as the candidate.
+ * Labels are built as `flag + name`, and in sing-box/Clash a repeated tag is a
+ * fatal parse error, so callers reject the save instead of shipping a config the
+ * client cannot load. Generators still deduplicate defensively for legacy data.
+ *
+ * @param {string} name
+ * @param {string} flag
+ * @param {string|null} excludeId  node being updated, skipped from the check
+ * @returns {Promise<Object|null>} conflicting node (lean) or null
+ */
+hyNodeSchema.statics.findLabelConflict = async function(name, flag, excludeId = null) {
+    const trimmedName = (name || '').trim();
+    if (!trimmedName) return null;
+    const query = {
+        name: trimmedName,
+        flag: (flag || '').trim(),
+    };
+    if (excludeId) query._id = { $ne: excludeId };
+    return this.findOne(query).select('name flag type').lean();
+};
 
 hyNodeSchema.virtual('serverAddress').get(function() {
     if (this.type === 'virtual') return '';

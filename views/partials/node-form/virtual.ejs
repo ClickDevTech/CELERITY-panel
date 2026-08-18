@@ -9,6 +9,9 @@ const obs = v.observatory || {};
 const sourceIds = (v.sources || []).map(s => String(s._id || s));
 const sourceGroupId = v.sourceGroup ? String(v.sourceGroup._id || v.sourceGroup) : '';
 const fallbackToFirst = v.fallbackToFirst !== false;
+const tolerance = Number.isFinite(v.tolerance) ? v.tolerance : 50;
+const idleTimeout = v.idleTimeout || '';
+const interruptExistConnections = v.interruptExistConnections !== false;
 const cands = candidateNodes || [];
 %>
 
@@ -138,6 +141,38 @@ const cands = candidateNodes || [];
                        value="<%= obs.sampling || 3 %>" min="1" max="100">
                 <small><%= t('nodes.virtualObsSamplingHint') %></small>
             </div>
+        </div>
+    </div>
+
+    <%# ===== Latency-test clients (sing-box / Mihomo) ===== %>
+    <div class="form-section" style="background:transparent;border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:10px;">
+        <h3 style="font-size:14px;margin-top:0;">
+            <i class="ti ti-activity"></i> <%= t('nodes.virtualUrltest') %>
+            <a class="docs-hint-link" href="https://sing-box.sagernet.org/configuration/outbound/urltest/" target="_blank" rel="noopener noreferrer" title="sing-box docs">ⓘ</a>
+        </h3>
+        <small class="section-hint"><%= t('nodes.virtualUrltestHint') %></small>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="virtualTolerance"><%= t('nodes.virtualTolerance') %></label>
+                <input type="number" id="virtualTolerance" name="virtual.tolerance"
+                       value="<%= tolerance %>" min="0" max="5000">
+                <small><%= t('nodes.virtualToleranceHint') %></small>
+            </div>
+            <div class="form-group">
+                <label for="virtualIdleTimeout"><%= t('nodes.virtualIdleTimeout') %></label>
+                <input type="text" id="virtualIdleTimeout" name="virtual.idleTimeout"
+                       value="<%= idleTimeout %>" placeholder="30m">
+                <small><%= t('nodes.virtualIdleTimeoutHint') %></small>
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-top:4px;">
+            <label class="checkbox-tag" style="display:inline-flex;align-items:center;gap:8px;">
+                <input type="checkbox" name="virtual.interruptExistConnections" <%= interruptExistConnections ? 'checked' : '' %>>
+                <span><%= t('nodes.virtualInterruptExisting') %></span>
+            </label>
+            <small style="display:block;margin-top:4px;"><%= t('nodes.virtualInterruptExistingHint') %></small>
         </div>
     </div>
 

@@ -784,6 +784,12 @@ docker system prune -a -f
 | `xhttpPath`         | String   | XHTTP путь                        |
 | `xhttpHost`         | String   | XHTTP host header                 |
 | `xhttpMode`         | String   | auto, packet-up, stream-up        |
+| `xhttpXPaddingBytes` | String  | Длина набивки XHTTP, `"мин-макс"` или число (пусто — 100-1000 по умолчанию). Передаётся клиентам в подписке; инбаунд принимает объединение с диапазоном по умолчанию, поэтому клиенты, которые его не читают, продолжают работать |
+| `xhttpScMaxEachPostBytes` | String | Порог разбиения загрузки в packet-up, байт (пусто — 1000000). Инбаунд принимает не меньше значения по умолчанию, поэтому меньшее значение действует только на клиентов, которые его прочитали |
+| `xhttpNoGrpcHeader` | Boolean  | Не отправлять gRPC content-type в stream-up/stream-one (только клиент) |
+| `xhttpXmuxMaxConcurrency` | String | XMUX: потоков на соединение, напр. `"16-32"` (только клиент) |
+| `xhttpXmuxHMaxRequestTimes` | String | XMUX: запросов на соединение, напр. `"600-900"` (только клиент) |
+| `xhttpXmuxHMaxReusableSecs` | String | XMUX: время жизни соединения в секундах, напр. `"1800-3000"` (только клиент) |
 | `apiPort`           | Number   | Порт gRPC API Xray (61000)        |
 | `inboundTag`        | String   | Тег inbound (vless-in)            |
 | `agentPort`         | Number   | Порт CC Agent (62080)             |

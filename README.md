@@ -749,6 +749,12 @@ disk usage in check.
 | `xhttpPath` | String | XHTTP path |
 | `xhttpHost` | String | XHTTP host header |
 | `xhttpMode` | String | auto, packet-up, stream-up |
+| `xhttpXPaddingBytes` | String | XHTTP padding length, `"min-max"` or a single number (empty = core default 100-1000). Published to clients in the subscription; the inbound accepts the union with the default range so clients that ignore it keep working |
+| `xhttpScMaxEachPostBytes` | String | packet-up upload split threshold in bytes (empty = 1000000). The inbound accepts at least the default, so a smaller value applies only to clients that read it |
+| `xhttpNoGrpcHeader` | Boolean | Omit the gRPC content-type on stream-up/stream-one (client-side only) |
+| `xhttpXmuxMaxConcurrency` | String | XMUX streams per connection, e.g. `"16-32"` (client-side only) |
+| `xhttpXmuxHMaxRequestTimes` | String | XMUX requests per connection, e.g. `"600-900"` (client-side only) |
+| `xhttpXmuxHMaxReusableSecs` | String | XMUX connection lifetime in seconds, e.g. `"1800-3000"` (client-side only) |
 | `apiPort` | Number | Xray gRPC API port (61000) |
 | `inboundTag` | String | Inbound tag (vless-in) |
 | `agentPort` | Number | CC Agent port (62080) |

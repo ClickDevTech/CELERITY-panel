@@ -272,6 +272,11 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
             }
         }
 
+        const labelConflict = await HyNode.findLabelConflict(name, req.body.flag);
+        if (labelConflict) {
+            return res.status(409).json({ error: 'A node with this name and flag already exists — subscription tags must be unique' });
+        }
+
         const statsSecret = cryptoService.generateNodeSecret();
 
         // Resolve SSH: use caller-provided credentials, or inherit from sibling node on the same IP.
@@ -324,6 +329,11 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
                     ? v.strategy
                     : 'leastLoad',
                 fallbackToFirst: v.fallbackToFirst !== false,
+                tolerance: Number.isFinite(v.tolerance)
+                    ? Math.min(Math.max(v.tolerance, 0), 5000)
+                    : 50,
+                idleTimeout: (v.idleTimeout || '').trim(),
+                interruptExistConnections: v.interruptExistConnections !== false,
                 observatory: {
                     destination: (v.observatory?.destination || '').trim() || 'http://www.gstatic.com/generate_204',
                     connectivity: (v.observatory?.connectivity || '').trim(),
@@ -387,9 +397,17 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         // findByIdAndUpdate bypasses pre('validate') hooks even with runValidators,
         // so enforce type-specific invariants explicitly here. We need the existing
         // doc to know the resulting type when only one of {type,virtual} is sent.
-        const existing = await HyNode.findById(req.params.id).select('type ip virtual').lean();
+        const existing = await HyNode.findById(req.params.id).select('type ip virtual name flag').lean();
         if (!existing) {
             return res.status(404).json({ error: 'Node not found' });
+        }
+        // Renames only — pre-existing duplicates stay editable (see panel route).
+        if (updates.name !== undefined
+            && String(updates.name).trim() !== String(existing.name || '').trim()) {
+            const labelConflict = await HyNode.findLabelConflict(updates.name, existing.flag, req.params.id);
+            if (labelConflict) {
+                return res.status(409).json({ error: 'A node with this name and flag already exists — subscription tags must be unique' });
+            }
         }
         const nextType = updates.type || existing.type;
         const nextVirtual = updates.virtual !== undefined ? updates.virtual : existing.virtual;

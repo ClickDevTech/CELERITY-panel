@@ -344,7 +344,7 @@ function getNodeConfigs(node) {
 
 // ==================== URI GENERATION ====================
 
-function generateURI(user, node, config) {
+function generateURI(user, node, config, dedupeLabel = _passthroughLabel) {
     // Auth contains userId for server-side identification
     const auth = `${user.userId}:${user.password}`;
     const params = [];
@@ -364,7 +364,7 @@ function generateURI(user, node, config) {
         params.push(`obfs-password=${encodeURIComponent(config.obfsPassword)}`);
     }
     
-    const name = `${node.flag || ''} ${node.name} ${config.name}`.trim();
+    const name = dedupeLabel(`${node.flag || ''} ${node.name} ${config.name}`.trim());
     const uri = `hysteria2://${auth}@${config.host}:${config.port}?${params.join('&')}#${encodeURIComponent(name)}`;
     return uri;
 }
@@ -421,6 +421,12 @@ function getXrayPublishedInbounds(node) {
         xhttpPath: xray.xhttpPath,
         xhttpHost: xray.xhttpHost,
         xhttpMode: xray.xhttpMode,
+        xhttpXPaddingBytes: xray.xhttpXPaddingBytes,
+        xhttpScMaxEachPostBytes: xray.xhttpScMaxEachPostBytes,
+        xhttpNoGrpcHeader: xray.xhttpNoGrpcHeader,
+        xhttpXmuxMaxConcurrency: xray.xhttpXmuxMaxConcurrency,
+        xhttpXmuxHMaxRequestTimes: xray.xhttpXmuxHMaxRequestTimes,
+        xhttpXmuxHMaxReusableSecs: xray.xhttpXmuxHMaxReusableSecs,
     };
 
     const extras = (Array.isArray(xray.extraInbounds) ? xray.extraInbounds : [])
@@ -453,6 +459,12 @@ function getXrayPublishedInbounds(node) {
             xhttpPath: i.xhttpPath,
             xhttpHost: i.xhttpHost,
             xhttpMode: i.xhttpMode,
+            xhttpXPaddingBytes: i.xhttpXPaddingBytes,
+            xhttpScMaxEachPostBytes: i.xhttpScMaxEachPostBytes,
+            xhttpNoGrpcHeader: i.xhttpNoGrpcHeader,
+            xhttpXmuxMaxConcurrency: i.xhttpXmuxMaxConcurrency,
+            xhttpXmuxHMaxRequestTimes: i.xhttpXmuxHMaxRequestTimes,
+            xhttpXmuxHMaxReusableSecs: i.xhttpXmuxHMaxReusableSecs,
         }));
 
     return [main, ...extras];
@@ -470,6 +482,68 @@ function _xrayInboundName(node, inbound) {
     }
     const base = `${flag} ${node.name}`.trim();
     return inbound.nameSuffix ? `${base} (${inbound.nameSuffix})` : base;
+}
+
+/**
+ * Server labels double as config tags in sing-box, Clash and v2ray-json, where a
+ * repeated tag is a fatal parse error that costs the client the whole config.
+ * Node names carry no uniqueness constraint in the DB (only `{ip, type}` does),
+ * so every generator funnels its labels through one of these before emitting
+ * them. Returns a function that passes the first occurrence through untouched
+ * and suffixes later ones with a counter.
+ */
+function _createLabelDeduplicator() {
+    const used = new Set();
+    return function dedupeLabel(label) {
+        const base = (label || '').trim() || 'node';
+        if (!used.has(base)) {
+            used.add(base);
+            return base;
+        }
+        let n = 2;
+        while (used.has(`${base} (${n})`)) n++;
+        const unique = `${base} (${n})`;
+        used.add(unique);
+        return unique;
+    };
+}
+
+/** No-op deduplicator, so callers may omit one without branching. */
+const _passthroughLabel = label => label;
+
+/**
+ * Validate an XHTTP range value ("100-1000", or a bare "500" meaning 500-500).
+ * Anything else is dropped so a typo cannot make the client reject the config.
+ */
+function _xhttpRange(value) {
+    const v = String(value || '').trim();
+    return /^\d{1,10}(-\d{1,10})?$/.test(v) ? v : null;
+}
+
+/**
+ * Collect the XHTTP tuning knobs of an inbound in a core-neutral shape.
+ * Cores disagree on both casing and nesting, so each generator lays this out
+ * itself: Xray puts camelCase keys under `xhttpSettings.extra`, sing-box forks
+ * take snake_case keys directly on the transport object.
+ *
+ * @returns {{xPaddingBytes: string|null, scMaxEachPostBytes: string|null,
+ *            noGrpcHeader: boolean, xmux: Object|null}}
+ */
+function _xhttpTuning(inbound) {
+    const xmux = {};
+    const maxConcurrency = _xhttpRange(inbound.xhttpXmuxMaxConcurrency);
+    const hMaxRequestTimes = _xhttpRange(inbound.xhttpXmuxHMaxRequestTimes);
+    const hMaxReusableSecs = _xhttpRange(inbound.xhttpXmuxHMaxReusableSecs);
+    if (maxConcurrency) xmux.maxConcurrency = maxConcurrency;
+    if (hMaxRequestTimes) xmux.hMaxRequestTimes = hMaxRequestTimes;
+    if (hMaxReusableSecs) xmux.hMaxReusableSecs = hMaxReusableSecs;
+
+    return {
+        xPaddingBytes: _xhttpRange(inbound.xhttpXPaddingBytes),
+        scMaxEachPostBytes: _xhttpRange(inbound.xhttpScMaxEachPostBytes),
+        noGrpcHeader: !!inbound.xhttpNoGrpcHeader,
+        xmux: Object.keys(xmux).length > 0 ? xmux : null,
+    };
 }
 
 /**
@@ -509,7 +583,7 @@ function _resolveXrayTlsClientHints(node) {
  * Generate a VLESS URI for one inbound of an Xray node.
  * vless://{uuid}@{host}:{port}?type={transport}&security={security}&...#{name}
  */
-function generateVlessURIForInbound(user, node, inbound) {
+function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthroughLabel) {
     const uuid = user.xrayUuid;
     if (!uuid) return null;
 
@@ -564,9 +638,24 @@ function generateVlessURIForInbound(user, node, inbound) {
         const xhttpHost = inbound.xhttpHost || (security === 'tls' ? _resolveXrayTlsClientHints(node).host : '');
         if (xhttpHost) params.set('host', xhttpHost);
         if (inbound.xhttpMode && inbound.xhttpMode !== 'auto') params.set('mode', inbound.xhttpMode);
+        // Padding length and upload chunk size are enforced by the server: it
+        // answers 400 to a padding outside its range and drops oversized posts.
+        // A client that never learns them keeps the core defaults (100-1000 and
+        // 1 MB) and breaks, so both are published twice, the way clients read
+        // them: flat snake_case for the sing-box family, an `extra` JSON blob
+        // for the Xray family (v2rayNG, HAPP). One-sided knobs (xmux,
+        // noGRPCHeader) stay out — extra fields make some parsers reject the URI.
+        const tuning = _xhttpTuning(inbound);
+        const extra = {};
+        if (tuning.xPaddingBytes) {
+            params.set('x_padding_bytes', tuning.xPaddingBytes);
+            extra.xPaddingBytes = tuning.xPaddingBytes;
+        }
+        if (tuning.scMaxEachPostBytes) extra.scMaxEachPostBytes = tuning.scMaxEachPostBytes;
+        if (Object.keys(extra).length > 0) params.set('extra', JSON.stringify(extra));
     }
 
-    const name = _xrayInboundName(node, inbound);
+    const name = dedupeLabel(_xrayInboundName(node, inbound));
     return `vless://${uuid}@${host}:${port}?${params.toString()}#${encodeURIComponent(name)}`;
 }
 
@@ -574,11 +663,11 @@ function generateVlessURIForInbound(user, node, inbound) {
  * Generate VLESS URIs for every published inbound of an Xray node (main + extras).
  * Returns an array of strings (skip null results when uuid is missing).
  */
-function generateVlessURIs(user, node) {
+function generateVlessURIs(user, node, dedupeLabel = _passthroughLabel) {
     const uuid = user.xrayUuid;
     if (!uuid) return [];
     return getXrayPublishedInbounds(node)
-        .map(inbound => generateVlessURIForInbound(user, node, inbound))
+        .map(inbound => generateVlessURIForInbound(user, node, inbound, dedupeLabel))
         .filter(Boolean);
 }
 
@@ -682,6 +771,49 @@ function buildXrayDns(rules, dns) {
     return servers;
 }
 
+// sing-geosite publishes some regional lists only under a `category-` prefix,
+// while the panel stores the short form because that is what Xray expects.
+const SINGBOX_GEOSITE_ALIASES = {
+    ru: 'category-ru',
+    ads: 'category-ads-all',
+};
+
+// sing-geosite tag charset, verified against the published rule-set branch:
+// lowercase alphanumerics plus `-`, and the attribute forms `name@cn` /
+// `geolocation-!cn`. Longest published tag is 37 chars.
+const SINGBOX_GEOSITE_TAG_RE = /^[a-z0-9][a-z0-9@!-]{0,47}$/;
+
+// sing-geoip publishes ISO country codes only — no provider lists (unlike
+// Xray's geoip.dat, which also carries telegram, google, cloudflare, ...).
+const SINGBOX_GEOIP_TAG_RE = /^[a-z]{2}$/;
+
+/**
+ * Resolve a routing rule value to a published sing-box rule_set tag, or null
+ * when no matching `.srs` exists. Dropping the condition is the safer outcome:
+ * a rule_set URL that 404s makes sing-box discard the entire config, so one
+ * unsupported value would cost the user every other rule too.
+ *
+ * Format check only — no network calls, subscription generation stays hot-path.
+ * The charsets double as URL sanitising: neither pattern admits `/` or `.`, so
+ * a rule value cannot escape the rule-set path.
+ *
+ * @param {string} type  'geosite' | 'geoip'
+ * @param {string} rawValue
+ * @returns {string|null}
+ */
+function _singboxRuleSetTag(type, rawValue) {
+    const value = String(rawValue || '').trim().toLowerCase();
+    if (!value) return null;
+    if (type === 'geosite') {
+        const mapped = SINGBOX_GEOSITE_ALIASES[value] || value;
+        return SINGBOX_GEOSITE_TAG_RE.test(mapped) ? `geosite-${mapped}` : null;
+    }
+    if (type === 'geoip' && SINGBOX_GEOIP_TAG_RE.test(value)) {
+        return `geoip-${value}`;
+    }
+    return null;
+}
+
 /**
  * Convert routing rules to sing-box 1.13+ route.rules entries.
  * geosite/geoip replaced with rule_set references (removed in sing-box 1.12).
@@ -706,33 +838,60 @@ function buildSingboxRules(rules) {
         buckets[key].values.push(r.value);
     }
 
-    const resultRules = order.map(k => {
+    const resultRules = order.flatMap(k => {
         const b = buckets[k];
-        const rule = b.action === 'block'
+        const newRule = () => (b.action === 'block'
             ? { action: 'reject' }
-            : { action: 'route', outbound: 'direct' };
+            : { action: 'route', outbound: 'direct' });
+        const rule = newRule();
 
         switch (b._type) {
             case 'domain_suffix':  rule.domain_suffix  = b.values; break;
             case 'domain_keyword': rule.domain_keyword = b.values; break;
             case 'domain':         rule.domain         = b.values; break;
-            case 'geosite':
-                rule.rule_set = b.values.map(v => {
-                    const tag = `geosite-${v}`;
+            case 'geosite': {
+                const tags = [];
+                for (const v of b.values) {
+                    const tag = _singboxRuleSetTag('geosite', v);
+                    if (!tag) continue;
                     ruleSetTags.add(tag);
-                    return tag;
-                });
+                    tags.push(tag);
+                }
+                if (tags.length === 0) return [];
+                rule.rule_set = tags;
                 break;
-            case 'geoip':
-                rule.rule_set = b.values.map(v => {
-                    const tag = `geoip-${v}`;
+            }
+            case 'geoip': {
+                const tags = [];
+                let hasPrivate = false;
+                for (const v of b.values) {
+                    if (String(v || '').trim().toLowerCase() === 'private') {
+                        hasPrivate = true;
+                        continue;
+                    }
+                    const tag = _singboxRuleSetTag('geoip', v);
+                    if (!tag) continue;
                     ruleSetTags.add(tag);
-                    return tag;
-                });
-                break;
+                    tags.push(tag);
+                }
+                const out = [];
+                if (tags.length > 0) {
+                    rule.rule_set = tags;
+                    out.push(rule);
+                }
+                if (hasPrivate) {
+                    // `private` is a built-in flag, not a published list. It also
+                    // needs a rule of its own: fields within one rule are ANDed,
+                    // so pairing it with a country rule_set would match nothing.
+                    const privateRule = newRule();
+                    privateRule.ip_is_private = true;
+                    out.push(privateRule);
+                }
+                return out;
+            }
             case 'ip_cidr':        rule.ip_cidr        = b.values; break;
         }
-        return rule;
+        return [rule];
     });
 
     const ruleSets = [...ruleSetTags].map(tag => {
@@ -759,7 +918,7 @@ function buildSingboxDns(rules, dns) {
     const remoteAddr   = (dns && dns.remote)   ? dns.remote   : 'tls://1.1.1.1';
     const ruleSetTags = new Set();
 
-    const remoteServer = _parseSingboxDnsServer(remoteAddr, 'dns-remote', 'dns-local');
+    const remoteServer = _parseSingboxDnsServer(remoteAddr, 'dns-remote', 'dns-local', 'proxy');
     const servers = [
         remoteServer,
         { type: 'udp', tag: 'dns-direct', server: domesticAddr, detour: 'direct' },
@@ -773,7 +932,8 @@ function buildSingboxDns(rules, dns) {
         if (!r.enabled || r.action !== 'direct') continue;
         if (r.type === 'domain_suffix') suffixes.push(r.value);
         if (r.type === 'geosite') {
-            const tag = `geosite-${r.value}`;
+            const tag = _singboxRuleSetTag('geosite', r.value);
+            if (!tag) continue;
             geositeTags.push(tag);
             ruleSetTags.add(tag);
         }
@@ -793,11 +953,15 @@ function buildSingboxDns(rules, dns) {
 
 /**
  * Parse a DNS address string into a sing-box 1.12+ typed server object.
+ * `detour` is applied to encrypted servers only (DoT/DoH): without it sing-box
+ * dials them from the physical interface, which DPI-heavy ISPs commonly drop,
+ * leaving the tunnel up while name resolution silently fails.
  */
-function _parseSingboxDnsServer(addr, tag, domainResolver) {
+function _parseSingboxDnsServer(addr, tag, domainResolver, detour) {
     if (addr.startsWith('tls://')) {
         const server = { type: 'tls', tag, server: addr.slice(6) };
         if (domainResolver) server.domain_resolver = domainResolver;
+        if (detour) server.detour = detour;
         return server;
     }
     if (addr.startsWith('https://')) {
@@ -805,6 +969,7 @@ function _parseSingboxDnsServer(addr, tag, domainResolver) {
             const url = new URL(addr);
             const server = { type: 'https', tag, server: url.hostname };
             if (domainResolver) server.domain_resolver = domainResolver;
+            if (detour) server.detour = detour;
             return server;
         } catch { /* fall through */ }
     }
@@ -941,6 +1106,7 @@ function buildClashDns(rules, dns) {
 
 function generateURIList(user, nodes) {
     const uris = [];
+    const dedupeLabel = _createLabelDeduplicator();
     nodes.forEach(node => {
         if (node.type === 'virtual') {
             // URI list cannot represent a balancer; clients that hit this format
@@ -948,22 +1114,22 @@ function generateURIList(user, nodes) {
             return;
         }
         if (node.type === 'xray') {
-            generateVlessURIs(user, node).forEach(uri => uris.push(uri));
+            generateVlessURIs(user, node, dedupeLabel).forEach(uri => uris.push(uri));
         } else {
             getNodeConfigs(node).forEach(cfg => {
-                uris.push(generateURI(user, node, cfg));
+                uris.push(generateURI(user, node, cfg, dedupeLabel));
             });
         }
     });
     return uris.join('\n');
 }
 
-function _buildClashVlessProxyForInbound(user, node, inbound) {
+function _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel = _passthroughLabel) {
     const host = node.domain || node.ip;
     const transport = inbound.transport || 'tcp';
     const security = inbound.security || 'reality';
     const fingerprint = inbound.fingerprint || 'chrome';
-    const name = _xrayInboundName(node, inbound);
+    const name = dedupeLabel(_xrayInboundName(node, inbound));
 
     let proxy = `  - name: "${name}"
     type: vless
@@ -1012,7 +1178,9 @@ function _buildClashVlessProxyForInbound(user, node, inbound) {
     grpc-opts:
       grpc-service-name: "${inbound.grpcServiceName || 'grpc'}"`;
     } else if (transport === 'xhttp') {
-        // Mihomo (Clash Meta) supports XHTTP since 1.18.x via xhttp-opts
+        // Mihomo (Clash Meta) reads xhttp-opts only since 1.19.22, and only when
+        // `network: xhttp` is set as well (emitted by the reality/tls branches
+        // above). Older builds ignore the block and fail to dial.
         proxy += `
     xhttp-opts:
       path: "${inbound.xhttpPath || '/'}"
@@ -1028,9 +1196,9 @@ function _buildClashVlessProxyForInbound(user, node, inbound) {
  * Build Clash proxies for every published inbound of an Xray node.
  * Returns an array of `{name, proxy}` items.
  */
-function _buildClashVlessProxies(user, node) {
+function _buildClashVlessProxies(user, node, dedupeLabel = _passthroughLabel) {
     return getXrayPublishedInbounds(node)
-        .map(inbound => _buildClashVlessProxyForInbound(user, node, inbound));
+        .map(inbound => _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel));
 }
 
 function generateClashYAML(user, nodes, routing) {
@@ -1041,6 +1209,7 @@ function generateClashYAML(user, nodes, routing) {
     // virtual nodes can reference their source nodes' Clash proxies by name.
     const nameByNodeId = new Map();
     const virtualSpecs = [];
+    const dedupeLabel = _createLabelDeduplicator();
 
     nodes.forEach(node => {
         if (node.type === 'virtual') {
@@ -1050,14 +1219,14 @@ function generateClashYAML(user, nodes, routing) {
         const beforeIdx = proxyNames.length;
         if (node.type === 'xray') {
             if (!user.xrayUuid) return;
-            _buildClashVlessProxies(user, node).forEach(({ name, proxy }) => {
+            _buildClashVlessProxies(user, node, dedupeLabel).forEach(({ name, proxy }) => {
                 if (!proxy) return;
                 proxyNames.push(name);
                 proxies.push(proxy);
             });
         } else {
             getNodeConfigs(node).forEach(cfg => {
-                const name = `${node.flag || ''} ${node.name} ${cfg.name}`.trim();
+                const name = dedupeLabel(`${node.flag || ''} ${node.name} ${cfg.name}`.trim());
                 proxyNames.push(name);
 
                 let proxy = `  - name: "${name}"
@@ -1093,13 +1262,19 @@ function generateClashYAML(user, nodes, routing) {
             if (names) sourceNames.push(...names);
         }
         if (sourceNames.length === 0) return;
-        const groupName = `${vnode.flag || ''} ${vnode.name}`.trim();
-        const obs = (vnode.virtual && vnode.virtual.observatory) || {};
+        const groupName = dedupeLabel(`${vnode.flag || ''} ${vnode.name}`.trim());
+        const vcfg = vnode.virtual || {};
+        const obs = vcfg.observatory || {};
         const url = obs.destination || 'http://www.gstatic.com/generate_204';
         const intervalSec = parseDurationSeconds(obs.interval || '1m') || 60;
-        const groupType = vnode.virtual?.strategy === 'random' ? 'load-balance' : 'url-test';
+        const groupType = vcfg.strategy === 'random' ? 'load-balance' : 'url-test';
+        // Mihomo takes tolerance on url-test only; load-balance has no such knob,
+        // and idle_timeout / interrupt_exist_connections do not exist there at all.
+        const toleranceLine = (groupType === 'url-test' && Number.isFinite(vcfg.tolerance))
+            ? `\n    tolerance: ${vcfg.tolerance}`
+            : '';
         virtualGroups.push(
-            `  - name: "${groupName}"\n    type: ${groupType}\n    url: ${url}\n    interval: ${intervalSec}\n    proxies:\n${sourceNames.map(n => `      - "${n}"`).join('\n')}`
+            `  - name: "${groupName}"\n    type: ${groupType}\n    url: ${url}\n    interval: ${intervalSec}${toleranceLine}\n    proxies:\n${sourceNames.map(n => `      - "${n}"`).join('\n')}`
         );
         // Surface the balancer at the top of the user-facing select group too.
         proxyNames.unshift(groupName);
@@ -1193,7 +1368,10 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound) {
             service_name: inbound.grpcServiceName || 'grpc',
         };
     } else if (transport === 'xhttp') {
-        // sing-box 1.11+ supports XHTTP via transport.type=xhttp
+        // XHTTP is not in upstream sing-box — a config carrying it is rejected
+        // whole. Emitted for forks that implement the transport (sing-box-lx,
+        // Hiddify), which take these knobs in snake_case on the transport itself
+        // rather than in an Xray-style `extra` object.
         outbound.transport = {
             type: 'xhttp',
             path: inbound.xhttpPath || '/',
@@ -1202,6 +1380,17 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound) {
         const xhttpHost = inbound.xhttpHost || (tlsHints ? tlsHints.host : '');
         if (xhttpHost) {
             outbound.transport.host = xhttpHost;
+        }
+        const tuning = _xhttpTuning(inbound);
+        if (tuning.xPaddingBytes) outbound.transport.x_padding_bytes = tuning.xPaddingBytes;
+        if (tuning.scMaxEachPostBytes) outbound.transport.sc_max_each_post_bytes = tuning.scMaxEachPostBytes;
+        if (tuning.noGrpcHeader) outbound.transport.no_grpc_header = true;
+        if (tuning.xmux) {
+            const xmux = {};
+            if (tuning.xmux.maxConcurrency) xmux.max_concurrency = tuning.xmux.maxConcurrency;
+            if (tuning.xmux.hMaxRequestTimes) xmux.h_max_request_times = tuning.xmux.hMaxRequestTimes;
+            if (tuning.xmux.hMaxReusableSecs) xmux.h_max_reusable_secs = tuning.xmux.hMaxReusableSecs;
+            outbound.transport.xmux = xmux;
         }
     }
 
@@ -1230,7 +1419,7 @@ function _buildSingboxVlessOutbounds(user, node) {
  * (e.g. `proxy`, `proxy-2`) for balancers. `displayName` always carries the
  * human-readable label regardless of override.
  */
-function _buildV2rayOutboundsForNode(user, node, tagOverride) {
+function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _passthroughLabel) {
     if (node.type === 'virtual') return [];
     const auth = `${user.userId}:${user.password}`;
     const built = [];
@@ -1241,7 +1430,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride) {
         getXrayPublishedInbounds(node).forEach((inbound, idx) => {
             const transport = inbound.transport || 'tcp';
             const security = inbound.security || 'reality';
-            const displayName = _xrayInboundName(node, inbound);
+            const displayName = dedupeLabel(_xrayInboundName(node, inbound));
             const tag = tagOverride ? tagOverride(built.length, displayName) : displayName;
 
             const streamSettings = { network: transport };
@@ -1284,6 +1473,17 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride) {
                     host: inbound.xhttpHost || (tlsHints ? tlsHints.host : ''),
                     mode: inbound.xhttpMode || 'auto',
                 };
+                // Everything past host/path/mode lives in `extra` in Xray, with
+                // camelCase keys (see XTLS/Xray-core discussion #4113).
+                const tuning = _xhttpTuning(inbound);
+                const extra = {};
+                if (tuning.xPaddingBytes) extra.xPaddingBytes = tuning.xPaddingBytes;
+                if (tuning.scMaxEachPostBytes) extra.scMaxEachPostBytes = tuning.scMaxEachPostBytes;
+                if (tuning.noGrpcHeader) extra.noGRPCHeader = true;
+                if (tuning.xmux) extra.xmux = tuning.xmux;
+                if (Object.keys(extra).length > 0) {
+                    streamSettings.xhttpSettings.extra = extra;
+                }
             }
 
             const vnextUser = { id: user.xrayUuid, encryption: 'none' };
@@ -1306,7 +1506,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride) {
     }
 
     getNodeConfigs(node).forEach(cfg => {
-        const displayName = `${node.flag || ''} ${node.name} ${cfg.name}`.trim();
+        const displayName = dedupeLabel(`${node.flag || ''} ${node.name} ${cfg.name}`.trim());
         const tag = tagOverride ? tagOverride(built.length, displayName) : displayName;
         const hysteriaSettings = { version: 2, auth };
         // Legacy udphop/udpmasks for old cores + finalmask for modern Xray-core.
@@ -1357,12 +1557,15 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride) {
 function generateV2rayJSON(user, nodes, routing) {
     const outbounds = [];
     const allTags = [];
+    // Tags here are the display names, and Xray rejects a config with a repeated
+    // outbound tag outright.
+    const dedupeLabel = _createLabelDeduplicator();
 
     // Virtual nodes are skipped here — the single-config v2ray-json shape can't
     // express multiple balancers cleanly. Use ?format=xray-json for HAPP.
     nodes.forEach(node => {
         if (node.type === 'virtual') return;
-        _buildV2rayOutboundsForNode(user, node).forEach(({ tag, outbound }) => {
+        _buildV2rayOutboundsForNode(user, node, null, dedupeLabel).forEach(({ tag, outbound }) => {
             outbounds.push(outbound);
             allTags.push(tag);
         });
@@ -1486,6 +1689,10 @@ function _buildXrayProfile(remark, proxyOutbounds, routing, extras = {}) {
  */
 function generateXrayJSON(user, nodes, routing) {
     const profiles = [];
+    // Profile remarks are what the client lists as servers; duplicates would make
+    // two entries indistinguishable. Outbound tags inside a profile stay local
+    // (`proxy`, `proxy-2`, ...) and need no deduplication.
+    const dedupeLabel = _createLabelDeduplicator();
 
     nodes.forEach(node => {
         if (node.type === 'virtual') {
@@ -1546,13 +1753,13 @@ function generateXrayJSON(user, nodes, routing) {
                 extras.burstObservatory = { subjectSelector: balancerSelector, pingConfig };
             }
 
-            profiles.push(_buildXrayProfile(_xrayProfileRemark(node), outbounds, routing, extras));
+            profiles.push(_buildXrayProfile(dedupeLabel(_xrayProfileRemark(node)), outbounds, routing, extras));
             return;
         }
 
         // Real node — one profile per published inbound (xray) or port-config (hysteria).
         // We keep one outbound per profile so HAPP shows them as distinct servers.
-        _buildV2rayOutboundsForNode(user, node, () => 'proxy').forEach(({ outbound, displayName }) => {
+        _buildV2rayOutboundsForNode(user, node, () => 'proxy', dedupeLabel).forEach(({ outbound, displayName }) => {
             profiles.push(_buildXrayProfile(displayName, [outbound], routing, {
                 balancerRule: { type: 'field', network: 'tcp,udp', outboundTag: 'proxy' },
             }));
@@ -1569,6 +1776,7 @@ function generateSingboxJSON(user, nodes, routing) {
     // Per-node tag list — used by virtual nodes to reference their sources.
     const tagsByNodeId = new Map();
     const virtualSpecs = [];
+    const dedupeLabel = _createLabelDeduplicator();
 
     nodes.forEach(node => {
         if (node.type === 'virtual') {
@@ -1580,12 +1788,14 @@ function generateSingboxJSON(user, nodes, routing) {
             if (!user.xrayUuid) return;
             _buildSingboxVlessOutbounds(user, node).forEach(({ tag, outbound }) => {
                 if (!outbound) return;
-                tags.push(tag);
+                const uniqueTag = dedupeLabel(tag);
+                outbound.tag = uniqueTag;
+                tags.push(uniqueTag);
                 proxyOutbounds.push(outbound);
             });
         } else {
             getNodeConfigs(node).forEach(cfg => {
-                const tag = `${node.flag || ''} ${node.name} ${cfg.name}`.trim();
+                const tag = dedupeLabel(`${node.flag || ''} ${node.name} ${cfg.name}`.trim());
                 tags.push(tag);
 
                 const outbound = {
@@ -1635,28 +1845,54 @@ function generateSingboxJSON(user, nodes, routing) {
             if (ts) sourceTags.push(...ts);
         }
         if (sourceTags.length === 0) return;
-        const tag = `${vnode.flag || ''} ${vnode.name}`.trim();
-        const obs = (vnode.virtual && vnode.virtual.observatory) || {};
-        virtualOutbounds.push({
+        const tag = dedupeLabel(`${vnode.flag || ''} ${vnode.name}`.trim());
+        const vcfg = vnode.virtual || {};
+        const obs = vcfg.observatory || {};
+        const urltest = {
             type: 'urltest',
             tag,
             outbounds: sourceTags,
             url: obs.destination || 'https://www.gstatic.com/generate_204',
             interval: obs.interval || '1m',
-            tolerance: 50,
-        });
+            tolerance: Number.isFinite(vcfg.tolerance) ? vcfg.tolerance : 50,
+            interrupt_exist_connections: vcfg.interruptExistConnections !== false,
+        };
+        const idleTimeout = (vcfg.idleTimeout || '').trim();
+        if (idleTimeout) urltest.idle_timeout = idleTimeout;
+        virtualOutbounds.push(urltest);
         virtualTags.push(tag);
     });
 
-    const allSelectableTags = [...virtualTags, ...tags];
+    // `auto` needs at least one member; an empty urltest is rejected by the core.
+    const autoOutbounds = tags.length > 0
+        ? [{
+            type: 'urltest',
+            tag: 'auto',
+            outbounds: tags,
+            url: 'https://www.gstatic.com/generate_204',
+            interval: '3m',
+            tolerance: 50,
+            interrupt_exist_connections: true,
+        }]
+        : [];
+
+    // Selectable list deliberately excludes `direct`: it stays as an outbound for
+    // routing rules, but offering it in the picker lets a user disable the VPN by
+    // accident. `auto` is included so the group it already builds is reachable.
+    const allSelectableTags = [
+        ...virtualTags,
+        ...autoOutbounds.map(o => o.tag),
+        ...tags,
+    ];
     const outbounds = [
         {
             type: 'selector',
             tag: 'proxy',
-            outbounds: allSelectableTags.length > 0 ? [...allSelectableTags, 'direct'] : ['direct'],
-            default: allSelectableTags[0] || 'direct',
+            outbounds: allSelectableTags.length > 0 ? allSelectableTags : ['direct'],
+            default: virtualTags[0] || allSelectableTags[0] || 'direct',
+            interrupt_exist_connections: true,
         },
-        { type: 'urltest', tag: 'auto', outbounds: tags, url: 'https://www.gstatic.com/generate_204', interval: '3m', tolerance: 50 },
+        ...autoOutbounds,
         ...virtualOutbounds,
         ...proxyOutbounds,
         { type: 'direct', tag: 'direct' },
@@ -1674,7 +1910,7 @@ function generateSingboxJSON(user, nodes, routing) {
     } else {
         dnsSection = {
             servers: [
-                { type: 'tls', tag: 'dns-remote', server: '8.8.8.8', domain_resolver: 'dns-local' },
+                { type: 'tls', tag: 'dns-remote', server: '8.8.8.8', domain_resolver: 'dns-local', detour: 'proxy' },
                 { type: 'udp', tag: 'dns-local', server: '223.5.5.5', detour: 'direct' },
             ],
             rules: [],
@@ -1716,12 +1952,18 @@ function generateSingboxJSON(user, nodes, routing) {
             rules: routeRules,
             final: 'proxy',
             auto_detect_interface: true,
+            // Resolver for outbound server addresses (sing-box 1.12+). Must be a
+            // plain direct server: resolving a node hostname through the tunnel
+            // cannot work before the tunnel itself is up.
+            default_domain_resolver: hasRouting ? 'dns-direct' : 'dns-local',
         },
+        // Persists the user's selector choice across core restarts. Unrelated to
+        // rule_set — keep it unconditional.
+        experimental: { cache_file: { enabled: true } },
     };
 
     if (uniqueRuleSets.length > 0) {
         config.route.rule_set = uniqueRuleSets;
-        config.experimental = { cache_file: { enabled: true } };
     }
 
     return config;
@@ -3122,3 +3364,8 @@ module.exports.rejectOrSoftBlock = rejectOrSoftBlock;
 module.exports.getNodeConfigs = getNodeConfigs;
 module.exports.getXrayPublishedInbounds = getXrayPublishedInbounds;
 module.exports.xrayInboundName = _xrayInboundName;
+// Exposed for tests: both encode assumptions about what upstream publishes
+// (rule-set tags) and what a client needs to be told (XHTTP hints), and getting
+// either wrong silently breaks configs rather than failing loudly.
+module.exports.singboxRuleSetTag = _singboxRuleSetTag;
+module.exports.vlessURIForInbound = generateVlessURIForInbound;

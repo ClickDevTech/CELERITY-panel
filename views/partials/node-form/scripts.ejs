@@ -846,6 +846,11 @@ function addExtraInbound() {
         uniqueNameCb.value = id;
         uniqueNameCb.checked = false;
     }
+    const noGrpcHeaderCb = root.querySelector('input[name="xray_extra_xhttpNoGrpcHeader"]');
+    if (noGrpcHeaderCb) {
+        noGrpcHeaderCb.value = id;
+        noGrpcHeaderCb.checked = false;
+    }
 
     const titleSpan = root.querySelector('.extra-inbound-title');
     if (titleSpan) titleSpan.textContent = (i18n.xrayExtraInbound || 'Extra inbound') + ' #' + (container.children.length + 1);

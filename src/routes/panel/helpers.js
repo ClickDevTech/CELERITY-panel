@@ -131,6 +131,16 @@ function _parseFingerprintPool(raw) {
 }
 
 /**
+ * Keep an XHTTP range field only when it is a plain number or "min-max" range.
+ * Garbage is stored as empty (core default) rather than passed through, because
+ * both Xray and the sing-box forks treat a malformed range as a fatal error.
+ */
+function _sanitizeXhttpRange(raw) {
+    const v = String(raw === undefined || raw === null ? '' : raw).trim();
+    return /^\d{1,10}(-\d{1,10})?$/.test(v) ? v : '';
+}
+
+/**
  * Parse the `xray.extraInbounds[]` array out of parallel form arrays
  * (xray_extra_id[], xray_extra_port[], xray_extra_*[]). Each index across the
  * arrays describes a single inbound. Indices with a missing/invalid port are
@@ -171,6 +181,13 @@ function parseExtraInbounds(body) {
     const xhttpPaths = arr('xray_extra_xhttpPath');
     const xhttpHosts = arr('xray_extra_xhttpHost');
     const xhttpModes = arr('xray_extra_xhttpMode');
+    const xhttpXPaddingBytes = arr('xray_extra_xhttpXPaddingBytes');
+    const xhttpScMaxEachPostBytes = arr('xray_extra_xhttpScMaxEachPostBytes');
+    // Same checkbox trick as uniqueName above — the value is the row's id.
+    const xhttpNoGrpcHeaderIds = new Set(arr('xray_extra_xhttpNoGrpcHeader').map(v => String(v || '')));
+    const xhttpXmuxMaxConcurrency = arr('xray_extra_xhttpXmuxMaxConcurrency');
+    const xhttpXmuxHMaxRequestTimes = arr('xray_extra_xhttpXmuxHMaxRequestTimes');
+    const xhttpXmuxHMaxReusableSecs = arr('xray_extra_xhttpXmuxHMaxReusableSecs');
     const fallbackDests = arr('xray_extra_fallbackDest');
 
     const result = [];
@@ -216,6 +233,12 @@ function parseExtraInbounds(body) {
             xhttpPath: String(xhttpPaths[i] || '/'),
             xhttpHost: String(xhttpHosts[i] || ''),
             xhttpMode: _pickEnum(xhttpModes[i], XRAY_XHTTP_MODE_VALUES, 'auto'),
+            xhttpXPaddingBytes: _sanitizeXhttpRange(xhttpXPaddingBytes[i]),
+            xhttpScMaxEachPostBytes: _sanitizeXhttpRange(xhttpScMaxEachPostBytes[i]),
+            xhttpNoGrpcHeader: xhttpNoGrpcHeaderIds.has(id),
+            xhttpXmuxMaxConcurrency: _sanitizeXhttpRange(xhttpXmuxMaxConcurrency[i]),
+            xhttpXmuxHMaxRequestTimes: _sanitizeXhttpRange(xhttpXmuxHMaxRequestTimes[i]),
+            xhttpXmuxHMaxReusableSecs: _sanitizeXhttpRange(xhttpXmuxHMaxReusableSecs[i]),
             fallbackDest: String(fallbackDests[i] || '').trim().slice(0, 253),
         };
         // Empty short-id list is invalid for Reality; restore the empty marker.
@@ -269,6 +292,22 @@ function parseXrayFormFields(body) {
     if (body['xray.xhttpHost'] !== undefined) xray.xhttpHost = body['xray.xhttpHost'];
     if (body['xray.xhttpMode']) {
         xray.xhttpMode = _pickEnum(body['xray.xhttpMode'], XRAY_XHTTP_MODE_VALUES, 'auto');
+    }
+    if (body['xray.xhttpXPaddingBytes'] !== undefined) {
+        xray.xhttpXPaddingBytes = _sanitizeXhttpRange(body['xray.xhttpXPaddingBytes']);
+    }
+    if (body['xray.xhttpScMaxEachPostBytes'] !== undefined) {
+        xray.xhttpScMaxEachPostBytes = _sanitizeXhttpRange(body['xray.xhttpScMaxEachPostBytes']);
+    }
+    xray.xhttpNoGrpcHeader = body['xray.xhttpNoGrpcHeader'] === 'on';
+    if (body['xray.xhttpXmuxMaxConcurrency'] !== undefined) {
+        xray.xhttpXmuxMaxConcurrency = _sanitizeXhttpRange(body['xray.xhttpXmuxMaxConcurrency']);
+    }
+    if (body['xray.xhttpXmuxHMaxRequestTimes'] !== undefined) {
+        xray.xhttpXmuxHMaxRequestTimes = _sanitizeXhttpRange(body['xray.xhttpXmuxHMaxRequestTimes']);
+    }
+    if (body['xray.xhttpXmuxHMaxReusableSecs'] !== undefined) {
+        xray.xhttpXmuxHMaxReusableSecs = _sanitizeXhttpRange(body['xray.xhttpXmuxHMaxReusableSecs']);
     }
     if (body['xray.apiPort']) xray.apiPort = parseInt(body['xray.apiPort']) || 61000;
 

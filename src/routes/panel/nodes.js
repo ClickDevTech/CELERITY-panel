@@ -69,12 +69,20 @@ function applyVirtualFormFields(nodeData, body) {
         return 'Virtual node: select a source group';
     }
 
+    const toleranceRaw = parseInt(body['virtual.tolerance'], 10);
+    const tolerance = Number.isFinite(toleranceRaw)
+        ? Math.min(Math.max(toleranceRaw, 0), 5000)
+        : 50;
+
     nodeData.virtual = {
         selectMode,
         sources,
         sourceGroup,
         strategy,
         fallbackToFirst: body['virtual.fallbackToFirst'] === 'on',
+        tolerance,
+        idleTimeout: (body['virtual.idleTimeout'] || '').trim(),
+        interruptExistConnections: body['virtual.interruptExistConnections'] === 'on',
         observatory: {
             destination: (body['virtual.observatory.destination'] || '').trim() || 'http://www.gstatic.com/generate_204',
             connectivity: (body['virtual.observatory.connectivity'] || '').trim(),
@@ -379,6 +387,11 @@ router.post('/nodes', async (req, res) => {
             if (existing) {
                 return res.redirect(`/panel/nodes/add?error=${encodeURIComponent(`A ${nodeType} node with this IP already exists`)}`);
             }
+        }
+
+        const labelConflict = await HyNode.findLabelConflict(name, req.body.flag);
+        if (labelConflict) {
+            return res.redirect(`/panel/nodes/add?error=${encodeURIComponent('A node with this name and flag already exists — subscription tags must be unique')}`);
         }
 
         const sshPassword = req.body['ssh.password'] || '';
@@ -692,6 +705,18 @@ router.post('/nodes/:id', async (req, res) => {
         }
         if (nodeType !== 'virtual' && !ip) {
             return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent('IP address is required')}`);
+        }
+
+        // Only checked when the label actually changes: a database that already
+        // holds duplicates from before this validation must stay editable, and
+        // the generator deduplicates such tags anyway.
+        const labelChanged = String(name).trim() !== String(existingNode.name || '').trim()
+            || String(req.body.flag || '').trim() !== String(existingNode.flag || '').trim();
+        if (labelChanged) {
+            const labelConflict = await HyNode.findLabelConflict(name, req.body.flag, nodeId);
+            if (labelConflict) {
+                return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent('A node with this name and flag already exists — subscription tags must be unique')}`);
+            }
         }
 
         let groups = [];

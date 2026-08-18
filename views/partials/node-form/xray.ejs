@@ -382,6 +382,57 @@
                         </select>
                         <small><%= t('nodes.xrayXhttpModeHint') %></small>
                     </div>
+
+                    <div class="form-section" style="background:transparent;border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:4px;">
+                        <h3 style="font-size:14px;margin-top:0;">
+                            <i class="ti ti-adjustments"></i> <%= t('nodes.xrayXhttpTuning') %>
+                            <a class="docs-hint-link" href="https://github.com/XTLS/Xray-core/discussions/4113" target="_blank" rel="noopener noreferrer" title="XHTTP docs">ⓘ</a>
+                        </h3>
+                        <small class="section-hint"><%= t('nodes.xrayXhttpTuningHint') %></small>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="xrayXhttpXPaddingBytes"><%= t('nodes.xrayXhttpPadding') %></label>
+                                <input type="text" id="xrayXhttpXPaddingBytes" name="xray.xhttpXPaddingBytes"
+                                       value="<%= node?.xray?.xhttpXPaddingBytes || '' %>" placeholder="100-1000">
+                                <small><%= t('nodes.xrayXhttpPaddingHint') %></small>
+                            </div>
+                            <div class="form-group">
+                                <label for="xrayXhttpScMaxEachPostBytes"><%= t('nodes.xrayXhttpMaxPost') %></label>
+                                <input type="text" id="xrayXhttpScMaxEachPostBytes" name="xray.xhttpScMaxEachPostBytes"
+                                       value="<%= node?.xray?.xhttpScMaxEachPostBytes || '' %>" placeholder="1000000">
+                                <small><%= t('nodes.xrayXhttpMaxPostHint') %></small>
+                            </div>
+                        </div>
+
+                        <div class="form-row-3">
+                            <div class="form-group">
+                                <label for="xrayXhttpXmuxMaxConcurrency"><%= t('nodes.xrayXhttpXmuxConcurrency') %></label>
+                                <input type="text" id="xrayXhttpXmuxMaxConcurrency" name="xray.xhttpXmuxMaxConcurrency"
+                                       value="<%= node?.xray?.xhttpXmuxMaxConcurrency || '' %>" placeholder="16-32">
+                            </div>
+                            <div class="form-group">
+                                <label for="xrayXhttpXmuxHMaxRequestTimes"><%= t('nodes.xrayXhttpXmuxRequests') %></label>
+                                <input type="text" id="xrayXhttpXmuxHMaxRequestTimes" name="xray.xhttpXmuxHMaxRequestTimes"
+                                       value="<%= node?.xray?.xhttpXmuxHMaxRequestTimes || '' %>" placeholder="600-900">
+                            </div>
+                            <div class="form-group">
+                                <label for="xrayXhttpXmuxHMaxReusableSecs"><%= t('nodes.xrayXhttpXmuxReusableSecs') %></label>
+                                <input type="text" id="xrayXhttpXmuxHMaxReusableSecs" name="xray.xhttpXmuxHMaxReusableSecs"
+                                       value="<%= node?.xray?.xhttpXmuxHMaxReusableSecs || '' %>" placeholder="1800-3000">
+                            </div>
+                        </div>
+                        <small class="section-hint"><%= t('nodes.xrayXhttpXmuxHint') %></small>
+
+                        <div class="form-group" style="margin-top:8px;">
+                            <label class="checkbox-tag" style="display:inline-flex;align-items:center;gap:8px;">
+                                <input type="checkbox" name="xray.xhttpNoGrpcHeader"
+                                       <%= node?.xray?.xhttpNoGrpcHeader ? 'checked' : '' %>>
+                                <span><%= t('nodes.xrayXhttpNoGrpcHeader') %></span>
+                            </label>
+                            <small style="display:block;margin-top:4px;"><%= t('nodes.xrayXhttpNoGrpcHeaderHint') %></small>
+                        </div>
+                    </div>
                 </div>
 
                 <%# ========== Additional VLESS inbounds ========== %>
