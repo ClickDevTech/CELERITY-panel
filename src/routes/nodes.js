@@ -3,6 +3,7 @@
  */
 
 const express = require('express');
+const net = require('net');
 const router = express.Router();
 const HyNode = require('../models/hyNodeModel');
 const HyUser = require('../models/hyUserModel');
@@ -20,6 +21,26 @@ function hasSshCredentials(node) {
 
 function runtimeErrorMessage(result, fallback) {
     return result?.error || result?.reason || fallback;
+}
+
+function normalizeXrayListens(xray) {
+    if (!xray || typeof xray !== 'object') return null;
+
+    if (xray.listen !== undefined) {
+        xray.listen = String(xray.listen || '').trim() || '0.0.0.0';
+        if (!net.isIP(xray.listen)) return 'xray.listen must be a valid IPv4 or IPv6 address';
+    }
+    if (Array.isArray(xray.extraInbounds)) {
+        for (let i = 0; i < xray.extraInbounds.length; i++) {
+            const inbound = xray.extraInbounds[i];
+            if (!inbound || typeof inbound !== 'object') continue;
+            inbound.listen = String(inbound.listen || '').trim() || '0.0.0.0';
+            if (!net.isIP(inbound.listen)) {
+                return `xray.extraInbounds[${i}].listen must be a valid IPv4 or IPv6 address`;
+            }
+        }
+    }
+    return null;
 }
 
 async function disableNodeRuntime(node) {
@@ -247,6 +268,10 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
         if (nodeType !== 'virtual' && !ip) {
             return res.status(400).json({ error: 'ip is required for hysteria and xray nodes' });
         }
+        if (nodeType === 'xray' && xray) {
+            const listenError = normalizeXrayListens(xray);
+            if (listenError) return res.status(400).json({ error: listenError });
+        }
 
         // Validate virtual-specific fields up-front (pre('validate') hook is
         // skipped on findOneAndUpdate but still runs on .save(); keeping the
@@ -393,6 +418,10 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
                 }
             }
         }
+        if (updates.xray) {
+            const listenError = normalizeXrayListens(updates.xray);
+            if (listenError) return res.status(400).json({ error: listenError });
+        }
 
         // findByIdAndUpdate bypasses pre('validate') hooks even with runValidators,
         // so enforce type-specific invariants explicitly here. We need the existing
@@ -430,7 +459,7 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         const node = await HyNode.findByIdAndUpdate(
             req.params.id,
             { $set: updates },
-            { new: true }
+            { new: true, runValidators: true }
         ).populate('groups', 'name color');
 
         if (!node) {

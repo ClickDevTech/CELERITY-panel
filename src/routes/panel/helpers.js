@@ -9,6 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const net = require('net');
 const ejs = require('ejs');
 const { Client: SSHClient } = require('ssh2');
 
@@ -158,6 +159,7 @@ function parseExtraInbounds(body) {
         return Array.isArray(v) ? v : [v];
     };
     const ports = arr('xray_extra_port');
+    const listens = arr('xray_extra_listen');
     const labels = arr('xray_extra_label');
     // Unchecked checkboxes are not submitted, so we identify "uniqueName" rows
     // by the inbound id used as the checkbox value (kept stable on the form).
@@ -210,6 +212,7 @@ function parseExtraInbounds(body) {
             label: String(labels[i] || '').trim().slice(0, 64),
             uniqueName: uniqueNameIds.has(id),
             port,
+            listen: String(listens[i] || '').trim() || '0.0.0.0',
             inboundTag: String(tags[i] || '').trim() || `vless-extra-${i + 1}`,
             transport,
             security,
@@ -251,6 +254,9 @@ function parseExtraInbounds(body) {
 function parseXrayFormFields(body) {
     const xray = {};
 
+    if (body['xray.listen'] !== undefined) {
+        xray.listen = String(body['xray.listen'] || '').trim() || '0.0.0.0';
+    }
     if (body['xray.transport']) {
         xray.transport = _pickEnum(body['xray.transport'], XRAY_TRANSPORT_VALUES, 'tcp');
     }
@@ -350,6 +356,7 @@ function parseXrayFormFields(body) {
  * defense layer (Rule #2). Returns the first error message or null when valid.
  *
  * Validates:
+ *  - Main and extra inbound listen values are IPv4 or IPv6 literals
  *  - Each extra inbound port is a valid number in 1..65535
  *  - Ports are unique across: node.port, xray.apiPort, xray.agentPort, extras
  *  - Inbound tags are non-empty, alphanumeric/dash/underscore, unique,
@@ -361,6 +368,11 @@ function parseXrayFormFields(body) {
  * @returns {string|null}
  */
 function validateXrayFormFields(xray, node) {
+    const mainListen = String(xray?.listen || '0.0.0.0').trim();
+    if (!net.isIP(mainListen)) {
+        return 'Main inbound: listen must be a valid IPv4 or IPv6 address.';
+    }
+
     // TLS-source-specific validation is independent of extra inbounds, run
     // it first so the early-return below does not mask manual-PEM mistakes.
     const tlsSecurity = (xray?.security === 'tls');
@@ -468,6 +480,9 @@ function validateXrayFormFields(xray, node) {
         const inbound = xray.extraInbounds[i];
         const idx = i + 1;
 
+        if (!net.isIP(String(inbound.listen || '0.0.0.0').trim())) {
+            return `Extra inbound #${idx}: listen must be a valid IPv4 or IPv6 address.`;
+        }
         if (!Number.isInteger(inbound.port) || inbound.port < 1 || inbound.port > 65535) {
             return `Extra inbound #${idx}: invalid port (must be 1..65535)`;
         }

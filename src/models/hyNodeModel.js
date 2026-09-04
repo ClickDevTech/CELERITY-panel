@@ -3,6 +3,18 @@
  */
 
 const mongoose = require('mongoose');
+const net = require('net');
+
+const ipLiteralField = {
+    type: String,
+    default: '0.0.0.0',
+    trim: true,
+    maxlength: 45,
+    validate: {
+        validator: value => net.isIP(String(value || '')) !== 0,
+        message: 'listen must be a valid IPv4 or IPv6 address',
+    },
+};
 
 const portConfigSchema = new mongoose.Schema({
     name: { type: String, default: '' },
@@ -117,6 +129,7 @@ const xrayExtraInboundSchema = new mongoose.Schema({
     // instead of "<node name> (<label>)".
     uniqueName: { type: Boolean, default: false },
     port: { type: Number, required: true },
+    listen: ipLiteralField,
     inboundTag: { type: String, required: true },
 
     transport: { type: String, enum: ['tcp', 'ws', 'grpc', 'xhttp'], default: 'tcp' },
@@ -161,6 +174,9 @@ const xrayExtraInboundSchema = new mongoose.Schema({
 }, { _id: false });
 
 const xrayConfigSchema = new mongoose.Schema({
+    // Client-facing inbound bind address. Keep the public wildcard for
+    // backwards compatibility; advanced setups can bind to loopback/LAN.
+    listen: ipLiteralField,
     // Transport: tcp, ws, grpc, xhttp (splithttp)
     transport: { type: String, enum: ['tcp', 'ws', 'grpc', 'xhttp'], default: 'tcp' },
     // Security: reality (no cert needed), tls (cert files), none

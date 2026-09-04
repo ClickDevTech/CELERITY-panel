@@ -487,6 +487,14 @@
                         </div>
 
                         <div class="form-group">
+                            <label for="xrayListen"><%= t('nodes.xrayListen') %></label>
+                            <input type="text" id="xrayListen" name="xray.listen"
+                                   value="<%= node?.xray?.listen || '0.0.0.0' %>"
+                                   maxlength="45" spellcheck="false" placeholder="0.0.0.0">
+                            <small><%= t('nodes.xrayListenHint') %></small>
+                        </div>
+
+                        <div class="form-group">
                             <label for="xrayApiPort"><%= t('nodes.xrayApiPort') %></label>
                             <input type="number" id="xrayApiPort" name="xray.apiPort"
                                    value="<%= node?.xray?.apiPort || 61000 %>" placeholder="61000">

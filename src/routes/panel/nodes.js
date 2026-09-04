@@ -1,6 +1,9 @@
 const express = require('express');
+const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
+const Admin = require('../../models/adminModel');
 const HyNode = require('../../models/hyNodeModel');
 const HyUser = require('../../models/hyUserModel');
 const ServerGroup = require('../../models/serverGroupModel');
@@ -9,6 +12,8 @@ const cryptoService = require('../../services/cryptoService');
 const syncService = require('../../services/syncService');
 const configGenerator = require('../../services/configGenerator');
 const nodeSetup = require('../../services/nodeSetup');
+const xrayVersionService = require('../../services/xrayVersionService');
+const totpService = require('../../services/totpService');
 const { isSameVpsAsPanel } = nodeSetup;
 const NodeSSH = require('../../services/nodeSSH');
 const sshKeyService = require('../../services/sshKeyService');
@@ -42,6 +47,42 @@ const {
 } = require('./helpers');
 
 const sniScanner = require('../../services/sniScanner');
+
+const xrayVersionCheckLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const xrayVersionApplyLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 3,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+async function reauthenticateXrayVersionChange(req, res) {
+    const password = String(req.body?.currentPassword || '');
+    const token = String(req.body?.totpToken || '');
+    const admin = await Admin.verifyPassword(req.session.adminUsername, password);
+    if (!admin) {
+        res.status(401).json({ error: res.locals.t?.('auth.invalidCurrentPassword') || 'Invalid current password' });
+        return false;
+    }
+    if (!admin.twoFactor?.enabled) return true;
+
+    const secret = totpService.decryptSecret(admin.twoFactor.secretEncrypted);
+    if (!secret) {
+        res.status(500).json({ error: res.locals.t?.('auth.totpConfigError') || 'TOTP configuration error' });
+        return false;
+    }
+    if (!(await totpService.verifyToken({ secret, token }))) {
+        res.status(401).json({ error: res.locals.t?.('auth.invalidCurrentTotp') || 'Invalid current TOTP code' });
+        return false;
+    }
+    return true;
+}
 
 /**
  * Parse virtual-node form fields and apply them to nodeData.
@@ -608,6 +649,101 @@ router.post('/nodes/generate-reality-keys', (req, res) => {
     }
 });
 
+router.get('/nodes/:id/xray-version-status', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ error: 'Invalid node id' });
+        }
+        const node = await HyNode.findById(req.params.id);
+        if (!node) return res.status(404).json({ error: 'Node not found' });
+        if (node.type !== 'xray') return res.status(400).json({ error: 'Node is not an Xray node' });
+
+        const [versionInfo, currentVersion] = await Promise.all([
+            xrayVersionService.getVersionInfo(),
+            req.query.live === '1'
+                ? xrayVersionService.detectInstalledVersion(node)
+                : Promise.resolve(xrayVersionService.normalizeVersion(node.xrayVersion)),
+        ]);
+        return res.json({
+            ...versionInfo,
+            currentVersion: currentVersion || null,
+            canChangeVersion: !!(node.ssh?.password || node.ssh?.privateKey),
+            task: xrayVersionService.getTask(node._id),
+        });
+    } catch (error) {
+        logger.error(`[Panel] Xray version status error: ${error.message}`);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/nodes/:id/xray-version-check', xrayVersionCheckLimiter, async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ error: 'Invalid node id' });
+        }
+        const node = await HyNode.findById(req.params.id);
+        if (!node) return res.status(404).json({ error: 'Node not found' });
+        if (node.type !== 'xray') return res.status(400).json({ error: 'Node is not an Xray node' });
+
+        const [versionInfo, currentVersion] = await Promise.all([
+            xrayVersionService.getVersionInfo({ force: true }),
+            xrayVersionService.detectInstalledVersion(node, { forceSsh: true }),
+        ]);
+        return res.json({
+            ...versionInfo,
+            currentVersion: currentVersion || null,
+            canChangeVersion: !!(node.ssh?.password || node.ssh?.privateKey),
+            task: xrayVersionService.getTask(node._id),
+        });
+    } catch (error) {
+        logger.error(`[Panel] Xray version check error: ${error.message}`);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+router.get('/nodes/:id/xray-version-changelog', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ error: 'Invalid node id' });
+        }
+        const changelog = await xrayVersionService.getReleaseChangelog(req.query.version);
+        if (!changelog) return res.status(404).json({ error: 'Unknown Xray release' });
+        return res.json(changelog);
+    } catch (error) {
+        logger.error(`[Panel] Xray changelog error: ${error.message}`);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+router.get('/nodes/:id/xray-version-task', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+        return res.status(400).json({ error: 'Invalid node id' });
+    }
+    return res.json(xrayVersionService.getTask(req.params.id));
+});
+
+router.post('/nodes/:id/xray-version', xrayVersionApplyLimiter, async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ error: 'Invalid node id' });
+        }
+        const node = await HyNode.findById(req.params.id);
+        if (!node) return res.status(404).json({ error: 'Node not found' });
+        if (node.type !== 'xray') return res.status(400).json({ error: 'Node is not an Xray node' });
+        if (!node.ssh?.password && !node.ssh?.privateKey) {
+            return res.status(409).json({ error: 'SSH credentials are required to change Xray version' });
+        }
+        if (!(await reauthenticateXrayVersionChange(req, res))) return undefined;
+
+        const task = await xrayVersionService.startVersionChange(node._id, req.body?.version);
+        logger.warn(`[Panel] Xray version change to ${task.targetVersion} started for ${node.name} by ${req.session.adminUsername} (IP: ${req.ip})`);
+        return res.status(202).json({ accepted: true, task });
+    } catch (error) {
+        logger.error(`[Panel] Xray version change error: ${error.message}`);
+        return res.status(error.statusCode || 500).json({ error: error.message });
+    }
+});
+
 // GET /panel/nodes/:id - Edit node form
 router.get('/nodes/:id', async (req, res) => {
     try {
@@ -615,7 +751,7 @@ router.get('/nodes/:id', async (req, res) => {
         // Pull manualKey explicitly (schema marks it select:false) so we can
         // populate the manualKeySet flag in the rendered form. The actual
         // PEM is then stripped via sanitizeXrayForRender before reaching EJS.
-        const [node, groups, cascadeLinks, settings, candidateNodes] = await Promise.all([
+        const [node, groups, cascadeLinks, settings, candidateNodes, currentAdmin] = await Promise.all([
             HyNode.findById(req.params.id)
                 .select('+xray.manualKey')
                 .populate('groups', 'name color'),
@@ -632,6 +768,7 @@ router.get('/nodes/:id', async (req, res) => {
                 .select('_id name flag type active')
                 .sort({ name: 1 })
                 .lean(),
+            Admin.findOne({ username: req.session.adminUsername }).select('twoFactor.enabled').lean(),
         ]);
 
         if (!node) {
@@ -675,6 +812,7 @@ router.get('/nodes/:id', async (req, res) => {
             panelAcmeEmail: config.ACME_EMAIL || '',
             lastInitScript: settings?.lastInitScript || '',
             canAddPairedProtocol,
+            xrayUpdateTotpEnabled: !!currentAdmin?.twoFactor?.enabled,
         });
     } catch (error) {
         res.status(500).send('Error: ' + error.message);

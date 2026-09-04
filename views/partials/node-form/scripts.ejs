@@ -128,6 +128,76 @@
     font-weight: 600;
     color: var(--text-primary);
 }
+.xrv-panel {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+}
+.xrv-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+}
+.xrv-summary > div { display: flex; flex-direction: column; gap: 4px; }
+.xrv-select-wrap { max-width: 440px; margin-top: 14px; }
+.xrv-changelog { margin: 12px 0; }
+.xrv-changelog summary { cursor: pointer; color: var(--text-secondary); }
+.xrv-changelog pre {
+    margin-top: 8px;
+    max-height: 220px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-muted);
+    font: 12px/1.5 'Consolas', 'Monaco', monospace;
+}
+.xrv-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.xrv-actions-end { justify-content: flex-end; }
+.xrv-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(8, 8, 10, 0.72);
+    backdrop-filter: blur(10px);
+}
+.xrv-progress-card {
+    width: min(620px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+    padding: 24px;
+    background: var(--glass-bg-strong, var(--bg-secondary));
+    border: 1px solid var(--glass-border-strong, var(--border));
+    border-radius: var(--radius);
+}
+.xrv-progress-head { display: flex; align-items: center; gap: 14px; }
+.xrv-progress-head > i { font-size: 28px; animation: xrv-spin .9s linear infinite; }
+.xrv-progress-head h2 { margin: 0; }
+.xrv-progress-head p { margin: 4px 0 0; color: var(--text-muted); }
+.xrv-progress-steps { display: grid; gap: 7px; margin: 18px 0; }
+.xrv-progress-steps > div {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--text-muted);
+}
+.xrv-progress-steps > div.is-active { color: var(--text-primary); font-weight: 600; }
+.xrv-progress-steps > div.is-done { color: var(--success); }
+.xrv-progress-steps > div.is-error { color: var(--danger); }
+.xrv-progress-log {
+    max-height: 260px;
+    overflow: auto;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.45);
+    color: #d4d4d8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font: 12px/1.5 'Consolas', 'Monaco', monospace;
+}
+@keyframes xrv-spin { to { transform: rotate(360deg); } }
 .logs-output {
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid var(--glass-border);
@@ -1384,7 +1454,11 @@ async function refreshNodeInfo() {
     try {
         const res = await fetch('/api/nodes/<%= node._id %>/agent-info', { credentials: 'include' });
         const data = await res.json();
-        if (data.xray_version) document.getElementById('infoXrayVersion').textContent = data.xray_version;
+        if (data.xray_version) {
+            document.getElementById('infoXrayVersion').textContent = data.xray_version;
+            const current = document.getElementById('xrayVersionCurrent');
+            if (current) current.textContent = 'v' + String(data.xray_version).replace(/^v/i, '');
+        }
         if (data.agent_version) document.getElementById('infoAgentVersion').textContent = data.agent_version;
         if (data.users_count !== undefined) document.getElementById('infoUsersCount').textContent = data.users_count;
         const statusEl = document.getElementById('infoAgentStatus');
@@ -1402,6 +1476,328 @@ async function refreshNodeInfo() {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-refresh"></i>'; }
     }
 }
+
+const xrvT = {
+    current: <%- JSON.stringify(t('settings.updateCurrentTag')) %>,
+    prerelease: <%- JSON.stringify(t('nodes.xrayVersionPrerelease')) %>,
+    update: <%- JSON.stringify(t('nodes.xrayVersionUpdate')) %>,
+    rollback: <%- JSON.stringify(t('nodes.xrayVersionRollback')) %>,
+    reinstall: <%- JSON.stringify(t('nodes.xrayVersionReinstall')) %>,
+    prereleaseWarn: <%- JSON.stringify(t('nodes.xrayVersionPrereleaseWarn')) %>,
+    downgradeWarn: <%- JSON.stringify(t('nodes.xrayVersionDowngradeWarn')) %>,
+    noSsh: <%- JSON.stringify(t('nodes.xrayVersionNoSsh')) %>,
+    confirm: <%- JSON.stringify(t('nodes.xrayVersionConfirmSummary')) %>,
+    passwordRequired: <%- JSON.stringify(t('settings.updatePasswordRequired')) %>,
+    totpRequired: <%- JSON.stringify(t('settings.updateTotpRequired')) %>,
+    success: <%- JSON.stringify(t('nodes.xrayVersionSuccess')) %>,
+    failed: <%- JSON.stringify(t('nodes.xrayVersionFailed')) %>,
+    rollbackDone: <%- JSON.stringify(t('nodes.xrayVersionRollbackDone')) %>,
+    rollbackFailed: <%- JSON.stringify(t('nodes.xrayVersionRollbackFailed')) %>,
+    unchanged: <%- JSON.stringify(t('nodes.xrayVersionUnchanged')) %>,
+    changelogLoading: <%- JSON.stringify(t('nodes.xrayVersionChangelogLoading')) %>,
+};
+
+let xrvReleases = [];
+const xrvChangelogCache = new Map();
+let xrvCurrentVersion = '';
+let xrvSelectedVersion = '';
+let xrvCanChange = false;
+let xrvPollTimer = null;
+
+function xrvParts(value) {
+    const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(value || '').trim());
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
+}
+
+function xrvCompare(left, right) {
+    const a = xrvParts(left);
+    const b = xrvParts(right);
+    if (!a || !b) return 0;
+    for (let i = 0; i < 3; i++) {
+        if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1;
+    }
+    return 0;
+}
+
+function xrvDate(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+}
+
+function xrvSetMessage(text, type) {
+    const element = document.getElementById('xrayVersionMessage');
+    if (!element) return;
+    element.style.display = text ? '' : 'none';
+    element.className = `alert ${type === 'error' ? 'alert-error' : 'alert-warning'} mt-2`;
+    element.textContent = text || '';
+}
+
+function renderXrayVersionSelection() {
+    const select = document.getElementById('xrayVersionSelect');
+    const button = document.getElementById('xrayVersionApplyBtn');
+    if (!select || !button) return;
+
+    select.innerHTML = '';
+    for (const release of xrvReleases) {
+        const option = document.createElement('option');
+        option.value = release.version;
+        const suffix = [
+            release.prerelease ? xrvT.prerelease : '',
+            release.version === xrvCurrentVersion ? xrvT.current : '',
+        ].filter(Boolean).join(', ');
+        option.textContent = `v${release.version}${suffix ? ` (${suffix})` : ''}`;
+        select.appendChild(option);
+    }
+
+    const preferred = xrvReleases.find(release => !release.prerelease)
+        || xrvReleases[0];
+    if (preferred) {
+        select.value = preferred.version;
+        xrvSelectedVersion = preferred.version;
+    }
+    select.disabled = !xrvReleases.length;
+    button.disabled = !xrvReleases.length || !xrvCanChange;
+    onXrayVersionChange();
+}
+
+function onXrayVersionChange() {
+    const select = document.getElementById('xrayVersionSelect');
+    if (!select) return;
+    xrvSelectedVersion = select.value;
+    const release = xrvReleases.find(item => item.version === xrvSelectedVersion);
+    const diff = xrvCompare(xrvSelectedVersion, xrvCurrentVersion);
+    const label = document.getElementById('xrayVersionApplyLabel');
+    if (label) label.textContent = diff > 0 ? xrvT.update : (diff < 0 ? xrvT.rollback : xrvT.reinstall);
+
+    const warnings = [];
+    if (release?.prerelease) warnings.push(xrvT.prereleaseWarn);
+    if (xrvCurrentVersion && diff < 0) warnings.push(xrvT.downgradeWarn);
+    if (!xrvCanChange) warnings.push(xrvT.noSsh);
+    const warning = document.getElementById('xrayVersionWarning');
+    if (warning) {
+        warning.style.display = warnings.length ? '' : 'none';
+        warning.textContent = warnings.join(' ');
+    }
+
+    // Changelog bodies are fetched per release instead of shipping ~100 of
+    // them with the version list.
+    const changelogWrap = document.getElementById('xrayVersionChangelogWrap');
+    const changelog = document.getElementById('xrayVersionChangelog');
+    if (changelogWrap && changelog) {
+        changelogWrap.style.display = release?.hasChangelog ? '' : 'none';
+        changelog.textContent = '';
+        changelogWrap.open = false;
+        if (release?.hasChangelog && xrvChangelogCache.has(release.version)) {
+            changelog.textContent = xrvChangelogCache.get(release.version);
+        }
+    }
+}
+
+async function loadXrayChangelog() {
+    const changelogWrap = document.getElementById('xrayVersionChangelogWrap');
+    const changelog = document.getElementById('xrayVersionChangelog');
+    if (!changelogWrap?.open || !changelog || !xrvSelectedVersion) return;
+
+    const version = xrvSelectedVersion;
+    if (xrvChangelogCache.has(version)) {
+        changelog.textContent = xrvChangelogCache.get(version);
+        return;
+    }
+
+    changelog.textContent = xrvT.changelogLoading;
+    try {
+        const response = await fetch(
+            '/panel/nodes/<%= node._id %>/xray-version-changelog?version=' + encodeURIComponent(version),
+            { credentials: 'include' }
+        );
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || i18n.error);
+        const body = String(data.body || '');
+        xrvChangelogCache.set(version, body);
+        if (xrvSelectedVersion === version) changelog.textContent = body;
+    } catch (error) {
+        if (xrvSelectedVersion === version) changelog.textContent = error.message;
+    }
+}
+
+async function loadXrayVersionStatus(live) {
+    try {
+        const query = live ? '?live=1' : '';
+        const response = await fetch('/panel/nodes/<%= node._id %>/xray-version-status' + query, {
+            credentials: 'include',
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || i18n.error);
+
+        xrvReleases = Array.isArray(data.releases) ? data.releases : [];
+        xrvCurrentVersion = String(data.currentVersion || '').replace(/^v/i, '');
+        xrvCanChange = !!data.canChangeVersion;
+        document.getElementById('xrayVersionCurrent').textContent = xrvCurrentVersion ? `v${xrvCurrentVersion}` : '—';
+        document.getElementById('infoXrayVersion').textContent = xrvCurrentVersion || '—';
+        document.getElementById('xrayVersionLatest').textContent = data.latestVersion ? `v${data.latestVersion}` : '—';
+        document.getElementById('xrayVersionCheckedAt').textContent = xrvDate(data.checkedAt);
+        xrvSetMessage(data.error || '', data.releases?.length ? 'warning' : 'error');
+        renderXrayVersionSelection();
+
+        if (data.task?.state === 'running') {
+            showXrayVersionProgress(data.task);
+            pollXrayVersionTask();
+        }
+    } catch (error) {
+        xrvSetMessage(error.message, 'error');
+    }
+}
+
+async function checkXrayVersions() {
+    const button = document.getElementById('xrayVersionCheckBtn');
+    if (button) button.disabled = true;
+    try {
+        const response = await fetch('/panel/nodes/<%= node._id %>/xray-version-check', {
+            method: 'POST',
+            credentials: 'include',
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || i18n.error);
+        xrvReleases = Array.isArray(data.releases) ? data.releases : [];
+        xrvCurrentVersion = String(data.currentVersion || '').replace(/^v/i, '');
+        xrvCanChange = !!data.canChangeVersion;
+        document.getElementById('xrayVersionCurrent').textContent = xrvCurrentVersion ? `v${xrvCurrentVersion}` : '—';
+        document.getElementById('infoXrayVersion').textContent = xrvCurrentVersion || '—';
+        document.getElementById('xrayVersionLatest').textContent = data.latestVersion ? `v${data.latestVersion}` : '—';
+        document.getElementById('xrayVersionCheckedAt').textContent = xrvDate(data.checkedAt);
+        xrvSetMessage(data.error || '', data.releases?.length ? 'warning' : 'error');
+        renderXrayVersionSelection();
+    } catch (error) {
+        xrvSetMessage(error.message, 'error');
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+function openXrayVersionModal() {
+    if (!xrvSelectedVersion) return;
+    const summary = xrvT.confirm
+        .replace('{current}', xrvCurrentVersion ? `v${xrvCurrentVersion}` : '—')
+        .replace('{target}', `v${xrvSelectedVersion}`);
+    document.getElementById('xrayVersionModalSummary').textContent = summary;
+    document.getElementById('xrayVersionModal').style.display = 'flex';
+    document.getElementById('xrayVersionPassword').focus();
+}
+
+function closeXrayVersionModal() {
+    document.getElementById('xrayVersionModal').style.display = 'none';
+    document.getElementById('xrayVersionPassword').value = '';
+    document.getElementById('xrayVersionTotp').value = '';
+}
+
+async function submitXrayVersionChange() {
+    const password = document.getElementById('xrayVersionPassword').value;
+    const totp = document.getElementById('xrayVersionTotp').value;
+    const totpEnabled = document.getElementById('xrayVersionCard').dataset.totpEnabled === '1';
+    if (!password) return alert(xrvT.passwordRequired);
+    if (totpEnabled && !totp) return alert(xrvT.totpRequired);
+
+    const button = document.getElementById('xrayVersionConfirmBtn');
+    button.disabled = true;
+    try {
+        const response = await fetch('/panel/nodes/<%= node._id %>/xray-version', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                version: xrvSelectedVersion,
+                currentPassword: password,
+                totpToken: totp,
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || i18n.error);
+        closeXrayVersionModal();
+        showXrayVersionProgress(data.task);
+        pollXrayVersionTask();
+    } catch (error) {
+        alert(error.message);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function paintXrayVersionSteps(task) {
+    const order = ['preflight', 'download', 'sync', 'verify'];
+    const currentIndex = task.step === 'done' ? order.length : order.indexOf(task.step);
+    document.querySelectorAll('#xrayVersionProgressSteps > div').forEach((row, index) => {
+        row.classList.remove('is-active', 'is-done', 'is-error');
+        const icon = row.querySelector('i');
+        if (task.state === 'error' && index === Math.max(0, currentIndex)) {
+            row.classList.add('is-error');
+            icon.className = 'ti ti-x';
+        } else if (index < currentIndex || task.state === 'done') {
+            row.classList.add('is-done');
+            icon.className = 'ti ti-check';
+        } else if (index === currentIndex && task.state === 'running') {
+            row.classList.add('is-active');
+            icon.className = 'ti ti-loader-2';
+        } else {
+            icon.className = 'ti ti-circle';
+        }
+    });
+}
+
+function showXrayVersionProgress(task) {
+    const overlay = document.getElementById('xrayVersionOverlay');
+    overlay.style.display = 'flex';
+    document.getElementById('xrayVersionProgressSub').textContent =
+        `${task.currentVersion ? `v${task.currentVersion}` : '—'} → v${task.targetVersion}`;
+    document.getElementById('xrayVersionProgressLog').textContent =
+        Array.isArray(task.logs) ? task.logs.join('\n') : '';
+    document.getElementById('xrayVersionProgressLog').scrollTop =
+        document.getElementById('xrayVersionProgressLog').scrollHeight;
+    paintXrayVersionSteps(task);
+
+    const close = document.getElementById('xrayVersionProgressClose');
+    close.style.display = task.state === 'running' ? 'none' : '';
+    if (task.state === 'done') {
+        document.getElementById('xrayVersionProgressTitle').textContent =
+            xrvT.success.replace('{version}', `v${task.targetVersion}`);
+    } else if (task.state === 'error') {
+        let outcome = xrvT.rollbackFailed;
+        if (task.nodeUnchanged) outcome = xrvT.unchanged;
+        else if (task.rollbackSucceeded) outcome = xrvT.rollbackDone;
+        document.getElementById('xrayVersionProgressTitle').textContent = xrvT.failed;
+        document.getElementById('xrayVersionProgressSub').textContent = `${task.error || ''} ${outcome}`.trim();
+    }
+}
+
+async function pollXrayVersionTask() {
+    clearTimeout(xrvPollTimer);
+    try {
+        const response = await fetch('/panel/nodes/<%= node._id %>/xray-version-task', {
+            credentials: 'include',
+        });
+        const task = await response.json();
+        if (!response.ok) throw new Error(task.error || i18n.error);
+        showXrayVersionProgress(task);
+        if (task.state === 'running') {
+            xrvPollTimer = setTimeout(pollXrayVersionTask, 2000);
+        } else {
+            await loadXrayVersionStatus(false);
+        }
+    } catch (error) {
+        xrvPollTimer = setTimeout(pollXrayVersionTask, 4000);
+    }
+}
+
+function closeXrayVersionProgress() {
+    clearTimeout(xrvPollTimer);
+    document.getElementById('xrayVersionOverlay').style.display = 'none';
+    document.getElementById('xrayVersionProgressClose').style.display = 'none';
+    document.getElementById('xrayVersionProgressTitle').textContent =
+        <%- JSON.stringify(t('nodes.xrayVersionProgressTitle')) %>;
+}
+
+document.getElementById('xrayVersionSelect')?.addEventListener('change', onXrayVersionChange);
+document.getElementById('xrayVersionChangelogWrap')?.addEventListener('toggle', loadXrayChangelog);
 <% } %>
 
 async function generateXrayKeys(btn) {
@@ -1453,6 +1849,9 @@ async function generateXrayKeys(btn) {
         const keyTa = document.getElementById('xrayManualKey');
         if (certTa) validateXrayPemField(certTa, 'cert');
         if (keyTa) validateXrayPemField(keyTa, 'key');
+        <% if (node?._id && node.type === 'xray') { %>
+        loadXrayVersionStatus(true);
+        <% } %>
     }
 
     // Live duplicate-port / duplicate-tag detection across extra inbounds.

@@ -778,7 +778,7 @@ function buildVlessInbound(inbound, users, node) {
     }
 
     return {
-        listen: '0.0.0.0',
+        listen: inbound.listen || '0.0.0.0',
         port: inbound.port || 443,
         protocol: 'vless',
         tag: inbound.inboundTag,
@@ -805,6 +805,7 @@ function generateXrayConfig(node, users) {
 
     // Main inbound is described by the flat xray.* fields plus node.port.
     const mainInbound = {
+        listen: xray.listen || '0.0.0.0',
         port: node.port || 443,
         inboundTag: mainInboundTag,
         transport: xray.transport,

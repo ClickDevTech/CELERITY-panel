@@ -5,6 +5,7 @@
 
 const { z } = require('zod');
 const { Client } = require('ssh2');
+const net = require('net');
 const HyNode = require('../../models/hyNodeModel');
 const HyUser = require('../../models/hyUserModel');
 const cache = require('../../services/cacheService');
@@ -43,6 +44,10 @@ const queryNodesSchema = z.object({
 // Xray stream/security fields shared by the main inbound and extras. Enums
 // mirror xrayConfigSchema/xrayExtraInboundSchema in hyNodeModel.js.
 const xrayInboundCommonZ = {
+    listen: z.string()
+        .refine(value => net.isIP(value.trim()) !== 0, 'listen must be a valid IPv4 or IPv6 address')
+        .optional()
+        .describe('Server bind IPv4/IPv6 address; defaults to 0.0.0.0'),
     transport: z.enum(['tcp', 'ws', 'grpc', 'xhttp']).optional(),
     security: z.enum(['reality', 'tls', 'none']).optional(),
     flow: z.string().optional(),
@@ -489,7 +494,7 @@ async function manageNode(args, emit) {
                 return { error: `Node type ${nextType} requires ip`, code: 400 };
             }
 
-            const node = await HyNode.findByIdAndUpdate(id, { $set: updates }, { new: true })
+            const node = await HyNode.findByIdAndUpdate(id, { $set: updates }, { new: true, runValidators: true })
                 .populate('groups', 'name color');
             if (!node) return { error: `Node '${id}' not found`, code: 404 };
             await invalidateNodesCache();

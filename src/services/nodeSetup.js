@@ -11,6 +11,13 @@ const cryptoService = require('./cryptoService');
 const Settings = require('../models/settingsModel');
 const configGenerator = require('./configGenerator');
 
+function isLoopbackAddress(value) {
+    const address = String(value || '').trim().toLowerCase();
+    return /^127\./.test(address)
+        || address === '::1'
+        || address === '0:0:0:0:0:0:0:1';
+}
+
 /**
  * Check if a node is on the same VPS as the panel
  * Uses multiple heuristics: domain match, IP match via DNS, localhost detection
@@ -1169,16 +1176,25 @@ fi
             log(`TLS source: ${xrayCfg.tlsSource || 'panel'} — certificate inlined in config.json (no on-node openssl)`);
         }
 
-        // Collect all client-facing ports: main inbound + extra inbounds.
-        // apiPort is local-only (127.0.0.1) and does not need a firewall rule.
+        // Collect externally bound client-facing ports. Loopback listeners and
+        // apiPort do not need host firewall rules.
         const mainPort = node.port || 443;
         const apiPort = (node.xray || {}).apiPort || 61000;
-        const extraPorts = ((node.xray || {}).extraInbounds || [])
-            .map(i => parseInt(i.port, 10))
-            .filter(p => Number.isInteger(p) && p > 0 && p < 65536 && p !== mainPort);
-        const allPorts = [mainPort, ...extraPorts];
+        const xrayConfig = node.xray || {};
+        const externalPorts = [];
+        if (!isLoopbackAddress(xrayConfig.listen || '0.0.0.0')) {
+            externalPorts.push(mainPort);
+        }
+        for (const inbound of (xrayConfig.extraInbounds || [])) {
+            const port = parseInt(inbound.port, 10);
+            if (Number.isInteger(port) && port > 0 && port < 65536
+                && !isLoopbackAddress(inbound.listen || '0.0.0.0')) {
+                externalPorts.push(port);
+            }
+        }
+        const allPorts = [...new Set(externalPorts)];
 
-        log(`Opening firewall ports (${allPorts.join(', ')}, api:${apiPort})...`);
+        log(`Opening external firewall ports (${allPorts.join(', ') || 'none'}, api:${apiPort} local)...`);
         const portRules = allPorts.map(p => `
     iptables -I INPUT -p tcp --dport ${p} -j ACCEPT 2>/dev/null || true
     iptables -I INPUT -p udp --dport ${p} -j ACCEPT 2>/dev/null || true`).join('');
@@ -1715,4 +1731,5 @@ module.exports = {
     getXrayNodeLogs,
     getPanelCertificates,
     isSameVpsAsPanel,
+    isLoopbackAddress,
 };
