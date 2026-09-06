@@ -26,6 +26,7 @@ const hwidDeviceService = require('../services/hwidDeviceService');
 const webhookService = require('../services/webhookService');
 const { isServerlessNode } = require('../utils/nodeTypes');
 const { isValidXhttpRange, isAllZeroRange } = require('../utils/xhttpOptions');
+const { pickFingerprint } = require('../utils/fingerprints');
 
 // ==================== HELPERS ====================
 
@@ -411,23 +412,6 @@ function generateURI(user, node, config, dedupeLabel = _passthroughLabel) {
 }
 
 /**
- * Resolve the fingerprint to publish for an inbound. When a non-empty pool is
- * configured, one entry is chosen at random per call; otherwise the single
- * `fingerprint` is used. Resolved once here so every downstream format
- * (VLESS URI / Clash / sing-box / v2ray) stays uniform.
- *
- * NOTE: subscription responses are cached in Redis (see serveSubscription),
- * so the random pick is effectively "frozen" for the subscription cache TTL
- * and rotates on the next cache MISS — not on every HTTP request.
- */
-function pickFingerprint(fingerprint, pool) {
-    if (pool && pool.length > 0) {
-        return pool[(Math.random() * pool.length) | 0];
-    }
-    return fingerprint || 'chrome';
-}
-
-/**
  * Build the list of inbound descriptors to advertise in the subscription.
  * The first entry is the main inbound (port = node.port, name = node label),
  * followed by every entry of `node.xray.extraInbounds` that has a port. Each
@@ -457,6 +441,10 @@ function getXrayPublishedInbounds(node) {
         const edges = onDomain
             ? [{ id: 'domain', label: '', address: node.cdn?.domain }]
             : enabledEdges;
+        const fingerprint = pickFingerprint(
+            node.cdn?.fingerprint || source.fingerprint,
+            node.cdn?.fingerprintPool
+        );
         return edges
             .filter(edge => edge.address)
             .map((edge, index) => ({
@@ -470,7 +458,7 @@ function getXrayPublishedInbounds(node) {
                 extraId: source.extraId,
                 edgeId: edge.id,
                 security: 'tls',
-                fingerprint: node.cdn?.fingerprint || source.fingerprint || 'chrome',
+                fingerprint,
                 alpn: node.cdn?.alpn || [],
                 wsPath: node.cdn?.path || source.wsPath,
                 wsHost: node.cdn?.host || source.wsHost,

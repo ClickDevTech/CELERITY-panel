@@ -316,6 +316,70 @@
 }
 
 /* ── CDN edge addresses ── */
+.cdn-connection-card {
+    margin: 4px 0 18px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-secondary);
+}
+.cdn-connection-header,
+.cdn-format-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.cdn-connection-header {
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+.cdn-connection-flow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+}
+.cdn-connection-hop {
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+}
+.cdn-connection-hop strong,
+.cdn-connection-hop small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cdn-connection-hop small {
+    margin-top: 4px;
+    color: var(--text-muted);
+}
+.cdn-connection-kicker {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+.cdn-connection-arrow {
+    align-self: center;
+    color: var(--accent);
+    font-size: 18px;
+}
+.cdn-format-strip {
+    margin-top: 10px;
+}
+.cdn-format-label {
+    margin-right: 2px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
 #cdnEdgesContainer {
     display: grid;
     gap: 8px;
@@ -371,6 +435,13 @@
     border-color: var(--danger);
 }
 @media (max-width: 760px) {
+    .cdn-connection-flow {
+        grid-template-columns: 1fr;
+    }
+    .cdn-connection-arrow {
+        justify-self: center;
+        transform: rotate(90deg);
+    }
     .cdn-edge-row {
         grid-template-columns: minmax(0, 1fr) 40px;
     }
@@ -605,7 +676,12 @@ const i18n = {
     cdnPathMustExtend: <%- JSON.stringify(t("nodes.cdnPathMustExtend")) %>,
     cdnPathMustMatchOrigin: <%- JSON.stringify(t("nodes.cdnPathMustMatchOrigin")) %>,
     cdnPathMustEqual: <%- JSON.stringify(t("nodes.cdnPathMustEqual")) %>,
-    cdnPathUnsupported: <%- JSON.stringify(t("nodes.cdnPathUnsupported")) %>
+    cdnPathUnsupported: <%- JSON.stringify(t("nodes.cdnPathUnsupported")) %>,
+    cdnConnectionIncomplete: <%- JSON.stringify(t("nodes.cdnConnectionIncomplete")) %>,
+    cdnConnectionReady: <%- JSON.stringify(t("nodes.cdnConnectionReady")) %>,
+    cdnMihomoExcluded: <%- JSON.stringify(t("nodes.cdnMihomoExcluded")) %>,
+    cdnSaveFailed: <%- JSON.stringify(t("nodes.cdnSaveFailed")) %>,
+    cdnSaving: <%- JSON.stringify(t("nodes.cdnSaving")) %>
 };
 const i18nConfig = {
     copied: <%- JSON.stringify(t("common.copied")) %>,
@@ -845,17 +921,32 @@ function _anyXrayTlsInboundActive() {
     return false;
 }
 
-// Toggle the main inbound fingerprint UI between "single" and "pool" modes.
-// The pool checkboxes are disabled in single mode so a (possibly stale)
-// selection is never submitted; the empty hidden fallback still clears the pool.
-function updateXrayFingerprintModeUI() {
-    const checked = document.querySelector('input[name="xrayFingerprintMode"]:checked');
-    const mode = checked ? checked.value : 'single';
-    const single = document.getElementById('xrayFingerprintSingle');
-    const poolBlock = document.getElementById('xrayFingerprintPoolBlock');
+// A shared picker is used by regular Xray and CDN client settings.
+function updateFingerprintPickerUI(picker) {
+    if (!picker) return;
+    const checked = picker.querySelector('input[type="radio"]:checked');
+    const mode = checked?.value || 'single';
+    const single = picker.querySelector('[data-fingerprint-single]');
+    const poolBlock = picker.querySelector('[data-fingerprint-pool]');
     if (single) single.style.display = mode === 'single' ? '' : 'none';
     if (poolBlock) poolBlock.style.display = mode === 'pool' ? '' : 'none';
-    document.querySelectorAll('input.xray-fp-pool-cb').forEach(cb => { cb.disabled = mode !== 'pool'; });
+    picker.querySelectorAll('input[data-fingerprint-pool-value]').forEach(cb => {
+        cb.disabled = mode !== 'pool';
+    });
+    if (picker.id === 'cdnFingerprintPicker' && typeof updateCdnConnectionPreview === 'function') {
+        updateCdnConnectionPreview();
+    }
+}
+
+function onFingerprintPickerValueChange(input) {
+    const picker = input?.closest('[data-fingerprint-picker]');
+    if (picker?.id === 'cdnFingerprintPicker' && typeof updateCdnConnectionPreview === 'function') {
+        updateCdnConnectionPreview();
+    }
+}
+
+function updateXrayFingerprintModeUI() {
+    updateFingerprintPickerUI(document.getElementById('xrayFingerprintPicker'));
 }
 
 function updateXraySecurityUI() {
@@ -1944,17 +2035,99 @@ function updateCdnInboundOptions() {
     const originId = document.getElementById('cdnOriginNode')?.value || '';
     const select = document.getElementById('cdnOriginInbound');
     if (!select) return;
-    let firstVisible = null;
+    let firstCompatible = null;
     let selectedVisible = false;
     Array.from(select.options).forEach(option => {
         const visible = !!originId && option.dataset.origin === originId;
+        const compatible = option.dataset.compatible !== 'false';
         option.hidden = !visible;
-        option.disabled = !visible;
-        if (visible && !firstVisible) firstVisible = option;
-        if (visible && option.selected) selectedVisible = true;
+        option.disabled = !visible || !compatible;
+        if (visible && compatible && !firstCompatible) firstCompatible = option;
+        if (visible && compatible && option.selected) selectedVisible = true;
     });
-    if (!selectedVisible && firstVisible) firstVisible.selected = true;
+    if (!selectedVisible && firstCompatible) firstCompatible.selected = true;
     syncCdnPathHint();
+    updateCdnConnectionPreview();
+}
+
+function markCdnFieldManual(input) {
+    const autoValue = input?.dataset.cdnAutoValue || '';
+    if (!input) return;
+    input.dataset.cdnManual = input.value.trim() && input.value.trim() !== autoValue ? '1' : '';
+}
+
+function syncCdnDomainDefaults() {
+    const domain = document.getElementById('cdnDomain')?.value.trim() || '';
+    ['cdnSni', 'cdnHost'].forEach(id => {
+        const input = document.getElementById(id);
+        if (!input) return;
+        if (input.dataset.cdnInitialized !== '1') {
+            input.dataset.cdnInitialized = '1';
+            input.dataset.cdnManual = input.value.trim() && input.value.trim() !== domain ? '1' : '';
+            input.dataset.cdnAutoValue = domain;
+        }
+        const previousAuto = input.dataset.cdnAutoValue || '';
+        if (input.dataset.cdnManual !== '1' && (!input.value.trim() || input.value.trim() === previousAuto)) {
+            input.value = domain;
+        }
+        input.dataset.cdnAutoValue = domain;
+    });
+}
+
+function updateCdnConnectionPreview() {
+    const option = document.getElementById('cdnOriginInbound')?.selectedOptions?.[0];
+    const domain = document.getElementById('cdnDomain')?.value.trim() || '';
+    const port = document.getElementById('cdnPort')?.value || '443';
+    const sni = document.getElementById('cdnSni')?.value.trim() || domain;
+    const host = document.getElementById('cdnHost')?.value.trim() || domain;
+    const pathInput = document.getElementById('cdnPath')?.value.trim() || '';
+    const originPath = option?.dataset.path || '/';
+    const effectivePath = pathInput || originPath;
+    const transport = option?.dataset.transport || '';
+    const xhttpMode = document.getElementById('cdnXhttpMode')?.value
+        || option?.dataset.xhttpMode
+        || '';
+    const originName = option?.dataset.originName || '';
+    const inboundLabel = option?.dataset.inboundLabel || '';
+    const originPort = option?.dataset.port || '';
+    const enabledEdges = Array.from(document.querySelectorAll('input[name="cdn_edge_enabled"]:checked')).length;
+
+    const pool = document.querySelectorAll('#cdnFingerprintPicker input[data-fingerprint-pool-value]:checked');
+    const poolMode = document.querySelector('#cdnFingerprintPicker input[type="radio"]:checked')?.value === 'pool';
+    const fingerprint = poolMode
+        ? `${pool.length}× fingerprint`
+        : (document.getElementById('cdnFingerprint')?.value || 'chrome');
+
+    const setText = (id, value) => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = value || '—';
+    };
+    const clientAddress = domain || (enabledEdges ? `${enabledEdges} edge` : '');
+    setText('cdnConnectionClient', clientAddress ? `${clientAddress}:${port}` : '');
+    setText('cdnConnectionTls', `TLS · SNI ${sni || '—'} · ${fingerprint}`);
+    setText('cdnConnectionFront', host || domain || '');
+    setText(
+        'cdnConnectionPath',
+        transport ? `${transport.toUpperCase()}${transport === 'xhttp' && xhttpMode ? ` · ${xhttpMode}` : ''} · ${effectivePath}` : ''
+    );
+    setText('cdnConnectionOrigin', originName ? `${originName}${originPort ? `:${originPort}` : ''}` : '');
+    setText('cdnConnectionInbound', inboundLabel);
+
+    const mihomo = document.getElementById('cdnMihomoFormat');
+    const mihomoSupported = option?.dataset.uplinkMethod !== 'GET';
+    if (mihomo) {
+        mihomo.className = `badge badge-${mihomoSupported ? 'success' : 'warning'}`;
+        mihomo.textContent = mihomoSupported ? 'Mihomo' : i18n.cdnMihomoExcluded;
+    }
+
+    const path = document.getElementById('cdnPath');
+    const ready = !!option && option.dataset.compatible !== 'false'
+        && !!clientAddress && !!sni && (!path || path.validity.valid);
+    const state = document.getElementById('cdnConnectionState');
+    if (state) {
+        state.className = `badge badge-${ready ? 'success' : 'secondary'}`;
+        state.textContent = ready ? i18n.cdnConnectionReady : i18n.cdnConnectionIncomplete;
+    }
 }
 
 // Mirrors validateCdnClientPath in src/utils/cdnConfig.js. The rule is not
@@ -2002,6 +2175,7 @@ function syncCdnPathHint() {
         input.placeholder = '';
         input.setCustomValidity(value ? i18n.cdnPathUnsupported : '');
     }
+    updateCdnConnectionPreview();
 }
 
 function updateCdnTlsUi() {
@@ -2009,6 +2183,7 @@ function updateCdnTlsUi() {
     document.querySelectorAll('.cdn-tls-only').forEach(element => {
         element.style.display = enabled ? '' : 'none';
     });
+    updateCdnConnectionPreview();
 }
 
 function addCdnEdge(values = {}) {
@@ -2034,11 +2209,13 @@ function addCdnEdge(values = {}) {
     enabled.checked = values.enabled !== false;
     container.appendChild(fragment);
     syncCdnRequired(document.querySelector('input[name="type"]:checked')?.value === 'cdn');
+    updateCdnConnectionPreview();
     return true;
 }
 
 function removeCdnEdge(button) {
     button.closest('.cdn-edge-row')?.remove();
+    updateCdnConnectionPreview();
 }
 
 async function resolveCdnEdges() {
@@ -2083,10 +2260,8 @@ async function resolveCdnEdges() {
                     .replace('{sources}', String((data.sources || []).length))
                     .replace('{total}', String((data.attemptedSources || []).length));
         }
-        const sni = document.getElementById('cdnSni');
-        const host = document.getElementById('cdnHost');
-        if (sni && !sni.value) sni.value = domain;
-        if (host && !host.value) host.value = domain;
+        syncCdnDomainDefaults();
+        updateCdnConnectionPreview();
     } catch (error) {
         if (status) status.textContent = `${i18n.error}: ${error.message}`;
     } finally {
@@ -2099,8 +2274,13 @@ async function resolveCdnEdges() {
 (function() {
     const proto = document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
     switchProto(proto);
+    syncCdnDomainDefaults();
     updateCdnInboundOptions();
     updateCdnTlsUi();
+    updateFingerprintPickerUI(document.getElementById('cdnFingerprintPicker'));
+    const cdnEdges = document.getElementById('cdnEdgesContainer');
+    cdnEdges?.addEventListener('input', updateCdnConnectionPreview);
+    cdnEdges?.addEventListener('change', updateCdnConnectionPreview);
     toggleAcmeByDomain();
     toggleAcmeTypeFields();
     toggleObfsPassword();
@@ -2135,6 +2315,68 @@ async function resolveCdnEdges() {
         }
     });
 })();
+
+document.getElementById('nodeForm')?.addEventListener('submit', async function(event) {
+    const type = document.querySelector('input[name="type"]:checked')?.value;
+    if (type !== 'cdn') return;
+
+    event.preventDefault();
+    if (this.dataset.saving === '1') return;
+    if (!this.reportValidity()) return;
+    this.dataset.saving = '1';
+
+    const submit = this.querySelector('button[type="submit"]');
+    const inlineError = document.getElementById('cdnInlineError');
+    const state = document.getElementById('cdnConnectionState');
+    const originalSubmitHtml = submit?.innerHTML || '';
+    if (submit) {
+        submit.disabled = true;
+        submit.innerHTML = `<i class="ti ti-loader-2 spin"></i> ${i18n.cdnSaving}`;
+    }
+    if (inlineError) inlineError.style.display = 'none';
+    if (state) {
+        state.className = 'badge badge-warning';
+        state.textContent = i18n.cdnSaving;
+    }
+
+    try {
+        const body = new URLSearchParams();
+        new FormData(this).forEach((value, key) => {
+            if (typeof value === 'string') body.append(key, value);
+        });
+        const response = await fetch(this.action, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            },
+            credentials: 'same-origin',
+            body,
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || i18n.cdnSaveFailed);
+        }
+        window.location.assign(result.redirect);
+    } catch (error) {
+        if (inlineError) {
+            inlineError.textContent = error.message || i18n.cdnSaveFailed;
+            inlineError.style.display = '';
+            inlineError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        updateCdnConnectionPreview();
+        delete this.dataset.saving;
+        if (submit) {
+            submit.disabled = false;
+            submit.innerHTML = originalSubmitHtml;
+        }
+    }
+});
+
+document.getElementById('cdnSection')?.addEventListener('input', function() {
+    const inlineError = document.getElementById('cdnInlineError');
+    if (inlineError) inlineError.style.display = 'none';
+});
 
 // SSH private key file upload
 document.getElementById('sshPrivateKeyFile')?.addEventListener('change', function() {

@@ -396,6 +396,10 @@ const cdnConfigSchema = new mongoose.Schema({
     path: { type: String, default: '', trim: true, maxlength: 255 },
     alpn: { type: [String], default: [], enum: CDN_ALPN_VALUES },
     fingerprint: { type: String, default: 'chrome', enum: CDN_FINGERPRINT_VALUES },
+    fingerprintPool: {
+        type: [{ type: String, enum: CDN_FINGERPRINT_VALUES }],
+        default: [],
+    },
     allowInsecure: { type: Boolean, default: false },
     xhttpMode: { type: String, enum: ['', 'auto', 'packet-up', 'stream-up', 'stream-one'], default: '' },
 }, { _id: false });

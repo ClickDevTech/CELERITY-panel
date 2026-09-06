@@ -3,7 +3,21 @@
     const originId = String(cdn.originNode?._id || cdn.originNode || '');
     const originInboundId = cdn.originInboundId || '';
     const xrayOrigins = (candidateNodes || []).filter(candidate => candidate.type === 'xray');
-    const fingerprints = ['chrome','firefox','safari','ios','android','edge','360','qq','random','randomized'];
+    const cdnInboundMeta = (origin, inbound, isMain) => {
+        const transport = inbound?.transport || 'tcp';
+        const security = inbound?.security || 'reality';
+        let incompatibility = '';
+        if (origin.active === false) incompatibility = t('nodes.cdnOriginDisabled');
+        else if (!['xhttp', 'ws', 'grpc'].includes(transport)) incompatibility = t('nodes.cdnTransportUnsupported');
+        else if (security === 'reality') incompatibility = t('nodes.cdnRealityUnsupported');
+        return {
+            transport,
+            security,
+            port: isMain ? (origin.port || 443) : (inbound?.port || ''),
+            label: isMain ? t('nodes.cdnMainInbound') : (inbound?.label || inbound?.id || ''),
+            incompatibility,
+        };
+    };
 %>
 <div class="form-section cdn-only" id="cdnSection" style="<%= node?.type === 'cdn' ? '' : 'display:none' %>">
     <h3><i class="ti ti-cloud-network"></i> <%= t('nodes.cdnSection') %></h3>
@@ -15,8 +29,16 @@
             <select id="cdnOriginNode" name="cdn.originNode" data-cdn-required onchange="updateCdnInboundOptions()">
                 <option value=""><%= t('nodes.cdnChooseOrigin') %></option>
                 <% xrayOrigins.forEach(function(origin) { %>
-                    <option value="<%= origin._id %>" <%= originId === String(origin._id) ? 'selected' : '' %>>
-                        <%= origin.flag || '' %> <%= origin.name %>
+                    <%
+                        const originInbounds = [origin.xray || {}, ...(origin.xray?.extraInbounds || [])];
+                        const hasCompatibleInbound = originInbounds.some((inbound, index) =>
+                            !cdnInboundMeta(origin, inbound, index === 0).incompatibility
+                        );
+                    %>
+                    <option value="<%= origin._id %>"
+                            <%= originId === String(origin._id) ? 'selected' : '' %>
+                            <%= hasCompatibleInbound ? '' : 'disabled' %>>
+                        <%= origin.flag || '' %> <%= origin.name %><%= hasCompatibleInbound ? '' : ` — ${t('nodes.cdnNoCompatibleInbounds')}` %>
                     </option>
                 <% }); %>
             </select>
@@ -37,20 +59,40 @@
                     );
                 %>
                 <% xrayOrigins.forEach(function(origin) { %>
+                    <% const meta = cdnInboundMeta(origin, origin.xray, true); %>
                     <option value="" data-origin="<%= origin._id %>"
-                            data-transport="<%= origin.xray?.transport || 'tcp' %>"
+                            data-origin-name="<%= origin.name %>"
+                            data-inbound-label="<%= meta.label %>"
+                            data-transport="<%= meta.transport %>"
+                            data-security="<%= meta.security %>"
+                            data-port="<%= meta.port %>"
                             data-path="<%= inboundPath(origin.xray) %>"
                             data-markers-in-path="<%= markersInPath(origin.xray) %>"
+                            data-xhttp-mode="<%= origin.xray?.xhttpMode || '' %>"
+                            data-uplink-method="<%= origin.xray?.xhttpUplinkHTTPMethod || '' %>"
+                            data-compatible="<%= meta.incompatibility ? 'false' : 'true' %>"
+                            data-incompatibility="<%= meta.incompatibility %>"
+                            <%= meta.incompatibility ? 'disabled' : '' %>
                             <%= originId === String(origin._id) && !originInboundId ? 'selected' : '' %>>
-                        <%= t('nodes.cdnMainInbound') %> · <%= origin.xray?.transport || 'tcp' %> / <%= origin.xray?.security || 'reality' %>
+                        <%= meta.label %> · <%= meta.transport %> / <%= meta.security %><%= meta.port ? ` :${meta.port}` : '' %><%= meta.incompatibility ? ` — ${meta.incompatibility}` : '' %>
                     </option>
                     <% (origin.xray?.extraInbounds || []).forEach(function(inbound) { %>
+                        <% const meta = cdnInboundMeta(origin, inbound, false); %>
                         <option value="<%= inbound.id %>" data-origin="<%= origin._id %>"
-                                data-transport="<%= inbound.transport || 'tcp' %>"
+                                data-origin-name="<%= origin.name %>"
+                                data-inbound-label="<%= meta.label %>"
+                                data-transport="<%= meta.transport %>"
+                                data-security="<%= meta.security %>"
+                                data-port="<%= meta.port %>"
                                 data-path="<%= inboundPath(inbound) %>"
                                 data-markers-in-path="<%= markersInPath(inbound) %>"
+                                data-xhttp-mode="<%= inbound.xhttpMode || '' %>"
+                                data-uplink-method="<%= inbound.xhttpUplinkHTTPMethod || '' %>"
+                                data-compatible="<%= meta.incompatibility ? 'false' : 'true' %>"
+                                data-incompatibility="<%= meta.incompatibility %>"
+                                <%= meta.incompatibility ? 'disabled' : '' %>
                                 <%= originId === String(origin._id) && originInboundId === inbound.id ? 'selected' : '' %>>
-                            <%= inbound.label || inbound.id %> · <%= inbound.transport || 'tcp' %> / <%= inbound.security || 'reality' %>
+                            <%= meta.label %> · <%= meta.transport %> / <%= meta.security %><%= meta.port ? ` :${meta.port}` : '' %><%= meta.incompatibility ? ` — ${meta.incompatibility}` : '' %>
                         </option>
                     <% }); %>
                 <% }); %>
@@ -58,11 +100,45 @@
         </div>
     </div>
 
+    <div class="cdn-connection-card" id="cdnConnectionCard" aria-live="polite">
+        <div class="cdn-connection-header">
+            <strong><i class="ti ti-route"></i> <%= t('nodes.cdnConnectionPreview') %></strong>
+            <span class="badge badge-secondary" id="cdnConnectionState"><%= t('nodes.cdnConnectionIncomplete') %></span>
+        </div>
+        <div class="cdn-connection-flow">
+            <div class="cdn-connection-hop">
+                <span class="cdn-connection-kicker"><%= t('nodes.cdnClientSide') %></span>
+                <strong id="cdnConnectionClient">—</strong>
+                <small id="cdnConnectionTls">TLS</small>
+            </div>
+            <i class="ti ti-arrow-right cdn-connection-arrow"></i>
+            <div class="cdn-connection-hop">
+                <span class="cdn-connection-kicker">CDN</span>
+                <strong id="cdnConnectionFront">—</strong>
+                <small id="cdnConnectionPath">—</small>
+            </div>
+            <i class="ti ti-arrow-right cdn-connection-arrow"></i>
+            <div class="cdn-connection-hop">
+                <span class="cdn-connection-kicker">Xray origin</span>
+                <strong id="cdnConnectionOrigin">—</strong>
+                <small id="cdnConnectionInbound">—</small>
+            </div>
+        </div>
+        <div class="cdn-format-strip">
+            <span class="cdn-format-label"><%= t('nodes.cdnPublishedFormats') %></span>
+            <span class="badge badge-success">VLESS URI</span>
+            <span class="badge badge-success">sing-box</span>
+            <span class="badge badge-success" id="cdnMihomoFormat">Mihomo</span>
+        </div>
+        <div class="alert alert-error" id="cdnInlineError" style="display:none;margin:10px 0 0;"></div>
+    </div>
+
     <div class="form-row">
         <div class="form-group">
             <label for="cdnDomain"><%= t('nodes.cdnDomain') %></label>
             <div class="input-with-button">
-                <input id="cdnDomain" name="cdn.domain" value="<%= cdn.domain || '' %>" maxlength="253" placeholder="cdn.example.com">
+                <input id="cdnDomain" name="cdn.domain" value="<%= cdn.domain || '' %>" maxlength="253" placeholder="cdn.example.com"
+                       oninput="syncCdnDomainDefaults(); updateCdnConnectionPreview()">
                 <button type="button" class="btn btn-sm" id="cdnResolveBtn" onclick="resolveCdnEdges()">
                     <i class="ti ti-world-search"></i> <%= t('nodes.cdnResolveEdges') %>
                 </button>
@@ -72,7 +148,8 @@
         </div>
         <div class="form-group">
             <label for="cdnPort"><%= t('nodes.cdnClientPort') %></label>
-            <input type="number" id="cdnPort" name="cdn.port" value="<%= cdn.port || 443 %>" min="1" max="65535" data-cdn-required>
+            <input type="number" id="cdnPort" name="cdn.port" value="<%= cdn.port || 443 %>" min="1" max="65535" data-cdn-required
+                   oninput="updateCdnConnectionPreview()">
         </div>
     </div>
 
@@ -105,36 +182,39 @@
         </div>
         <div class="form-group cdn-tls-only">
             <label for="cdnSni">SNI</label>
-            <input id="cdnSni" name="cdn.sni" value="<%= cdn.sni || '' %>" maxlength="253" placeholder="cdn.example.com">
+            <input id="cdnSni" name="cdn.sni" value="<%= cdn.sni || '' %>" maxlength="253" placeholder="cdn.example.com"
+                   oninput="markCdnFieldManual(this); updateCdnConnectionPreview()">
         </div>
         <div class="form-group">
             <label for="cdnHost">Host</label>
-            <input id="cdnHost" name="cdn.host" value="<%= cdn.host || '' %>" maxlength="253" placeholder="cdn.example.com">
+            <input id="cdnHost" name="cdn.host" value="<%= cdn.host || '' %>" maxlength="253" placeholder="cdn.example.com"
+                   oninput="markCdnFieldManual(this); updateCdnConnectionPreview()">
         </div>
     </div>
     <div class="form-row">
         <div class="form-group">
             <label for="cdnPath"><%= t('nodes.cdnClientPath') %></label>
-            <input id="cdnPath" name="cdn.path" value="<%= cdn.path || '' %>" maxlength="255" placeholder="/cdn/events.php" oninput="syncCdnPathHint()">
+            <input id="cdnPath" name="cdn.path" value="<%= cdn.path || '' %>" maxlength="255" placeholder="/cdn/events.php"
+                   oninput="syncCdnPathHint(); updateCdnConnectionPreview()">
             <small><%= t('nodes.cdnClientPathHint') %></small>
         </div>
         <div class="form-group cdn-tls-only">
             <label for="cdnAlpn">ALPN</label>
             <input id="cdnAlpn" name="cdn.alpn" value="<%= (cdn.alpn || []).join(', ') %>" placeholder="h3, h2">
         </div>
-        <div class="form-group cdn-tls-only">
-            <label for="cdnFingerprint"><%= t('nodes.xrayFingerprint') %></label>
-            <select id="cdnFingerprint" name="cdn.fingerprint">
-                <% fingerprints.forEach(function(fingerprint) { %>
-                    <option value="<%= fingerprint %>" <%= (cdn.fingerprint || 'chrome') === fingerprint ? 'selected' : '' %>><%= fingerprint %></option>
-                <% }); %>
-            </select>
-        </div>
+        <%- include('fingerprint-picker', {
+            fieldPrefix: 'cdn',
+            idPrefix: 'cdnFingerprint',
+            fingerprint: cdn.fingerprint || 'chrome',
+            fingerprintPool: cdn.fingerprintPool || [],
+            extraClass: 'cdn-tls-only',
+            t,
+        }) %>
     </div>
     <div class="form-row">
         <div class="form-group">
             <label for="cdnXhttpMode"><%= t('nodes.xrayXhttpMode') %></label>
-            <select id="cdnXhttpMode" name="cdn.xhttpMode">
+            <select id="cdnXhttpMode" name="cdn.xhttpMode" onchange="updateCdnConnectionPreview()">
                 <option value=""><%= t('nodes.xrayXhttpDefault') %></option>
                 <% ['auto','packet-up','stream-up','stream-one'].forEach(function(mode) { %>
                     <option value="<%= mode %>" <%= cdn.xhttpMode === mode ? 'selected' : '' %>><%= mode %></option>

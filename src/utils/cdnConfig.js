@@ -1,14 +1,16 @@
 const net = require('net');
 const mongoose = require('mongoose');
 const { validateXhttpInbound } = require('./xhttpOptions');
+const {
+    FINGERPRINT_VALUES,
+    normalizeFingerprint,
+    normalizeFingerprintPool,
+} = require('./fingerprints');
 
 const CDN_EDGES_MAX = 32;
 const CDN_SECURITY_VALUES = ['tls', 'none'];
 const CDN_ALPN_VALUES = ['h3', 'h2', 'http/1.1', 'http/1.0'];
-const CDN_FINGERPRINT_VALUES = [
-    'chrome', 'firefox', 'safari', 'ios', 'android',
-    'edge', '360', 'qq', 'random', 'randomized',
-];
+const CDN_FINGERPRINT_VALUES = FINGERPRINT_VALUES;
 const HOSTNAME_RE = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 
 function isValidAddress(value) {
@@ -104,9 +106,8 @@ function normalizeCdnConfig(raw = {}) {
         return { error: `CDN ALPN must contain only: ${CDN_ALPN_VALUES.join(', ')}` };
     }
 
-    const fingerprint = CDN_FINGERPRINT_VALUES.includes(raw.fingerprint)
-        ? raw.fingerprint
-        : 'chrome';
+    const fingerprint = normalizeFingerprint(raw.fingerprint);
+    const fingerprintPool = normalizeFingerprintPool(raw.fingerprintPool);
     const xhttpMode = ['', 'auto', 'packet-up', 'stream-up', 'stream-one'].includes(raw.xhttpMode)
         ? raw.xhttpMode
         : '';
@@ -126,6 +127,7 @@ function normalizeCdnConfig(raw = {}) {
             path,
             alpn,
             fingerprint,
+            fingerprintPool,
             allowInsecure: false,
             xhttpMode,
         },
@@ -325,12 +327,14 @@ async function checkCdnDependents(originId, nextOrigin, HyNode) {
 // round-trip, so the candidate query must carry path and marker placements
 // for both the main inbound and every extra.
 const CDN_ORIGIN_CANDIDATE_SELECT = [
-    '_id name flag type active',
+    '_id name flag type active port',
     'xray.transport xray.security xray.wsPath xray.xhttpPath',
+    'xray.xhttpMode xray.xhttpUplinkHTTPMethod',
     'xray.xhttpSessionPlacement xray.xhttpSeqPlacement',
-    'xray.extraInbounds.id xray.extraInbounds.label',
+    'xray.extraInbounds.id xray.extraInbounds.label xray.extraInbounds.port',
     'xray.extraInbounds.transport xray.extraInbounds.security',
     'xray.extraInbounds.wsPath xray.extraInbounds.xhttpPath',
+    'xray.extraInbounds.xhttpMode xray.extraInbounds.xhttpUplinkHTTPMethod',
     'xray.extraInbounds.xhttpSessionPlacement xray.extraInbounds.xhttpSeqPlacement',
 ].join(' ');
 

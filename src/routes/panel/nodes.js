@@ -179,6 +179,7 @@ async function applyCdnFormFields(nodeData, body, selfId) {
         path: body['cdn.path'],
         alpn: body['cdn.alpn'],
         fingerprint: body['cdn.fingerprint'],
+        fingerprintPool: body['cdn.fingerprintPool'],
         xhttpMode: body['cdn.xhttpMode'],
     });
     if (normalized.error) return normalized.error;
@@ -482,6 +483,17 @@ router.patch('/nodes/reorder', async (req, res) => {
     }
 });
 
+function sendNodeFormResult(req, res, redirect, error = '', status = error ? 400 : 200) {
+    if (req.get('accept')?.includes('application/json')) {
+        return res.status(status).json({
+            success: !error,
+            redirect,
+            ...(error ? { error } : {}),
+        });
+    }
+    return res.redirect(error ? `${redirect}?error=${encodeURIComponent(error)}` : redirect);
+}
+
 // POST /panel/nodes - Create node
 router.post('/nodes', async (req, res) => {
     try {
@@ -490,23 +502,23 @@ router.post('/nodes', async (req, res) => {
         const ip = req.body.ip || '';
 
         if (!name) {
-            return res.redirect(`/panel/nodes/add?error=${encodeURIComponent('Name is required')}`);
+            return sendNodeFormResult(req, res, '/panel/nodes/add', 'Name is required');
         }
         if (!isServerlessNode(nodeType) && !ip) {
-            return res.redirect(`/panel/nodes/add?error=${encodeURIComponent('IP address is required')}`);
+            return sendNodeFormResult(req, res, '/panel/nodes/add', 'IP address is required');
         }
 
         // Ensure no duplicate node for the same IP + protocol type (skipped for virtual: no IP).
         if (!isServerlessNode(nodeType)) {
             const existing = await HyNode.findOne({ ip, type: nodeType });
             if (existing) {
-                return res.redirect(`/panel/nodes/add?error=${encodeURIComponent(`A ${nodeType} node with this IP already exists`)}`);
+                return sendNodeFormResult(req, res, '/panel/nodes/add', `A ${nodeType} node with this IP already exists`);
             }
         }
 
         const labelConflict = await HyNode.findLabelConflict(name, req.body.flag);
         if (labelConflict) {
-            return res.redirect(`/panel/nodes/add?error=${encodeURIComponent('A node with this name and flag already exists — subscription tags must be unique')}`);
+            return sendNodeFormResult(req, res, '/panel/nodes/add', 'A node with this name and flag already exists — subscription tags must be unique');
         }
 
         const sshPassword = req.body['ssh.password'] || '';
@@ -516,7 +528,7 @@ router.post('/nodes', async (req, res) => {
         let encryptedPrivateKey = '';
         if (sshPrivateKeyRaw.trim()) {
             if (!sshKeyService.isValidPrivateKey(sshPrivateKeyRaw)) {
-                return res.redirect(`/panel/nodes/add?error=${encodeURIComponent('Invalid private key format')}`);
+                return sendNodeFormResult(req, res, '/panel/nodes/add', 'Invalid private key format');
             }
             encryptedPrivateKey = cryptoService.encrypt(sshPrivateKeyRaw.trim());
         }
@@ -581,7 +593,7 @@ router.post('/nodes', async (req, res) => {
             nodeData.xray = parseXrayFormFields(req.body);
             const xrayError = validateXrayFormFields(nodeData.xray, nodeData);
             if (xrayError) {
-                return res.redirect(`/panel/nodes/add?error=${encodeURIComponent(xrayError)}`);
+                return sendNodeFormResult(req, res, '/panel/nodes/add', xrayError);
             }
             ensureExtraInboundRealityKeys(nodeData.xray);
             // Only the Xray create form renders the outbounds/ACL block. The
@@ -595,18 +607,18 @@ router.post('/nodes', async (req, res) => {
         } else if (nodeType === 'virtual') {
             const virtualError = applyVirtualFormFields(nodeData, req.body);
             if (virtualError) {
-                return res.redirect(`/panel/nodes/add?error=${encodeURIComponent(virtualError)}`);
+                return sendNodeFormResult(req, res, '/panel/nodes/add', virtualError);
             }
         } else if (nodeType === 'cdn') {
             const cdnError = await applyCdnFormFields(nodeData, req.body);
             if (cdnError) {
-                return res.redirect(`/panel/nodes/add?error=${encodeURIComponent(cdnError)}`);
+                return sendNodeFormResult(req, res, '/panel/nodes/add', cdnError);
             }
         } else {
             const hyFields = parseHysteriaFormFields(req.body);
             const hyValidationError = validateHysteriaFormFields(hyFields);
             if (hyValidationError) {
-                return res.redirect(`/panel/nodes/add?error=${encodeURIComponent(hyValidationError)}`);
+                return sendNodeFormResult(req, res, '/panel/nodes/add', hyValidationError);
             }
             delete hyFields.acmeDnsConfigValid;
             Object.assign(nodeData, hyFields);
@@ -617,10 +629,10 @@ router.post('/nodes', async (req, res) => {
         logger.info(`[Panel] Created ${nodeType} node ${name} (${isServerlessNode(nodeType) ? nodeType : ip})`);
         // Invalidate active-nodes, subscription, and dashboard caches so changes are reflected immediately
         await invalidateNodesCache();
-        res.redirect(`/panel/nodes/${newNode._id}`);
+        sendNodeFormResult(req, res, `/panel/nodes/${newNode._id}`);
     } catch (error) {
         logger.error(`[Panel] Create node error: ${error.message}`);
-        res.redirect(`/panel/nodes/add?error=${encodeURIComponent(error.message)}`);
+        sendNodeFormResult(req, res, '/panel/nodes/add', error.message, 500);
     }
 });
 
@@ -921,10 +933,10 @@ router.post('/nodes/:id', async (req, res) => {
         const ip = req.body.ip || '';
 
         if (!name) {
-            return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent('Name is required')}`);
+            return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, 'Name is required');
         }
         if (!isServerlessNode(nodeType) && !ip) {
-            return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent('IP address is required')}`);
+            return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, 'IP address is required');
         }
 
         // Only checked when the label actually changes: a database that already
@@ -935,7 +947,7 @@ router.post('/nodes/:id', async (req, res) => {
         if (labelChanged) {
             const labelConflict = await HyNode.findLabelConflict(name, req.body.flag, nodeId);
             if (labelConflict) {
-                return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent('A node with this name and flag already exists — subscription tags must be unique')}`);
+                return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, 'A node with this name and flag already exists — subscription tags must be unique');
             }
         }
 
@@ -1002,7 +1014,7 @@ router.post('/nodes/:id', async (req, res) => {
             const domainForValidate = String(req.body.domain || '').trim();
             const xrayError = validateXrayFormFields(updates.xray, { port: portForValidate, domain: domainForValidate });
             if (xrayError) {
-                return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent(xrayError)}`);
+                return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, xrayError);
             }
             ensureExtraInboundRealityKeys(updates.xray);
             if ((req.body.cascadeRole || 'standalone') !== 'bridge' && !updates.xray.agentToken) {
@@ -1011,18 +1023,18 @@ router.post('/nodes/:id', async (req, res) => {
         } else if (nodeType === 'virtual') {
             const virtualError = applyVirtualFormFields(updates, req.body);
             if (virtualError) {
-                return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent(virtualError)}`);
+                return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, virtualError);
             }
         } else if (nodeType === 'cdn') {
             const cdnError = await applyCdnFormFields(updates, req.body, nodeId);
             if (cdnError) {
-                return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent(cdnError)}`);
+                return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, cdnError);
             }
         } else {
             const hyFields = parseHysteriaFormFields(req.body);
             const hyValidationError = validateHysteriaFormFields(hyFields);
             if (hyValidationError) {
-                return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent(hyValidationError)}`);
+                return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, hyValidationError);
             }
             delete hyFields.acmeDnsConfigValid;
             Object.assign(updates, hyFields);
@@ -1037,7 +1049,7 @@ router.post('/nodes/:id', async (req, res) => {
         } else if (req.body['ssh.privateKey'] && req.body['ssh.privateKey'].trim()) {
             const rawKey = req.body['ssh.privateKey'].trim();
             if (!sshKeyService.isValidPrivateKey(rawKey)) {
-                return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent('Invalid private key format')}`);
+                return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, 'Invalid private key format');
             }
             updates['ssh.privateKey'] = cryptoService.encrypt(rawKey);
         }
@@ -1066,13 +1078,13 @@ router.post('/nodes/:id', async (req, res) => {
                 HyNode
             );
             if (dependentError) {
-                return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent(dependentError)}`);
+                return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, dependentError);
             }
         }
 
         const cascadeError = await checkCascadeMembership(existingNode, nodeType);
         if (cascadeError) {
-            return res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent(cascadeError)}`);
+            return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, cascadeError);
         }
 
         const previousCdnSync = {
@@ -1110,10 +1122,10 @@ router.post('/nodes/:id', async (req, res) => {
 
         // Invalidate active-nodes, subscription, and dashboard caches so ranking/config changes apply immediately
         await invalidateNodesCache();
-        res.redirect('/panel/nodes');
+        sendNodeFormResult(req, res, '/panel/nodes');
     } catch (error) {
         logger.error(`[Panel] Update node error: ${error.message}`);
-        res.redirect(`/panel/nodes/${nodeId}?error=${encodeURIComponent(error.message)}`);
+        sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, error.message, 500);
     }
 });
 

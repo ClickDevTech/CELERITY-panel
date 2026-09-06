@@ -11,6 +11,10 @@ const {
     cdnOriginIdsForSync,
     CDN_ORIGIN_CANDIDATE_SELECT,
 } = require('../src/utils/cdnConfig');
+const {
+    normalizeFingerprintPool,
+    pickFingerprint,
+} = require('../src/utils/fingerprints');
 
 const originId = '64b000000000000000000001';
 
@@ -24,6 +28,20 @@ const originId = '64b000000000000000000001';
     assert.strictEqual(result.value.sni, 'cdn.example.com');
     assert.strictEqual(result.value.host, 'cdn.example.com');
     assert.deepStrictEqual(result.value.edges, []);
+}
+
+{
+    const result = normalizeCdnConfig({
+        originNode: originId,
+        domain: 'cdn.example.com',
+        fingerprint: 'firefox',
+        fingerprintPool: ['safari', 'invalid', 'chrome', 'safari'],
+    });
+    assert.ifError(result.error);
+    assert.strictEqual(result.value.fingerprint, 'firefox');
+    assert.deepStrictEqual(result.value.fingerprintPool, ['safari', 'chrome']);
+    assert.deepStrictEqual(normalizeFingerprintPool('edge, chrome, edge'), ['edge', 'chrome']);
+    assert.strictEqual(pickFingerprint('firefox', ['safari', 'chrome'], () => 0.99), 'chrome');
 }
 
 {
@@ -373,10 +391,12 @@ async function originModel(origin) {
         'xray.wsPath',
         'xray.xhttpSessionPlacement',
         'xray.xhttpSeqPlacement',
+        'xray.xhttpUplinkHTTPMethod',
         'xray.extraInbounds.xhttpPath',
         'xray.extraInbounds.wsPath',
         'xray.extraInbounds.xhttpSessionPlacement',
         'xray.extraInbounds.xhttpSeqPlacement',
+        'xray.extraInbounds.xhttpUplinkHTTPMethod',
     ]) {
         assert.match(CDN_ORIGIN_CANDIDATE_SELECT, new RegExp(field.replace('.', '\\.')));
     }
@@ -386,6 +406,14 @@ async function originModel(origin) {
         true,
         'node form must load CDN origin path/placement fields'
     );
+    const cdnTemplate = fs.readFileSync(path.join(__dirname, '../views/partials/node-form/cdn.ejs'), 'utf8');
+    const xrayTemplate = fs.readFileSync(path.join(__dirname, '../views/partials/node-form/xray.ejs'), 'utf8');
+    const fingerprintTemplate = fs.readFileSync(path.join(__dirname, '../views/partials/node-form/fingerprint-picker.ejs'), 'utf8');
+    assert.match(cdnTemplate, /include\('fingerprint-picker'/);
+    assert.match(xrayTemplate, /include\('fingerprint-picker'/);
+    assert.match(fingerprintTemplate, /data-fingerprint-picker/);
+    assert.match(cdnTemplate, /cdnConnectionCard/);
+    assert.match(cdnTemplate, /data-compatible/);
 
     // ---- Publication: edges expand into one entry each, with a domain fallback ----
     const { getXrayPublishedInbounds } = require('../src/routes/subscription');
@@ -413,6 +441,26 @@ async function originModel(origin) {
     assert.strictEqual(twoEdges[0].nameSuffix, 'Moscow');
     // An unlabelled edge must never leak its address into the client-visible name.
     assert.strictEqual(twoEdges[1].nameSuffix, 'Edge 2');
+
+    const previousRandom = Math.random;
+    Math.random = () => 0.99;
+    const pooled = getXrayPublishedInbounds({
+        ...cdnNode([
+            { id: 'e1', address: '203.0.113.10', enabled: true },
+            { id: 'e2', address: '203.0.113.11', enabled: true },
+        ]),
+        cdn: {
+            ...cdnNode([]).cdn,
+            fingerprint: 'firefox',
+            fingerprintPool: ['safari', 'chrome'],
+            edges: [
+                { id: 'e1', address: '203.0.113.10', enabled: true },
+                { id: 'e2', address: '203.0.113.11', enabled: true },
+            ],
+        },
+    });
+    Math.random = previousRandom;
+    assert.deepStrictEqual(pooled.map(inbound => inbound.fingerprint), ['chrome', 'chrome']);
 
     const allDisabled = getXrayPublishedInbounds(cdnNode([
         { id: 'e1', label: 'Moscow', address: '203.0.113.10', enabled: false },

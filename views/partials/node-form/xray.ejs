@@ -22,56 +22,13 @@
                     </div>
                 </div>
 
-                <%
-                    var _fpPool = node?.xray?.fingerprintPool || [];
-                    var _fpMode = _fpPool.length > 0 ? 'pool' : 'single';
-                    var _fpList = ['chrome','firefox','safari','ios','android','edge','360','qq','random','randomized'];
-                    var _fpLabel = function(f) { return f === 'ios' ? 'iOS' : (f === 'qq' ? 'QQ' : (f === '360' ? '360' : f.charAt(0).toUpperCase() + f.slice(1))); };
-                %>
-                <div class="form-group fp-mode-group">
-                    <label class="block-label"><i class="ti ti-fingerprint"></i> <%= t('nodes.xrayFingerprint') %></label>
-                    <small class="hint" style="display:block;margin-bottom:8px;"><%= t('nodes.xrayFingerprintHint') %></small>
-                    <div class="radio-group" role="radiogroup" aria-label="<%= t('nodes.xrayFingerprint') %>">
-                        <label class="radio-row">
-                            <input type="radio" name="xrayFingerprintMode" value="single" <%= _fpMode === 'single' ? 'checked' : '' %> onchange="updateXrayFingerprintModeUI()">
-                            <span class="radio-label">
-                                <strong><%= t('nodes.xrayFingerprintModeSingle') %></strong>
-                                <small class="radio-hint"><%= t('nodes.xrayFingerprintModeSingleHint') %></small>
-                            </span>
-                        </label>
-                        <label class="radio-row">
-                            <input type="radio" name="xrayFingerprintMode" value="pool" <%= _fpMode === 'pool' ? 'checked' : '' %> onchange="updateXrayFingerprintModeUI()">
-                            <span class="radio-label">
-                                <strong><%= t('nodes.xrayFingerprintModePool') %></strong>
-                                <small class="radio-hint"><%= t('nodes.xrayFingerprintModePoolHint') %></small>
-                            </span>
-                        </label>
-                    </div>
-
-                    <div id="xrayFingerprintSingle" class="fp-mode-block" style="margin-top:8px;<%= _fpMode === 'single' ? '' : 'display:none' %>">
-                        <select id="xrayFingerprint" name="xray.fingerprint">
-                            <% _fpList.forEach(function(f) { %>
-                                <option value="<%= f %>" <%= (node?.xray?.fingerprint === f || (!node?.xray?.fingerprint && f === 'chrome')) ? 'selected' : '' %>><%= _fpLabel(f) %></option>
-                            <% }); %>
-                        </select>
-                    </div>
-
-                    <div id="xrayFingerprintPoolBlock" class="fp-mode-block" style="margin-top:8px;<%= _fpMode === 'pool' ? '' : 'display:none' %>">
-                        <%# Empty fallback so an empty selection still submits the field (clears the pool).
-                            Checkboxes are disabled in single mode so a stale selection is never sent. %>
-                        <input type="hidden" name="xray.fingerprintPool" value="">
-                        <div class="fp-checkbox-grid">
-                            <% _fpList.forEach(function(f) { %>
-                                <label class="fp-checkbox">
-                                    <input type="checkbox" class="xray-fp-pool-cb" name="xray.fingerprintPool" value="<%= f %>"
-                                           <%= _fpPool.indexOf(f) !== -1 ? 'checked' : '' %> <%= _fpMode === 'pool' ? '' : 'disabled' %>>
-                                    <span><%= _fpLabel(f) %></span>
-                                </label>
-                            <% }); %>
-                        </div>
-                        <small style="display:block;margin-top:8px;"><%= t('nodes.xrayFingerprintPoolHint') %></small>
-                    </div>
-                </div>
+                <%- include('fingerprint-picker', {
+                    fieldPrefix: 'xray',
+                    idPrefix: 'xrayFingerprint',
+                    fingerprint: node?.xray?.fingerprint || 'chrome',
+                    fingerprintPool: node?.xray?.fingerprintPool || [],
+                    t,
+                }) %>
 
                 <div class="form-row">
                     <div class="form-group" id="alpnGroup" style="<%= node?.xray?.security === 'tls' ? '' : 'display:none' %>">

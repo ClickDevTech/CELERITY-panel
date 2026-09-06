@@ -186,6 +186,7 @@ const manageNodeSchema = z.object({
             path: z.string().optional(),
             alpn: z.array(z.enum(['h3', 'h2', 'http/1.1', 'http/1.0'])).optional(),
             fingerprint: z.string().optional(),
+            fingerprintPool: z.array(z.string()).optional().describe('Set of TLS fingerprints; one is picked per subscription-cache rebuild and overrides fingerprint'),
             xhttpMode: z.enum(['', 'auto', 'packet-up', 'stream-up', 'stream-one']).optional(),
         }).optional(),
         ssh: z.object({
