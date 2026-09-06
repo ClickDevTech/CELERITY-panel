@@ -43,7 +43,6 @@
                 <%# TLS Source (only when security==='tls'): panel | acme | manual | self-signed %>
                 <% var _tlsSource = node?.xray?.tlsSource || 'panel'; %>
                 <% var _panelDomain = (typeof panelDomain === 'string' ? panelDomain : '') || ''; %>
-                <% var _panelAcmeEmail = (typeof panelAcmeEmail === 'string' ? panelAcmeEmail : '') || ''; %>
                 <% var _hasManualKey = !!(node?.xray && (node.xray.manualKeySet === true || node.xray.manualKey)); %>
                 <% var _anyTls = node?.xray?.security === 'tls' || (node?.xray?.extraInbounds || []).some(function(i){ return i && i.security === 'tls'; }); %>
                 <div class="form-group xray-tls-config" id="xrayTlsConfig" style="<%= _anyTls ? '' : 'display:none' %>">
@@ -103,12 +102,15 @@
                         </div>
                         <div class="form-group">
                             <label for="xrayAcmeEmail"><%= t('nodes.xrayTlsAcmeEmailLabel') %></label>
-                            <%# type=text: Chrome validates type=email even when hidden, blocking submit on mode switch. %>
+                            <%# type=text: Chrome validates type=email even when hidden, blocking submit on mode switch.
+                                readonly-until-focus: Chrome otherwise autofills the operator's Google
+                                account into any field whose name contains "email". %>
                             <input type="text" id="xrayAcmeEmail" name="xray.acmeEmail"
                                    value="<%= node?.xray?.acmeEmail || '' %>"
-                                   placeholder="<%= _panelAcmeEmail || 'admin@example.com' %>"
+                                   placeholder="admin@example.com"
                                    maxlength="254" autocomplete="off" spellcheck="false"
-                                   inputmode="email">
+                                   inputmode="email" readonly
+                                   onfocus="this.removeAttribute('readonly')">
                             <small><%= t('nodes.xrayTlsAcmeEmailHint') %></small>
                         </div>
                     </div>

@@ -412,7 +412,6 @@ router.get('/nodes/add', async (req, res) => {
             cascadeLinks: [],
             error: req.query.error || null,
             panelDomain: config.PANEL_DOMAIN || '',
-            panelAcmeEmail: config.ACME_EMAIL || '',
             lastInitScript: settings?.lastInitScript || '',
             canAddPairedProtocol: false,
         });
@@ -903,7 +902,6 @@ router.get('/nodes/:id', async (req, res) => {
             cascadeLinks: cascadeLinks || [],
             error: req.query.error || null,
             panelDomain: config.PANEL_DOMAIN || '',
-            panelAcmeEmail: config.ACME_EMAIL || '',
             lastInitScript: settings?.lastInitScript || '',
             canAddPairedProtocol,
             xrayUpdateTotpEnabled: !!currentAdmin?.twoFactor?.enabled,

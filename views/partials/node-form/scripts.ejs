@@ -1289,9 +1289,15 @@ function useLastInitScript() {
 }
 
 function toggleAcmeByDomain() {
+    // Hysteria-only ACME knobs. Xray ACME lives under tlsSource==='acme'
+    // (xrayTlsAcmeBlock). Must not re-show this block just because the
+    // shared Domain field is filled — that is how Xray operators ended up
+    // seeing two email fields.
+    const proto = document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
+    const isHysteria = proto === 'hysteria';
     const domain = (document.getElementById('domain')?.value || '').trim();
     const toggleGroup = document.getElementById('acmeAdvancedToggleGroup');
-    if (toggleGroup) toggleGroup.style.display = domain ? '' : 'none';
+    if (toggleGroup) toggleGroup.style.display = (isHysteria && domain) ? '' : 'none';
 
     if (!domain) {
         const cb = document.getElementById('acmeAdvancedEnabled');
@@ -1303,11 +1309,13 @@ function toggleAcmeByDomain() {
 }
 
 function toggleAcmeAdvancedFields() {
+    const proto = document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
     const domain = (document.getElementById('domain')?.value || '').trim();
     const enabled = !!document.getElementById('acmeAdvancedEnabled')?.checked;
     const wrap = document.getElementById('acmeAdvancedFieldsWrap');
-    if (wrap) wrap.style.display = (domain && enabled) ? '' : 'none';
-    if (domain && enabled) toggleAcmeTypeFields();
+    const show = proto === 'hysteria' && domain && enabled;
+    if (wrap) wrap.style.display = show ? '' : 'none';
+    if (show) toggleAcmeTypeFields();
 }
 
 function toggleAcmeTypeFields() {
