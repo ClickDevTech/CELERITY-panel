@@ -29,6 +29,25 @@ const originId = '64b000000000000000000001';
 {
     const result = normalizeCdnConfig({
         originNode: originId,
+        domain: 'cdn.example.com',
+        alpn: 'h3, h2',
+    });
+    assert.ifError(result.error);
+    assert.deepStrictEqual(result.value.alpn, ['h3', 'h2']);
+}
+
+{
+    const result = normalizeCdnConfig({
+        originNode: originId,
+        domain: 'cdn.example.com',
+        alpn: 'h4, h2',
+    });
+    assert.match(result.error, /CDN ALPN must contain only/);
+}
+
+{
+    const result = normalizeCdnConfig({
+        originNode: originId,
         edges: [{ id: 'edge-1', address: '203.0.113.10' }],
         sni: 'cdn.example.com',
     });

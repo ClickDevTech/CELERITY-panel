@@ -184,7 +184,7 @@ const manageNodeSchema = z.object({
             sni: z.string().optional(),
             host: z.string().optional(),
             path: z.string().optional(),
-            alpn: z.array(z.enum(['h2', 'http/1.1', 'http/1.0'])).optional(),
+            alpn: z.array(z.enum(['h3', 'h2', 'http/1.1', 'http/1.0'])).optional(),
             fingerprint: z.string().optional(),
             xhttpMode: z.enum(['', 'auto', 'packet-up', 'stream-up', 'stream-one']).optional(),
         }).optional(),

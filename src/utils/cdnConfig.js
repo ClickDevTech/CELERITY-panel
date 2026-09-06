@@ -4,7 +4,7 @@ const { validateXhttpInbound } = require('./xhttpOptions');
 
 const CDN_EDGES_MAX = 32;
 const CDN_SECURITY_VALUES = ['tls', 'none'];
-const CDN_ALPN_VALUES = ['h2', 'http/1.1', 'http/1.0'];
+const CDN_ALPN_VALUES = ['h3', 'h2', 'http/1.1', 'http/1.0'];
 const CDN_FINGERPRINT_VALUES = [
     'chrome', 'firefox', 'safari', 'ios', 'android',
     'edge', '360', 'qq', 'random', 'randomized',
