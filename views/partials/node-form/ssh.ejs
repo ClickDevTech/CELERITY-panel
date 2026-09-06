@@ -1,5 +1,5 @@
             <%# ========== 8. SSH Access (hidden for virtual nodes — no remote host) ========== %>
-            <div class="form-section non-virtual-only" id="sshSection" style="<%= node?.type === 'virtual' ? 'display:none' : '' %>">
+            <div class="form-section non-virtual-only" id="sshSection" style="<%= (node?.type === 'virtual' || node?.type === 'cdn') ? 'display:none' : '' %>">
                 <h3><%= t('nodes.sshSettings') %></h3>
                 <small class="section-hint"><%= t('nodes.sshSettingsHint') %></small>
                 <div class="form-row">

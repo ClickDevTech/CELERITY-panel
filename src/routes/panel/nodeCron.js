@@ -5,6 +5,7 @@ const router = express.Router();
 const HyNode = require('../../models/hyNodeModel');
 const remoteCronService = require('../../services/remoteCronService');
 const logger = require('../../utils/logger');
+const { isServerlessNode } = require('../../utils/nodeTypes');
 const { render } = require('./helpers');
 
 const writeLimiter = rateLimit({
@@ -92,8 +93,11 @@ async function loadNodeForJson(req, res, { validateUser = false, user } = {}) {
     res.status(404).json({ success: false, error: 'Node not found' });
     return null;
   }
-  if (node.type === 'virtual') {
-    res.status(400).json({ success: false, error: 'Virtual nodes do not support remote cron management' });
+  if (isServerlessNode(node)) {
+    const error = node.type === 'virtual'
+      ? 'Virtual nodes do not support remote cron management'
+      : 'This node type does not support remote cron management';
+    res.status(400).json({ success: false, error });
     return null;
   }
   if (!hasSshCredentials(node)) {
@@ -128,12 +132,12 @@ router.get('/nodes/:id/cron', async (req, res) => {
     if (!node) {
       return res.redirect('/panel/nodes');
     }
-    if (node.type === 'virtual' || !hasSshCredentials(node)) {
+    if (isServerlessNode(node) || !hasSshCredentials(node)) {
       return render(res, 'cron-empty', {
         title: `Cron: ${node.name || node.ip || node._id}`,
         page: 'nodes',
         node,
-        reason: node.type === 'virtual' ? 'virtual' : 'no-ssh',
+        reason: node.type === 'virtual' ? 'virtual' : (node.type === 'cdn' ? 'serverless' : 'no-ssh'),
         error: null,
       });
     }

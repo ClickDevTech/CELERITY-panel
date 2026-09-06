@@ -46,6 +46,16 @@ const NODES = [
         type: 'virtual',
         virtual: { selectMode: 'manual', sources: ['node-xray', 'node-hy'] },
     },
+    {
+        _id: 'node-cdn',
+        name: 'CDN Warsaw',
+        flag: '☁️',
+        type: 'cdn',
+        cdn: {
+            originNode: 'node-xray',
+            domain: 'cdn.example.com',
+        },
+    },
 ];
 
 const SETTINGS = {
@@ -91,7 +101,9 @@ async function withStubs(run) {
                     { port: 443, nameSuffix: '', extraId: null, inboundTag: 'vless-in', transport: 'tcp', security: 'reality' },
                     { port: 8443, nameSuffix: 'ws:8443', extraId: 'extra-uuid', inboundTag: 'vless-ws', transport: 'ws', security: 'tls' },
                 ]
-                : [];
+                : (node.type === 'cdn'
+                    ? [{ address: 'cdn.example.com', port: 443, edgeId: 'domain', nameSuffix: 'cdn.example.com', transport: 'xhttp', security: 'tls' }]
+                    : []);
         },
         xrayInboundName(node, inbound) {
             const base = `${node.flag || ''} ${node.name}`.trim();
@@ -149,6 +161,11 @@ async function withStubs(run) {
         assert.strictEqual(extra.inboundId, 'extra-uuid', 'extra inbound keeps its own id');
         assert.strictEqual(extra.expectedTag, '🇩🇪 Frankfurt (ws:8443)', 'extra inbound tag matches');
         assert.strictEqual(extra.inboundTag, 'vless-ws', 'xray inbound tag carried for diagnostics');
+
+        const cdn = manifest.nodes.find((n) => n.nodeId === 'node-cdn');
+        assert.ok(cdn, 'CDN node present');
+        assert.strictEqual(cdn.inbounds[0].inboundId, 'domain');
+        assert.strictEqual(cdn.inbounds[0].host, 'cdn.example.com');
 
         const hysteria = manifest.nodes.find((n) => n.nodeId === 'node-hy');
         assert.strictEqual(hysteria.inbounds[0].inboundId, 'hysteria');

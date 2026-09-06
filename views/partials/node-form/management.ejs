@@ -249,7 +249,7 @@
 <% } %>
 
 <%# ========== Management (edit only — hidden for virtual: nothing to setup/restart/terminal-into) ========== %>
-<% if (node?._id && node.type !== 'virtual') { %>
+<% if (node?._id && node.type !== 'virtual' && node.type !== 'cdn') { %>
 <div class="card mt-3">
     <div class="card-header">
         <h2><%= t('nodes.management') %></h2>
@@ -351,7 +351,7 @@
 <% } %>
 
 <%# Virtual nodes have no server to manage, but their routing config is worth cloning %>
-<% if (node?._id && node.type === 'virtual') { %>
+<% if (node?._id && (node.type === 'virtual' || node.type === 'cdn')) { %>
 <div class="card mt-3">
     <div class="card-header">
         <h2><%= t('nodes.management') %></h2>

@@ -1,9 +1,10 @@
 <%
     const toggleClass = typeof moreToggleClass === 'string' ? moreToggleClass : 'btn-icon';
     const hasSsh = !!(node.ssh?.password || node.ssh?.privateKey);
-    const canRestart = node.type !== 'virtual' && (hasSsh || (node.type === 'xray' && node.xray?.agentToken));
-    const showRestart = node.type !== 'virtual';
-    const showPair = node.type !== 'virtual' && (ipProtocolCount || {})[node.ip] < 2;
+    const serverless = node.type === 'virtual' || node.type === 'cdn';
+    const canRestart = !serverless && (hasSsh || (node.type === 'xray' && node.xray?.agentToken));
+    const showRestart = !serverless;
+    const showPair = !serverless && (ipProtocolCount || {})[node.ip] < 2;
 %>
 <div class="node-more">
     <button type="button"

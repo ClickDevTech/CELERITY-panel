@@ -61,6 +61,13 @@ assert.match(
     /valid IPv4 or IPv6/
 );
 
+// XHTTP padding: "0-1000" is a legitimate lower bound, only an all-zero range
+// (which disables padding while pretending to configure it) is rejected.
+const withPadding = value => ({ transport: 'xhttp', security: 'none', xhttpXPaddingBytes: value });
+assert.strictEqual(validateXrayFormFields(withPadding('0-1000'), { port: 8443 }), null);
+assert.match(validateXrayFormFields(withPadding('0-0'), { port: 8443 }), /non-zero size/);
+assert.match(validateXrayFormFields(withPadding('0'), { port: 8443 }), /non-zero size/);
+
 const node = new HyNode({
     name: 'listen-test',
     type: 'xray',
@@ -97,9 +104,43 @@ const mainInbound = generated.inbounds.find(inbound => inbound.tag === 'vless-in
 const extraInbound = generated.inbounds.find(inbound => inbound.tag === 'vless-extra-1');
 assert.strictEqual(mainInbound.listen, '127.0.0.1');
 assert.strictEqual(extraInbound.listen, '::1');
+
+const xhttpNode = node.toObject();
+xhttpNode.xray.transport = 'xhttp';
+xhttpNode.xray.security = 'none';
+xhttpNode.xray.xhttpPath = '/api';
+xhttpNode.xray.xhttpXPaddingHeader = 'X-Padding';
+xhttpNode.xray.xhttpSessionIDTable = 'Base62';
+xhttpNode.xray.xhttpSessionIDLength = '16-32';
+const xhttpConfig = JSON.parse(configGenerator.generateXrayConfig(xhttpNode, []));
+const xhttpInbound = xhttpConfig.inbounds.find(inbound => inbound.tag === 'vless-in');
+assert.strictEqual(xhttpInbound.streamSettings.xhttpSettings.extra.xPaddingHeader, 'X-Padding');
+assert.strictEqual(xhttpInbound.streamSettings.xhttpSettings.extra.sessionIDTable, 'Base62');
+assert.strictEqual(xhttpInbound.streamSettings.xhttpSettings.extra.sessionIDLength, '16-32');
+
 assert.strictEqual(isLoopbackAddress('127.0.0.42'), true);
 assert.strictEqual(isLoopbackAddress('::1'), true);
 assert.strictEqual(isLoopbackAddress('0:0:0:0:0:0:0:1'), true);
 assert.strictEqual(isLoopbackAddress('0.0.0.0'), false);
 
-console.log('xray listen tests passed');
+const selfCdnNode = new HyNode({
+    _id: '64b000000000000000000001',
+    name: 'self-referencing-cdn',
+    type: 'cdn',
+    cdn: {
+        originNode: '64b000000000000000000001',
+        domain: 'cdn.example.com',
+        security: 'tls',
+    },
+});
+
+(async () => {
+    await assert.rejects(
+        selfCdnNode.validate(),
+        /CDN origin cannot be the CDN node itself/
+    );
+    console.log('xray listen tests passed');
+})().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});

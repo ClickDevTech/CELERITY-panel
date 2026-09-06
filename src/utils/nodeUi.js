@@ -176,9 +176,33 @@ function buildVirtualMeta(options) {
     };
 }
 
+function buildCdnMeta(node, options) {
+    const labels = options.labels || {};
+    return {
+        displayDomain: text(node?.cdn?.domain),
+        badges: [
+            badge(
+                'transport',
+                'ti ti-cloud-network',
+                'CDN',
+                label(labels, 'transportTitle', 'Transport'),
+                'cdn'
+            ),
+            badge(
+                'security',
+                'ti ti-shield-lock',
+                String(node?.cdn?.security || 'tls').toUpperCase(),
+                label(labels, 'securityTitle', 'Security'),
+                node?.cdn?.security || 'tls'
+            ),
+        ],
+    };
+}
+
 function buildNodeUiMeta(node, options = {}) {
     if (!node) return { displayDomain: '', badges: [] };
     if (node.type === 'virtual') return buildVirtualMeta(options);
+    if (node.type === 'cdn') return buildCdnMeta(node, options);
     if (node.type === 'xray') return buildXrayMeta(node, options);
     return buildHysteriaMeta(node, options);
 }

@@ -226,7 +226,9 @@
             const role = n.data.cascadeRole || 'standalone';
             const roleLabel = ROLE_LABELS[role] || '';
             const displayLabel = (n.data.flag ? n.data.flag + '\u2009' : '') + (n.data.label || n.data.ip || '');
-            const subtitle = n.data.ip || '';
+            const subtitle = n.data.type === 'cdn'
+                ? (n.data.domain || 'CDN')
+                : (n.data.ip || '');
 
             elements.push({
                 group: 'nodes',
@@ -350,6 +352,16 @@
                     'shadow-opacity': 0.5,
                 },
             },
+            {
+                selector: 'node[type = "cdn"]',
+                style: {
+                    'background-color': '#10283d',
+                    'border-color': '#38bdf8',
+                    'shadow-blur': 14,
+                    'shadow-color': '#38bdf8',
+                    'shadow-opacity': 0.35,
+                },
+            },
             // ---- Selected ----
             {
                 selector: 'node:selected',
@@ -445,6 +457,16 @@
                     'target-arrow-color': '#22c55e',
                     'line-dash-pattern': [4, 6],
                     'opacity': 0.7,
+                },
+            },
+            {
+                selector: 'edge[?isCdnEdge]',
+                style: {
+                    'line-color': '#38bdf8',
+                    'target-arrow-color': '#38bdf8',
+                    'line-style': 'dashed',
+                    'line-dash-pattern': [6, 4],
+                    'width': 2,
                 },
             },
         ];
@@ -850,7 +872,7 @@
             if (!nodesRes.ok) throw new Error();
             const nodes = await nodesRes.json();
             _allLinks = linksRes.ok ? await linksRes.json() : [];
-            const opts  = nodes.map(n =>
+            const opts  = nodes.filter(n => n.type !== 'virtual' && n.type !== 'cdn').map(n =>
                 '<option value="' + n._id + '">' + (n.flag || '') + ' ' + n.name + ' (' + n.ip + ')</option>'
             ).join('');
 

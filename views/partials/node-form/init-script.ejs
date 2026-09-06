@@ -1,5 +1,5 @@
 <%# ========== Init Script (hidden for virtual nodes — no remote host) ========== %>
-<details class="node-advanced-details non-virtual-only" id="initScriptDetails" <%= node?.initScript ? 'open' : '' %> style="<%= node?.type === 'virtual' ? 'display:none' : '' %>">
+<details class="node-advanced-details non-virtual-only" id="initScriptDetails" <%= node?.initScript ? 'open' : '' %> style="<%= (node?.type === 'virtual' || node?.type === 'cdn') ? 'display:none' : '' %>">
     <summary class="node-advanced-summary">
         <span><i class="ti ti-terminal"></i> <%= t('nodes.initScript') %></span>
         <i class="ti ti-chevron-down node-advanced-chevron"></i>

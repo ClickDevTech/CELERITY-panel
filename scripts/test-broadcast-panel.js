@@ -182,7 +182,7 @@ async function runRoute(method, path, { body = {} } = {}) {
   assert.deepStrictEqual(findCalls[0], {
     method: 'find',
     filter: {
-      type: { $ne: 'virtual' },
+      type: { $nin: ['virtual', 'cdn'] },
       $or: [
         { 'ssh.password': { $exists: true, $ne: '' } },
         { 'ssh.privateKey': { $exists: true, $ne: '' } },

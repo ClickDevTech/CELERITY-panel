@@ -396,7 +396,7 @@ router.get('/users/:userId', async (req, res) => {
     try {
         const [user, allGroups] = await Promise.all([
             HyUser.findOne({ userId: req.params.userId })
-                .populate('nodes', 'name ip domain active groups')
+                .populate('nodes', 'name type ip domain cdn.domain active groups')
                 .populate('groups', 'name color maxDevices'),
             getActiveGroups(),
         ]);

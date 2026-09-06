@@ -118,4 +118,17 @@ function meta(node) {
     assert(result.badges.some(badge => badge.kind === 'certificate' && badge.label === 'ACME'));
 }
 
+{
+    const result = meta({
+        type: 'cdn',
+        cdn: {
+            domain: 'cdn.example.com',
+            security: 'tls',
+        },
+    });
+    assert.strictEqual(result.displayDomain, 'cdn.example.com');
+    assert(result.badges.some(badge => badge.kind === 'transport' && badge.label === 'CDN'));
+    assert(result.badges.some(badge => badge.kind === 'security' && badge.label === 'TLS'));
+}
+
 console.log('node UI metadata tests passed');

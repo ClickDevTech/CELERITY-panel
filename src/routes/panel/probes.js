@@ -340,10 +340,19 @@ router.get('/probes/api/:id/history', async (req, res) => {
         // it silently describe nothing.
         const nodes = nodeIds.size
             ? await HyNode.find({ _id: { $in: [...nodeIds] } })
-                .select('name flag type ip domain port portRange portConfigs sni obfs hopInterval xray virtual groups')
+                .select('name flag type ip domain port portRange portConfigs sni obfs hopInterval xray virtual cdn groups')
                 .lean()
             : [];
-        const nodeById = new Map(nodes.map((n) => [String(n._id), n]));
+        const originIds = nodes
+            .filter(node => node.type === 'cdn' && node.cdn?.originNode)
+            .map(node => String(node.cdn.originNode));
+        const origins = originIds.length > 0
+            ? await HyNode.find({ _id: { $in: originIds }, type: 'xray' }).select('name flag type ip domain port xray').lean()
+            : [];
+        const nodeById = new Map([...nodes, ...origins].map((n) => [String(n._id), n]));
+        for (const node of nodes) {
+            if (node.type === 'cdn') node._resolvedOrigin = nodeById.get(String(node.cdn?.originNode || ''));
+        }
 
         const targetById = new Map(
             (settings?.probes?.targets || []).map((t) => [String(t.id), t])

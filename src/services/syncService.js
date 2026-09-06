@@ -19,6 +19,8 @@ const NodeSSH = require('./nodeSSH');
 const configGenerator = require('./configGenerator');
 const cache = require('./cacheService');
 const { invalidateNodesCache, invalidateUserCache } = require('../utils/helpers');
+const { isServerlessNode } = require('../utils/nodeTypes');
+const { collectCdnDependentUsers, cdnOriginSyncNeeded, cdnOriginIdsForSync } = require('../utils/cdnConfig');
 const logger = require('../utils/logger');
 const axios = require('axios');
 const https = require('https');
@@ -32,6 +34,9 @@ const selfSignedAgent = new https.Agent({ rejectUnauthorized: false });
 
 // Mark node offline after this many consecutive health check failures (1 check/min)
 const HEALTH_FAILURE_THRESHOLD = 3;
+
+// Where the installer puts Xray; the systemd unit points at the same path.
+const XRAY_BIN = '/usr/local/bin/xray';
 
 // Fields whose change requires regenerating the runtime config on the node.
 // Anything not listed here (name, groups, flag, rankingCoefficient, ssh.*, ...)
@@ -423,9 +428,13 @@ class SyncService {
             // Node has no groups — all users without group assignment
             byGroups = await HyUser.find({ enabled: true, groups: { $size: 0 }, ...noExplicitNodes }).lean();
         }
+        const fromCdnFronts = node.type === 'xray'
+            ? await collectCdnDependentUsers(node._id, HyNode, HyUser)
+            : [];
+
         // Merge and deduplicate by userId
         const seen = new Set();
-        return [...byNodes, ...byGroups].filter(u => {
+        return [...byNodes, ...byGroups, ...fromCdnFronts].filter(u => {
             if (seen.has(u.userId)) return false;
             seen.add(u.userId);
             return true;
@@ -471,7 +480,9 @@ class SyncService {
     /**
      * Full config update for an Xray node.
      *
-     * Step 1: Upload xray config.json via SSH (inbound/outbound settings, no user list).
+     * Step 1: Upload xray config.json via SSH (inbound/outbound settings, no
+     *         user list), then have the node itself parse it with `-test`. A
+     *         config Xray refuses is rolled back and the restart is skipped.
      * Step 2: Restart Xray via Agent API (no SSH restart needed).
      * Step 3: Sync all users to Xray runtime via Agent /sync endpoint.
      *
@@ -508,6 +519,10 @@ class SyncService {
             }
             throw genErr;
         }
+
+        // Set when the node itself refuses the generated config: the restart is
+        // then skipped so the node keeps serving the config it already runs.
+        let configRejected = null;
 
         // Step 1: Upload config.json via SSH (only if SSH is configured)
         if (node.ssh?.password || node.ssh?.privateKey) {
@@ -581,13 +596,36 @@ class SyncService {
 
                 // Xray config always goes to /usr/local/etc/xray/config.json
                 const xrayConfigPath = '/usr/local/etc/xray/config.json';
+                // Keep the running config aside first: systemd does not roll a
+                // failed start back, so without a copy a rejected config leaves
+                // the node with nothing to fall back to.
+                await ssh.exec(`cp -f ${xrayConfigPath} ${xrayConfigPath}.prev 2>/dev/null || true`);
                 await ssh.uploadContent(configContent, xrayConfigPath);
                 logger.info(`[Xray Sync] Node ${node.name}: config uploaded to ${xrayConfigPath}`);
 
+                // Xray parses the config only at startup, so a config it
+                // rejects turns a restart into an outage. -test parses and
+                // exits without touching the running instance. A node without
+                // the binary at the expected path skips the check rather than
+                // failing it — there is nothing to protect there yet.
+                const test = await ssh.exec(
+                    `[ -x ${XRAY_BIN} ] || exit 0; ${XRAY_BIN} run -test -config ${xrayConfigPath} 2>&1`
+                );
+                if (test.code !== 0) {
+                    const reason = String(test.stdout || test.stderr || '')
+                        .trim().split('\n').slice(-3).join(' ').slice(0, 300);
+                    await ssh.exec(`mv -f ${xrayConfigPath}.prev ${xrayConfigPath} 2>/dev/null || true`);
+                    configRejected = reason || 'xray rejected the generated config';
+                    logger.error(`[Xray Sync] Node ${node.name}: config rejected, previous one restored — ${configRejected}`);
+                } else {
+                    await ssh.exec(`rm -f ${xrayConfigPath}.prev`);
+                }
+
                 // Also refresh cc-agent config when extra inbounds may have
-                // changed, so the agent picks up new tag→flow mapping. The
-                // helper restarts cc-agent via systemctl; safe to call always.
-                if (node.xray?.agentToken) {
+                // changed, so the agent picks up new tag→flow mapping. Skipped
+                // after a rollback: the agent would then map inbounds that the
+                // restored config does not have.
+                if (node.xray?.agentToken && !configRejected) {
                     try {
                         await nodeSetup.reloadCcAgent(node, ssh);
                     } catch (reloadErr) {
@@ -599,6 +637,18 @@ class SyncService {
             } finally {
                 ssh.disconnect();
             }
+        }
+
+        if (configRejected) {
+            await HyNode.updateOne({ _id: node._id }, {
+                $set: {
+                    status: 'error',
+                    lastSync: new Date(),
+                    lastError: `Config rejected by Xray: ${configRejected}`,
+                },
+            });
+            await invalidateNodesCache();
+            return false;
         }
 
         // Step 2: Restart Xray via Agent (preferred) or SSH fallback
@@ -798,7 +848,7 @@ class SyncService {
      * Virtual nodes have no remote server — sync is a no-op.
      */
     async updateNodeConfig(node) {
-        if (node.type === 'virtual') return;
+        if (isServerlessNode(node)) return;
         if (node.type === 'xray') {
             return this.updateXrayNodeConfig(node);
         }
@@ -820,6 +870,18 @@ class SyncService {
      * @param {Object} [updates] - $set payload applied to the node. When omitted,
      *                             the push is assumed relevant and runs unconditionally.
      */
+    /**
+     * Push the origin Xray config when a CDN front starts, stops, or changes
+     * who is allowed to use it. The front itself is serverless and has nothing
+     * to receive; the UUID list lives on the origin.
+     */
+    maybePushCdnOrigins(previous, next) {
+        if (!cdnOriginSyncNeeded(previous, next)) return;
+        for (const originId of cdnOriginIdsForSync(previous, next)) {
+            this.schedulePush(originId);
+        }
+    }
+
     schedulePush(nodeId, updates = null) {
         if (!hasConfigRelevantUpdates(updates)) return;
         setImmediate(async () => {
@@ -947,7 +1009,7 @@ class SyncService {
         logger.info('[Sync] Starting sync for all nodes');
         
         try {
-            const nodes = await HyNode.find({ active: true });
+            const nodes = await HyNode.find({ active: true, type: { $ne: 'cdn' } });
             
             // Parallel sync with concurrency limit
             const CONCURRENCY = 5;
@@ -974,7 +1036,7 @@ class SyncService {
      * Virtual nodes never carry traffic of their own.
      */
     async collectTrafficStats(node) {
-        if (node.type === 'virtual') return;
+        if (isServerlessNode(node)) return;
         if (node.type === 'xray') {
             return this.collectXrayTrafficStats(node);
         }
@@ -1065,7 +1127,7 @@ class SyncService {
      * Virtual nodes are aggregators with no online state of their own.
      */
     async getOnlineUsers(node) {
-        if (node.type === 'virtual') return 0;
+        if (isServerlessNode(node)) return 0;
         if (node.type === 'xray') {
             return this.getXrayOnlineUsers(node);
         }
@@ -1142,7 +1204,7 @@ class SyncService {
         for (const node of user.nodes) {
             try {
                 // Virtual nodes have no remote service to kick from.
-                if (node.type === 'virtual') continue;
+                if (isServerlessNode(node)) continue;
                 if (!node.statsPort || !node.statsSecret || !node.ip) continue;
 
                 const url = `http://${node.ip}:${node.statsPort}/kick`;
@@ -1166,7 +1228,7 @@ class SyncService {
      * Collect stats from all nodes (parallel with concurrency limit)
      */
     async collectAllStats() {
-        const nodes = await HyNode.find({ active: true });
+        const nodes = await HyNode.find({ active: true, type: { $ne: 'cdn' } });
         
         // Parallel processing with concurrency limit
         const CONCURRENCY = 5;
@@ -1191,7 +1253,7 @@ class SyncService {
      * Health check all nodes (parallel)
      */
     async healthCheck() {
-        const nodes = await HyNode.find({ active: true });
+        const nodes = await HyNode.find({ active: true, type: { $ne: 'cdn' } });
         
         // Parallel check with concurrency limit
         const CONCURRENCY = 5;

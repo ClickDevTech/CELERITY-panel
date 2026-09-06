@@ -1,0 +1,120 @@
+<%
+    const xa = xhttp || {};
+    const p = fieldPrefix;
+    const idp = idPrefix;
+%>
+<details class="node-advanced-details" style="margin-top:10px;">
+    <summary class="node-advanced-summary">
+        <span><i class="ti ti-adjustments-horizontal"></i> <%= t('nodes.xrayXhttpAdvanced') %></span>
+        <i class="ti ti-chevron-down node-advanced-chevron"></i>
+    </summary>
+    <div class="form-section" style="border-radius:0;margin:0;border-top:1px solid var(--border);">
+        <div class="form-row-3">
+            <div class="form-group">
+                <label for="<%= idp %>Method"><%= t('nodes.xrayXhttpUploadMethod') %></label>
+                <select id="<%= idp %>Method" name="<%= p %>xhttpUplinkHTTPMethod">
+                    <option value="" <%= !xa.xhttpUplinkHTTPMethod ? 'selected' : '' %>><%= t('nodes.xrayXhttpDefault') %></option>
+                    <% ['GET','POST','PUT','PATCH'].forEach(function(method) { %>
+                        <option value="<%= method %>" <%= xa.xhttpUplinkHTTPMethod === method ? 'selected' : '' %>><%= method %></option>
+                    <% }); %>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="<%= idp %>DataPlacement"><%= t('nodes.xrayXhttpDataPlacement') %></label>
+                <select id="<%= idp %>DataPlacement" name="<%= p %>xhttpUplinkDataPlacement">
+                    <option value="" <%= !xa.xhttpUplinkDataPlacement ? 'selected' : '' %>><%= t('nodes.xrayXhttpDefault') %></option>
+                    <% ['body','header','cookie'].forEach(function(placement) { %>
+                        <option value="<%= placement %>" <%= xa.xhttpUplinkDataPlacement === placement ? 'selected' : '' %>><%= placement %></option>
+                    <% }); %>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="<%= idp %>DataKey"><%= t('nodes.xrayXhttpDataKey') %></label>
+                <input id="<%= idp %>DataKey" name="<%= p %>xhttpUplinkDataKey" value="<%= xa.xhttpUplinkDataKey || '' %>" maxlength="64" placeholder="X-Data">
+            </div>
+        </div>
+        <div class="form-row-3">
+            <div class="form-group">
+                <label><%= t('nodes.xrayXhttpChunkSize') %></label>
+                <input name="<%= p %>xhttpUplinkChunkSize" value="<%= xa.xhttpUplinkChunkSize || '' %>" placeholder="3000-4000">
+            </div>
+            <div class="form-group">
+                <label><%= t('nodes.xrayXhttpMinPostInterval') %></label>
+                <input name="<%= p %>xhttpScMinPostsIntervalMs" value="<%= xa.xhttpScMinPostsIntervalMs || '' %>" placeholder="0">
+            </div>
+            <div class="form-group">
+                <label><%= t('nodes.xrayXhttpMaxHeaderBytes') %></label>
+                <input type="number" name="<%= p %>xhttpServerMaxHeaderBytes" value="<%= xa.xhttpServerMaxHeaderBytes || '' %>" min="0" max="1048576" placeholder="65536">
+            </div>
+        </div>
+        <div class="form-row-3">
+            <div class="form-group">
+                <label><%= t('nodes.xrayXhttpPaddingPlacement') %></label>
+                <select name="<%= p %>xhttpXPaddingPlacement">
+                    <option value=""><%= t('nodes.xrayXhttpDefault') %></option>
+                    <% ['query','header','cookie','queryInHeader'].forEach(function(placement) { %>
+                        <option value="<%= placement %>" <%= xa.xhttpXPaddingPlacement === placement ? 'selected' : '' %>><%= placement %></option>
+                    <% }); %>
+                </select>
+            </div>
+            <div class="form-group">
+                <label><%= t('nodes.xrayXhttpPaddingKey') %></label>
+                <input name="<%= p %>xhttpXPaddingKey" value="<%= xa.xhttpXPaddingKey || '' %>" maxlength="64" placeholder="utm_source">
+            </div>
+            <div class="form-group">
+                <label><%= t('nodes.xrayXhttpPaddingMethod') %></label>
+                <select name="<%= p %>xhttpXPaddingMethod">
+                    <option value=""><%= t('nodes.xrayXhttpDefault') %></option>
+                    <% ['tokenish','repeat-x'].forEach(function(method) { %>
+                        <option value="<%= method %>" <%= xa.xhttpXPaddingMethod === method ? 'selected' : '' %>><%= method %></option>
+                    <% }); %>
+                </select>
+            </div>
+        </div>
+        <div class="form-row-3">
+            <div class="form-group">
+                <label><%= t('nodes.xrayXhttpPaddingHeader') %></label>
+                <input name="<%= p %>xhttpXPaddingHeader" value="<%= xa.xhttpXPaddingHeader || '' %>" maxlength="64" placeholder="Referer">
+            </div>
+            <div class="form-group">
+                <label><%= t('nodes.xrayXhttpSessionTable') %></label>
+                <select name="<%= p %>xhttpSessionIDTable">
+                    <option value=""><%= t('nodes.xrayXhttpDefault') %></option>
+                    <% ['uuid','Base62','BASE36','base36','ALPHABET','Alphabet','alphabet','HEX','hex','number'].forEach(function(table) { %>
+                        <option value="<%= table %>" <%= xa.xhttpSessionIDTable === table ? 'selected' : '' %>><%= table %></option>
+                    <% }); %>
+                </select>
+            </div>
+            <div class="form-group">
+                <label><%= t('nodes.xrayXhttpSessionLength') %></label>
+                <input name="<%= p %>xhttpSessionIDLength" value="<%= xa.xhttpSessionIDLength || '' %>" maxlength="21" placeholder="16-32">
+            </div>
+        </div>
+        <label class="checkbox-label" style="margin-bottom:12px;">
+            <input type="checkbox" name="<%= p %>xhttpXPaddingObfsMode"
+                   <% if (checkboxValue) { %>value="<%= checkboxValue %>"<% } %>
+                   <%= xa.xhttpXPaddingObfsMode ? 'checked' : '' %>>
+            <span><%= t('nodes.xrayXhttpPaddingObfs') %></span>
+        </label>
+        <% [
+            [t('nodes.xrayXhttpSession'), 'xhttpSessionPlacement', 'xhttpSessionKey', 'sid'],
+            [t('nodes.xrayXhttpSequence'), 'xhttpSeqPlacement', 'xhttpSeqKey', 'part'],
+        ].forEach(function(row) { %>
+            <div class="form-row">
+                <div class="form-group">
+                    <label><%= row[0] %> <%= t('nodes.xrayXhttpPlacement') %></label>
+                    <select name="<%= p + row[1] %>">
+                        <option value=""><%= t('nodes.xrayXhttpDefault') %></option>
+                        <% ['query','header','path','cookie'].forEach(function(value) { %>
+                            <option value="<%= value %>" <%= xa[row[1]] === value ? 'selected' : '' %>><%= value %></option>
+                        <% }); %>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label><%= row[0] %> <%= t('nodes.xrayXhttpKey') %></label>
+                    <input name="<%= p + row[2] %>" value="<%= xa[row[2]] || '' %>" maxlength="64" placeholder="<%= row[3] %>">
+                </div>
+            </div>
+        <% }); %>
+    </div>
+</details>

@@ -7,6 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
 const appConfig = require('../../config');
+const { isValidXhttpRange } = require('../utils/xhttpOptions');
+const { isServerlessNode } = require('../utils/nodeTypes');
 
 // Canonical on-node path for the Xray access log when the opt-in access-logs
 // module is enabled. The cc-agent tails exactly this file.
@@ -220,6 +222,9 @@ function parseHostPort(addr, defaultPort) {
  * @param {boolean} options.useTlsFiles - Force using TLS files instead of ACME (for same-VPS setup)
  */
 function generateNodeConfig(node, authUrl, options = {}) {
+    if (isServerlessNode(node)) {
+        throw new Error('Serverless nodes have no remote Hysteria config');
+    }
     const { authInsecure = true, useTlsFiles = false } = options;
     
     const config = {
@@ -567,7 +572,7 @@ WantedBy=multi-user.target
  */
 function _xhttpRange(value) {
     const v = String(value || '').trim();
-    return /^\d{1,10}(-\d{1,10})?$/.test(v) ? v : null;
+    return isValidXhttpRange(v) ? v : null;
 }
 
 // Xray's own fallbacks when the client sends no XHTTP tuning (splithttp
@@ -731,6 +736,40 @@ function buildXrayStreamSettings(inbound, node = {}) {
         const maxEachPost = _xhttpRange(inbound.xhttpScMaxEachPostBytes);
         if (padding) extra.xPaddingBytes = _xhttpPaddingSuperset(padding);
         if (maxEachPost) extra.scMaxEachPostBytes = _xhttpMaxEachPostSuperset(maxEachPost);
+        if (inbound.xhttpUplinkHTTPMethod) extra.uplinkHTTPMethod = inbound.xhttpUplinkHTTPMethod;
+        if (inbound.xhttpUplinkDataPlacement) extra.uplinkDataPlacement = inbound.xhttpUplinkDataPlacement;
+        if (inbound.xhttpUplinkDataKey) extra.uplinkDataKey = inbound.xhttpUplinkDataKey;
+        const uplinkChunkSize = _xhttpRange(inbound.xhttpUplinkChunkSize);
+        if (uplinkChunkSize) extra.uplinkChunkSize = uplinkChunkSize;
+        const minPostsInterval = _xhttpRange(inbound.xhttpScMinPostsIntervalMs);
+        if (minPostsInterval) extra.scMinPostsIntervalMs = minPostsInterval;
+        if (inbound.xhttpServerMaxHeaderBytes > 0) {
+            extra.serverMaxHeaderBytes = inbound.xhttpServerMaxHeaderBytes;
+        }
+        if (inbound.xhttpXPaddingObfsMode) extra.xPaddingObfsMode = true;
+        if (inbound.xhttpXPaddingKey) extra.xPaddingKey = inbound.xhttpXPaddingKey;
+        if (inbound.xhttpXPaddingHeader) extra.xPaddingHeader = inbound.xhttpXPaddingHeader;
+        if (inbound.xhttpXPaddingPlacement) extra.xPaddingPlacement = inbound.xhttpXPaddingPlacement;
+        if (inbound.xhttpXPaddingMethod) extra.xPaddingMethod = inbound.xhttpXPaddingMethod;
+        // xray-core v26.6.22 renamed session* to sessionID* and keeps no
+        // fallback for the old keys (XTLS/Xray-core#6258); the DB column names
+        // still carry the pre-rename spelling. Both spellings are emitted
+        // because the panel does not pin the core version on the node: an older
+        // core ignores the sessionID* keys, a newer one ignores session*, and a
+        // node left on the wrong pair would answer 400 to every request without
+        // failing `xray run -test`.
+        if (inbound.xhttpSessionPlacement) {
+            extra.sessionIDPlacement = inbound.xhttpSessionPlacement;
+            extra.sessionPlacement = inbound.xhttpSessionPlacement;
+        }
+        if (inbound.xhttpSessionKey) {
+            extra.sessionIDKey = inbound.xhttpSessionKey;
+            extra.sessionKey = inbound.xhttpSessionKey;
+        }
+        if (inbound.xhttpSessionIDTable) extra.sessionIDTable = inbound.xhttpSessionIDTable;
+        if (inbound.xhttpSessionIDLength) extra.sessionIDLength = inbound.xhttpSessionIDLength;
+        if (inbound.xhttpSeqPlacement) extra.seqPlacement = inbound.xhttpSeqPlacement;
+        if (inbound.xhttpSeqKey) extra.seqKey = inbound.xhttpSeqKey;
         if (Object.keys(extra).length > 0) {
             streamSettings.xhttpSettings.extra = extra;
         }
@@ -825,6 +864,23 @@ function generateXrayConfig(node, users) {
         xhttpMode: xray.xhttpMode,
         xhttpXPaddingBytes: xray.xhttpXPaddingBytes,
         xhttpScMaxEachPostBytes: xray.xhttpScMaxEachPostBytes,
+        xhttpUplinkHTTPMethod: xray.xhttpUplinkHTTPMethod,
+        xhttpUplinkDataPlacement: xray.xhttpUplinkDataPlacement,
+        xhttpUplinkDataKey: xray.xhttpUplinkDataKey,
+        xhttpUplinkChunkSize: xray.xhttpUplinkChunkSize,
+        xhttpScMinPostsIntervalMs: xray.xhttpScMinPostsIntervalMs,
+        xhttpServerMaxHeaderBytes: xray.xhttpServerMaxHeaderBytes,
+        xhttpXPaddingObfsMode: xray.xhttpXPaddingObfsMode,
+        xhttpXPaddingKey: xray.xhttpXPaddingKey,
+        xhttpXPaddingHeader: xray.xhttpXPaddingHeader,
+        xhttpXPaddingPlacement: xray.xhttpXPaddingPlacement,
+        xhttpXPaddingMethod: xray.xhttpXPaddingMethod,
+        xhttpSessionPlacement: xray.xhttpSessionPlacement,
+        xhttpSessionKey: xray.xhttpSessionKey,
+        xhttpSessionIDTable: xray.xhttpSessionIDTable,
+        xhttpSessionIDLength: xray.xhttpSessionIDLength,
+        xhttpSeqPlacement: xray.xhttpSeqPlacement,
+        xhttpSeqKey: xray.xhttpSeqKey,
         fallbackDest: xray.fallbackDest,
     };
 

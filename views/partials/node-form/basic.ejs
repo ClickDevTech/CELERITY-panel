@@ -6,10 +6,10 @@
                            placeholder="<%= t('nodes.nodeNamePlaceholder') %>" required>
                     <small><%= t('nodes.nodeNameHint') %></small>
                 </div>
-                <div class="form-group" id="ipFormGroup" style="<%= node?.type === 'virtual' ? 'display:none' : '' %>">
+                <div class="form-group" id="ipFormGroup" style="<%= (node?.type === 'virtual' || node?.type === 'cdn') ? 'display:none' : '' %>">
                     <label for="ip"><%= t('nodes.ipAddress') %></label>
                     <input type="text" id="ip" name="ip" value="<%= node?.ip || '' %>"
-                           placeholder="123.45.67.89" <%= node?.type === 'virtual' ? '' : 'required' %>>
+                           placeholder="123.45.67.89" <%= (node?.type === 'virtual' || node?.type === 'cdn') ? '' : 'required' %>>
                     <div id="siblingNodeHint" class="alert alert-info" style="display:none;margin-top:6px;font-size:13px;padding:7px 10px;">
                         <i class="ti ti-link"></i> <span id="siblingNodeHintText"></span>
                     </div>
@@ -119,6 +119,14 @@
                         <span class="proto-icon"><i class="ti ti-route" style="font-size:24px;"></i></span>
                         <span class="proto-name"><%= t('nodes.virtualName') %></span>
                         <span class="proto-desc"><%= t('nodes.virtualDesc') %></span>
+                    </label>
+                    <label class="proto-option <% if (node?.type === 'cdn') { %>active<% } %>" id="protoCdnLabel">
+                        <input type="radio" name="type" value="cdn" id="protoCdn"
+                               <%= node?.type === 'cdn' ? 'checked' : '' %>
+                               onchange="switchProto('cdn')">
+                        <span class="proto-icon"><i class="ti ti-cloud-network" style="font-size:24px;"></i></span>
+                        <span class="proto-name"><%= t('nodes.cdnName') %></span>
+                        <span class="proto-desc"><%= t('nodes.cdnDesc') %></span>
                     </label>
                 </div>
             </div>

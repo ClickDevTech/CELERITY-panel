@@ -153,6 +153,7 @@ backend:
 - 🗺 **Карта сети** — визуальная каскадная топология с Forward/Reverse Chain *(бета)*
 - 🤖 **MCP-интеграция** — нативная поддержка AI-ассистентов (Claude, Cursor и др.) для управления панелью
 - 📡 **Внешние проберы** — отдельный агент с настоящим ядром sing-box проверяет подключение к нодам из реальных сетей ([гайд](docs/probes.ru.md))
+- ☁️ **Универсальные CDN-ноды** — публикация Xray WebSocket, gRPC или XHTTP через домен либо закреплённые edge-адреса ([гайд](docs/cdn-nodes.ru.md))
 
 ---
 
@@ -341,7 +342,7 @@ Tunnel-REALITY настраивается **независимо** от клие
 | XHTTP     | Новый splithttp транспорт                | Ограниченная*       |
 
 
-*XHTTP поддерживается не всеми клиентами (Clash/Sing-box пока не поддерживают)
+*XHTTP поддерживается не всеми клиентами. Форки sing-box, где он реализован, получают полный framing; в `xhttp-opts` у Mihomo есть только path, mode и host, поэтому инбаунд с согласованным framing не попадает в Clash-подписку — вместо прокси, который падает на каждом запросе.
 
 **Безопасность:**
 
@@ -790,6 +791,20 @@ docker system prune -a -f
 | `xhttpXmuxMaxConcurrency` | String | XMUX: потоков на соединение, напр. `"16-32"` (только клиент) |
 | `xhttpXmuxHMaxRequestTimes` | String | XMUX: запросов на соединение, напр. `"600-900"` (только клиент) |
 | `xhttpXmuxHMaxReusableSecs` | String | XMUX: время жизни соединения в секундах, напр. `"1800-3000"` (только клиент) |
+| `xhttpUplinkHTTPMethod` | String | `GET` или `POST` для загрузки; `GET` требует `packet-up` и нужен там, где CDN режет POST |
+| `xhttpUplinkDataPlacement` | String | `body` или `header` — где клиент передаёт загружаемые данные |
+| `xhttpUplinkDataKey` | String | Имя заголовка при `uplinkDataPlacement: header`, напр. `X-Data` |
+| `xhttpUplinkChunkSize` | String | Размер блока загрузки, `"мин-макс"` или число |
+| `xhttpScMinPostsIntervalMs` | String | Минимальный интервал между POST'ами клиента, мс |
+| `xhttpServerMaxHeaderBytes` | Number | Лимит заголовков на инбаунде; лимит edge у CDN он не меняет |
+| `xhttpXPaddingObfsMode` | Boolean | Обфусцировать padding под обычный параметр вместо `x_padding` |
+| `xhttpXPaddingKey` | String | Имя параметра/заголовка для padding, напр. `utm_source` |
+| `xhttpXPaddingPlacement` | String | `query` или `header` |
+| `xhttpXPaddingMethod` | String | `tokenish` — формат значения padding |
+| `xhttpSessionPlacement` | String | `query`, `header` или `path` — где передаётся идентификатор сессии |
+| `xhttpSessionKey` | String | Имя параметра/заголовка сессии, напр. `sid` |
+| `xhttpSeqPlacement` | String | `query`, `header` или `path` — где передаётся номер пакета |
+| `xhttpSeqKey` | String | Имя параметра/заголовка номера пакета |
 | `apiPort`           | Number   | Порт gRPC API Xray (61000)        |
 | `inboundTag`        | String   | Тег inbound (vless-in)            |
 | `agentPort`         | Number   | Порт CC Agent (62080)             |

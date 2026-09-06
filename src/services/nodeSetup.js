@@ -10,6 +10,7 @@ const config = require('../../config');
 const cryptoService = require('./cryptoService');
 const Settings = require('../models/settingsModel');
 const configGenerator = require('./configGenerator');
+const { isServerlessNode } = require('../utils/nodeTypes');
 
 function isLoopbackAddress(value) {
     const address = String(value || '').trim().toLowerCase();
@@ -433,7 +434,7 @@ function execSSH(conn, command) {
 }
 
 function resolveNodeServiceCandidates(node) {
-    if (!node || node.type === 'virtual') return [];
+    if (!node || isServerlessNode(node)) return [];
     if (node.type === 'xray') return ['xray'];
     return ['hysteria-server', 'hysteria'];
 }

@@ -135,10 +135,12 @@ function nodeMetaFor(node) {
                                     <img src="/img/xray.svg" alt="Xray" title="Xray VLESS" style="width:16px;height:16px;vertical-align:middle;margin-left:6px;opacity:0.7;">
                                     <% } else if (node.type === 'virtual') { %>
                                     <i class="ti ti-route" title="Virtual / Balancer" style="font-size:16px;vertical-align:middle;margin-left:6px;opacity:0.7;"></i>
+                                    <% } else if (node.type === 'cdn') { %>
+                                    <i class="ti ti-cloud-network" title="CDN" style="font-size:16px;vertical-align:middle;margin-left:6px;opacity:0.7;"></i>
                                     <% } else { %>
                                     <img src="/img/hysteria.svg" alt="Hysteria" title="Hysteria 2" style="width:16px;height:16px;vertical-align:middle;margin-left:6px;opacity:0.7;">
                                     <% } %>
-                                    <% if (node.type !== 'virtual' && (ipProtocolCount || {})[node.ip] > 1) { %>
+                                    <% if (node.type !== 'virtual' && node.type !== 'cdn' && (ipProtocolCount || {})[node.ip] > 1) { %>
                                     <span class="badge-cascade relay" title="<%= t('nodes.dualProtocol') %>"><i class="ti ti-layers-subtract" style="font-size:10px;"></i> dual</span>
                                     <% } %>
                                     <% if (node.cascadeRole && node.cascadeRole !== 'standalone') { %>
@@ -162,12 +164,22 @@ function nodeMetaFor(node) {
                                 </div>
                             </div>
                         </td>
-                        <td><% if (node.type === 'virtual') { %><span class="text-muted">—</span><% } else { %><code><%= node.ip %></code><% } %></td>
+                        <td>
+                            <% if (node.type === 'virtual') { %>
+                                <span class="text-muted">—</span>
+                            <% } else if (node.type === 'cdn') { %>
+                                <span class="text-muted">CDN → <%= node.cdn?.originNode?.name || 'origin' %></span>
+                            <% } else { %>
+                                <code><%= node.ip %></code>
+                            <% } %>
+                        </td>
                         <td>
                             <% if (node.type === 'virtual') { %>
                                 <span class="text-muted" title="<%= (node.virtual && node.virtual.strategy) || 'leastLoad' %>">
                                     <i class="ti ti-route"></i> <%= (node.virtual && node.virtual.strategy) || 'leastLoad' %>
                                 </span>
+                            <% } else if (node.type === 'cdn') { %>
+                                <code><%= node.cdn?.port || 443 %></code>
                             <% } else if (node.type === 'xray' && node.xray && Array.isArray(node.xray.extraInbounds) && node.xray.extraInbounds.length > 0) { %>
                                 <div class="port-chip-list">
                                     <span class="port-chip" title="<%= (node.xray.transport || 'tcp') %>/<%= (node.xray.security || 'reality') %>"><%= node.port %></span>
@@ -178,13 +190,15 @@ function nodeMetaFor(node) {
                             <% } else { %>
                                 <code><%= node.port %></code>
                             <% } %>
-                            <% if (node.type !== 'virtual' && node.portRange) { %>
+                            <% if (node.type !== 'virtual' && node.type !== 'cdn' && node.portRange) { %>
                             <br><small class="text-muted">hop: <%= node.portRange %></small>
                             <% } %>
                         </td>
                         <td>
                             <% if (node.type === 'virtual') { %>
                                 <span class="badge badge-secondary" data-node-status-badge data-node-id="<%= node._id %>" data-node-virtual-status="true" title="<%= t('nodes.virtualNoStatus') %>">virtual</span>
+                            <% } else if (node.type === 'cdn') { %>
+                                <span class="badge badge-secondary" data-node-status-badge data-node-id="<%= node._id %>" data-node-virtual-status="true">cdn</span>
                             <% } else { %>
                                 <span class="badge badge-<%= node.status === 'online' ? 'success' : (node.status === 'error' ? 'danger' : 'warning') %>" data-node-status-badge data-node-id="<%= node._id %>">
                                     <%= node.status %>
@@ -209,7 +223,7 @@ function nodeMetaFor(node) {
                             </label>
                         </td>
                         <td>
-                            <% if (node.type === 'virtual') { %>
+                            <% if (node.type === 'virtual' || node.type === 'cdn') { %>
                                 <span class="text-muted">—</span>
                             <% } else { %>
                                 <span class="<%= node.maxOnlineUsers && node.onlineUsers >= node.maxOnlineUsers ? 'text-danger' : '' %>">
@@ -259,7 +273,7 @@ function nodeMetaFor(node) {
                         </td>
                         <td class="td-actions">
                             <div class="node-actions">
-                                <% if (node.type !== 'virtual') { %>
+                                <% if (node.type !== 'virtual' && node.type !== 'cdn') { %>
                                     <a href="/panel/nodes/<%= node._id %>/terminal" class="btn-icon" title="<%= t('nodes.terminal') %>" <%= !node.ssh?.password && !node.ssh?.privateKey ? 'style="pointer-events:none;opacity:0.5"' : '' %>><i class="ti ti-terminal-2"></i></a>
                                 <% } %>
                                 <a href="/panel/nodes/<%= node._id %>" class="btn-icon" title="<%= t('common.edit') %>"><i class="ti ti-pencil"></i></a>
@@ -302,10 +316,14 @@ function nodeMetaFor(node) {
                             <img src="/img/xray.svg" alt="Xray" title="Xray VLESS" style="width:14px;height:14px;vertical-align:middle;opacity:0.7;">
                             <% } else if (node.type === 'virtual') { %>
                             <i class="ti ti-route" title="Virtual / Balancer" style="font-size:14px;vertical-align:middle;opacity:0.7;"></i>
+                            <% } else if (node.type === 'cdn') { %>
+                            <i class="ti ti-cloud-network" title="CDN" style="font-size:14px;vertical-align:middle;opacity:0.7;"></i>
                             <% } else { %>
                             <img src="/img/hysteria.svg" alt="Hysteria" title="Hysteria 2" style="width:14px;height:14px;vertical-align:middle;opacity:0.7;">
                             <% } %>
-                            <code style="font-size: 11px;"><%= node.type === 'virtual' ? ((node.virtual && node.virtual.strategy) || 'leastLoad') : node.ip %></code>
+                            <code style="font-size: 11px;"><%= node.type === 'virtual'
+                                ? ((node.virtual && node.virtual.strategy) || 'leastLoad')
+                                : (node.type === 'cdn' ? (node.cdn?.domain || `${node.cdn?.edges?.length || 0} edges`) : node.ip) %></code>
                             <% if (nodeMeta.badges && nodeMeta.badges.length > 0) { %>
                             <div class="node-meta-strip node-meta-strip-mobile">
                                 <% nodeMeta.badges.forEach(badge => { %>
@@ -322,6 +340,8 @@ function nodeMetaFor(node) {
                         <div class="mobile-node-state">
                             <% if (node.type === 'virtual') { %>
                             <span class="badge badge-secondary" data-node-status-badge data-node-id="<%= node._id %>" data-node-virtual-status="true" title="<%= t('nodes.virtualNoStatus') %>">virtual</span>
+                            <% } else if (node.type === 'cdn') { %>
+                            <span class="badge badge-secondary" data-node-status-badge data-node-id="<%= node._id %>" data-node-virtual-status="true">cdn</span>
                             <% } else { %>
                             <span class="badge badge-<%= node.status === 'online' ? 'success' : (node.status === 'error' ? 'danger' : 'warning') %>" data-node-status-badge data-node-id="<%= node._id %>">
                                 <%= node.status %>
@@ -348,7 +368,7 @@ function nodeMetaFor(node) {
                         </div>
                         <div class="mobile-stat-item">
                             <span class="mobile-stat-label"><%= t('common.ports') %></span>
-                            <span class="mobile-stat-value"><%= node.type === 'virtual' ? ((node.virtual && node.virtual.strategy) || 'leastLoad') : node.port %></span>
+                            <span class="mobile-stat-value"><%= node.type === 'virtual' ? ((node.virtual && node.virtual.strategy) || 'leastLoad') : (node.type === 'cdn' ? (node.cdn?.port || 443) : node.port) %></span>
                         </div>
                         <div class="mobile-stat-item mobile-stat-toggle">
                             <span class="mobile-stat-label"><%= t('nodes.activeColumn') %></span>
@@ -366,7 +386,7 @@ function nodeMetaFor(node) {
                     </div>
                     
                     <div class="mobile-node-actions">
-                        <% if (node.type !== 'virtual') { %>
+                        <% if (node.type !== 'virtual' && node.type !== 'cdn') { %>
                         <a href="/panel/nodes/<%= node._id %>/terminal" class="btn btn-sm" title="<%= t('nodes.terminal') %>" aria-label="<%= t('nodes.terminal') %>" <%= !node.ssh?.password && !node.ssh?.privateKey ? 'style="pointer-events:none;opacity:0.5"' : '' %>><i class="ti ti-terminal-2"></i></a>
                         <% } %>
                         <a href="/panel/nodes/<%= node._id %>" class="btn btn-sm" title="<%= t('common.edit') %>" aria-label="<%= t('common.edit') %>"><i class="ti ti-pencil"></i></a>
@@ -989,7 +1009,7 @@ function setNodeStatusUi(nodeId, status, nodeType) {
         if (nodeType) row.dataset.type = nodeType;
     });
 
-    if (nodeType === 'virtual') return;
+    if (nodeType === 'virtual' || nodeType === 'cdn') return;
 
     document.querySelectorAll(`[data-node-status-badge][data-node-id="${nodeId}"]`).forEach(badge => {
         if (badge.dataset.nodeVirtualStatus === 'true') return;

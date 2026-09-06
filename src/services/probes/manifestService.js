@@ -50,14 +50,14 @@ function describeNodeInbounds(node) {
         }));
     }
 
-    if (node.type === 'xray') {
+    if (node.type === 'xray' || node.type === 'cdn') {
         const inbounds = subscription.getXrayPublishedInbounds(node) || [];
         return inbounds.map((inbound) => ({
-            inboundId: inbound.extraId || INBOUND_MAIN,
-            inboundTag: inbound.inboundTag || node.xray?.inboundTag || 'vless-in',
+            inboundId: inbound.edgeId || inbound.extraId || INBOUND_MAIN,
+            inboundTag: inbound.inboundTag || node.xray?.inboundTag || node._resolvedOrigin?.xray?.inboundTag || 'vless-in',
             label: inbound.nameSuffix || '',
             protocol: 'vless',
-            host: node.domain || node.ip,
+            host: inbound.address || node.domain || node.ip,
             port: inbound.port || node.port || 443,
             portRange: '',
             transport: inbound.transport || 'tcp',
@@ -93,7 +93,7 @@ async function buildManifest(probe, subscriptionToken) {
     const baseUrl = resolveBaseUrl(settings);
 
     const nodes = await HyNode.find({ active: true })
-        .select('name flag type ip domain port portRange portConfigs sni obfs hopInterval xray virtual groups')
+        .select('name flag type ip domain port portRange portConfigs sni obfs hopInterval xray virtual cdn groups')
         .lean();
 
     const byId = new Map(nodes.map((n) => [String(n._id), n]));
@@ -101,6 +101,10 @@ async function buildManifest(probe, subscriptionToken) {
 
     for (const node of nodes) {
         if (node.type === 'virtual') continue;
+        if (node.type === 'cdn') {
+            node._resolvedOrigin = byId.get(String(node.cdn?.originNode || ''));
+            if (!node._resolvedOrigin || node._resolvedOrigin.type !== 'xray') continue;
+        }
         const inbounds = describeNodeInbounds(node);
         if (inbounds.length === 0) continue;
         entries.push({

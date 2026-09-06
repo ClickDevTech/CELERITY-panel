@@ -13,6 +13,7 @@ const cascadeService = require('../services/cascadeService');
 const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
 const { requireScope } = require('../middleware/auth');
+const { isServerlessNode } = require('../utils/nodeTypes');
 
 async function invalidateCascadeCache() {
     await cache.invalidateAllSubscriptions();
@@ -197,6 +198,9 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
 
         if (!portalNode) return res.status(404).json({ error: 'Portal node not found' });
         if (!bridgeNode) return res.status(404).json({ error: 'Bridge node not found' });
+        if (isServerlessNode(portalNode) || isServerlessNode(bridgeNode)) {
+            return res.status(400).json({ error: 'Serverless nodes cannot participate in cascade links' });
+        }
 
         // Port conflict: for forward mode the listening side is the bridge; for reverse it is the portal.
         // Also check the opposite side: for forward we check the portal too because the same node
@@ -465,6 +469,9 @@ router.patch('/links/:id/reconnect', requireScope('nodes:write'), async (req, re
 
         if (portalNodeId && !newPortal) return res.status(404).json({ error: 'Portal node not found' });
         if (bridgeNodeId && !newBridge) return res.status(404).json({ error: 'Bridge node not found' });
+        if ((newPortal && isServerlessNode(newPortal)) || (newBridge && isServerlessNode(newBridge))) {
+            return res.status(400).json({ error: 'Serverless nodes cannot participate in cascade links' });
+        }
 
         const effectivePortalId = portalNodeId || String(link.portalNode);
         const effectiveBridgeId = bridgeNodeId || String(link.bridgeNode);

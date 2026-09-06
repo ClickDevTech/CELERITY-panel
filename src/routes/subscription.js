@@ -24,6 +24,8 @@ const uaStats = require('../services/uaStatsService');
 const { extractHwidHeaders } = require('../utils/hwidHeaders');
 const hwidDeviceService = require('../services/hwidDeviceService');
 const webhookService = require('../services/webhookService');
+const { isServerlessNode } = require('../utils/nodeTypes');
+const { isValidXhttpRange, isAllZeroRange } = require('../utils/xhttpOptions');
 
 // ==================== HELPERS ====================
 
@@ -62,7 +64,7 @@ function isBrowser(req) {
 
 async function getUserByToken(token) {
     const user = await HyUser.findOne({ subscriptionToken: token })
-        .populate('nodes', 'active name type status onlineUsers maxOnlineUsers rankingCoefficient domain sni ip port portRange hopInterval portConfigs obfs flag xray cascadeRole groups virtual')
+        .populate('nodes', 'active name type status onlineUsers maxOnlineUsers rankingCoefficient domain sni ip port portRange hopInterval portConfigs obfs flag xray cascadeRole groups virtual cdn')
         .populate('groups', '_id name subscriptionTitle maxDevices');
     
     return user;
@@ -123,7 +125,7 @@ async function getActiveNodesWithCache() {
 
     // Include type, xray, obfs, and cascadeRole fields needed for URI generation and filtering
     const nodes = await HyNode.find({ active: true })
-        .select('name type flag ip domain sni port portRange hopInterval portConfigs obfs active status onlineUsers maxOnlineUsers rankingCoefficient groups xray cascadeRole virtual')
+        .select('name type flag ip domain sni port portRange hopInterval portConfigs obfs active status onlineUsers maxOnlineUsers rankingCoefficient groups xray cascadeRole virtual cdn')
         .lean();
     await cache.setActiveNodes(nodes);
     return nodes;
@@ -132,12 +134,17 @@ async function getActiveNodesWithCache() {
 async function getActiveNodes(user) {
     let nodes = [];
     let settings;
+    let allNodesForResolution = null;
     
     // Check if user has linked nodes
     if (user.nodes && user.nodes.length > 0) {
         // User has linked nodes - only need settings
         nodes = user.nodes.filter(n => n && n.active);
-        settings = await getSettings();
+        const needsCdnOrigins = nodes.some(n => n.type === 'cdn');
+        [settings, allNodesForResolution] = await Promise.all([
+            getSettings(),
+            needsCdnOrigins ? getActiveNodesWithCache() : Promise.resolve(null),
+        ]);
         logger.debug(`[Sub] User ${user.userId}: ${nodes.length} linked active nodes`);
     } else {
         // No linked nodes - fetch nodes and settings in parallel for better performance
@@ -146,6 +153,7 @@ async function getActiveNodes(user) {
             getSettings()
         ]);
         settings = loadedSettings;
+        allNodesForResolution = allNodes;
         
         // Filter by user groups
         const userGroupIds = (user.groups || []).map(g => g._id?.toString() || g.toString());
@@ -174,11 +182,11 @@ async function getActiveNodes(user) {
         }
     }
 
-    // Filter overloaded nodes (if enabled). Virtual nodes have no capacity.
+    // Serverless nodes have no local capacity counters.
     if (lb.hideOverloaded && !isProbe) {
         const beforeFilter = nodes.length;
         nodes = nodes.filter(n => {
-            if (n.type === 'virtual') return true;
+            if (isServerlessNode(n)) return true;
             if (!n.maxOnlineUsers || n.maxOnlineUsers === 0) return true;
             return n.onlineUsers < n.maxOnlineUsers;
         });
@@ -188,10 +196,10 @@ async function getActiveNodes(user) {
     }
 
     // Filter offline/error nodes flagged by the health checker.
-    // Virtual nodes are never pinged (default status='offline') so they bypass.
+    // Serverless nodes are never pinged (default status='offline') so they bypass.
     if (lb.hideOffline !== false && !isProbe) {
         const beforeFilter = nodes.length;
-        nodes = nodes.filter(n => n.type === 'virtual' || (n.status !== 'offline' && n.status !== 'error'));
+        nodes = nodes.filter(n => isServerlessNode(n) || (n.status !== 'offline' && n.status !== 'error'));
         if (nodes.length < beforeFilter) {
             logger.debug(`[Sub] Filtered out ${beforeFilter - nodes.length} offline/error nodes`);
         }
@@ -228,9 +236,42 @@ async function getActiveNodes(user) {
         });
     }
 
+    resolveCdnOrigins(nodes, allNodesForResolution || nodes, lb.hideOffline !== false && !isProbe);
     resolveVirtualSources(nodes, user);
 
     return nodes;
+}
+
+/**
+ * A CDN node is a facade over one inbound of its origin: the edges terminate TLS
+ * but the traffic still lands on the origin server. So the front is only worth
+ * publishing while the origin is reachable — otherwise the subscription fills up
+ * with entries that dial a dead backend. `dropOfflineOrigin` mirrors the
+ * hideOffline policy already applied to real nodes.
+ */
+function resolveCdnOrigins(nodes, allNodes, dropOfflineOrigin) {
+    const originsById = new Map(
+        (allNodes || [])
+            .filter(node => node?.type === 'xray' && node.active !== false)
+            .map(node => [String(node._id), node])
+    );
+
+    for (let index = nodes.length - 1; index >= 0; index--) {
+        const node = nodes[index];
+        if (node.type !== 'cdn') continue;
+        const origin = originsById.get(String(node.cdn?.originNode?._id || node.cdn?.originNode || ''));
+        if (!origin) {
+            logger.debug(`[Sub] CDN node "${node.name}" dropped: origin is missing or inactive`);
+            nodes.splice(index, 1);
+            continue;
+        }
+        if (dropOfflineOrigin && (origin.status === 'offline' || origin.status === 'error')) {
+            logger.debug(`[Sub] CDN node "${node.name}" dropped: origin is ${origin.status}`);
+            nodes.splice(index, 1);
+            continue;
+        }
+        node._resolvedOrigin = origin;
+    }
 }
 
 /**
@@ -397,9 +438,52 @@ function pickFingerprint(fingerprint, pool) {
  * @returns {Array<Object>} Inbound descriptors with `{port, nameSuffix, ...inboundFields}`
  */
 function getXrayPublishedInbounds(node) {
+    if (node.type === 'cdn') {
+        const origin = node._resolvedOrigin;
+        if (!origin || origin.type !== 'xray') return [];
+        const originInbounds = getXrayPublishedInbounds(origin);
+        const selectedId = String(node.cdn?.originInboundId || '');
+        const source = selectedId
+            ? originInbounds.find(inbound => String(inbound.extraId || '') === selectedId)
+            : originInbounds.find(inbound => !inbound.extraId);
+        if (!source) return [];
+
+        const enabledEdges = (Array.isArray(node.cdn?.edges) ? node.cdn.edges : [])
+            .filter(edge => edge?.enabled !== false && edge?.address);
+        // Falling back to the public domain keeps the node reachable when every
+        // edge is disabled (or none was ever pinned) instead of silently
+        // dropping it from the subscription.
+        const onDomain = enabledEdges.length === 0;
+        const edges = onDomain
+            ? [{ id: 'domain', label: '', address: node.cdn?.domain }]
+            : enabledEdges;
+        return edges
+            .filter(edge => edge.address)
+            .map((edge, index) => ({
+                ...source,
+                address: edge.address,
+                port: node.cdn?.port || 443,
+                // Never fall back to the raw edge address: it would surface the
+                // pinned CDN IP as a server name in the client UI.
+                nameSuffix: onDomain ? '' : (String(edge.label || '').trim() || `Edge ${index + 1}`),
+                uniqueName: false,
+                extraId: source.extraId,
+                edgeId: edge.id,
+                security: 'tls',
+                fingerprint: node.cdn?.fingerprint || source.fingerprint || 'chrome',
+                alpn: node.cdn?.alpn || [],
+                wsPath: node.cdn?.path || source.wsPath,
+                wsHost: node.cdn?.host || source.wsHost,
+                grpcAuthority: node.cdn?.host || '',
+                xhttpPath: node.cdn?.path || source.xhttpPath,
+                xhttpHost: node.cdn?.host || source.xhttpHost,
+                xhttpMode: node.cdn?.xhttpMode || source.xhttpMode,
+            }));
+    }
     if (node.type !== 'xray') return [];
     const xray = node.xray || {};
     const main = {
+        address: node.domain || node.ip,
         port: node.port || 443,
         nameSuffix: '',
         // Stable identity of this inbound. Unused by client config builders,
@@ -427,11 +511,29 @@ function getXrayPublishedInbounds(node) {
         xhttpXmuxMaxConcurrency: xray.xhttpXmuxMaxConcurrency,
         xhttpXmuxHMaxRequestTimes: xray.xhttpXmuxHMaxRequestTimes,
         xhttpXmuxHMaxReusableSecs: xray.xhttpXmuxHMaxReusableSecs,
+        xhttpUplinkHTTPMethod: xray.xhttpUplinkHTTPMethod,
+        xhttpUplinkDataPlacement: xray.xhttpUplinkDataPlacement,
+        xhttpUplinkDataKey: xray.xhttpUplinkDataKey,
+        xhttpUplinkChunkSize: xray.xhttpUplinkChunkSize,
+        xhttpScMinPostsIntervalMs: xray.xhttpScMinPostsIntervalMs,
+        xhttpServerMaxHeaderBytes: xray.xhttpServerMaxHeaderBytes,
+        xhttpXPaddingObfsMode: xray.xhttpXPaddingObfsMode,
+        xhttpXPaddingKey: xray.xhttpXPaddingKey,
+        xhttpXPaddingHeader: xray.xhttpXPaddingHeader,
+        xhttpXPaddingPlacement: xray.xhttpXPaddingPlacement,
+        xhttpXPaddingMethod: xray.xhttpXPaddingMethod,
+        xhttpSessionPlacement: xray.xhttpSessionPlacement,
+        xhttpSessionKey: xray.xhttpSessionKey,
+        xhttpSessionIDTable: xray.xhttpSessionIDTable,
+        xhttpSessionIDLength: xray.xhttpSessionIDLength,
+        xhttpSeqPlacement: xray.xhttpSeqPlacement,
+        xhttpSeqKey: xray.xhttpSeqKey,
     };
 
     const extras = (Array.isArray(xray.extraInbounds) ? xray.extraInbounds : [])
         .filter(i => i && i.port)
         .map(i => ({
+            address: node.domain || node.ip,
             port: i.port,
             // Use a stable, human-readable suffix to disambiguate names inside
             // the client UI (clients keep server names unique). Prefer the
@@ -465,6 +567,23 @@ function getXrayPublishedInbounds(node) {
             xhttpXmuxMaxConcurrency: i.xhttpXmuxMaxConcurrency,
             xhttpXmuxHMaxRequestTimes: i.xhttpXmuxHMaxRequestTimes,
             xhttpXmuxHMaxReusableSecs: i.xhttpXmuxHMaxReusableSecs,
+            xhttpUplinkHTTPMethod: i.xhttpUplinkHTTPMethod,
+            xhttpUplinkDataPlacement: i.xhttpUplinkDataPlacement,
+            xhttpUplinkDataKey: i.xhttpUplinkDataKey,
+            xhttpUplinkChunkSize: i.xhttpUplinkChunkSize,
+            xhttpScMinPostsIntervalMs: i.xhttpScMinPostsIntervalMs,
+            xhttpServerMaxHeaderBytes: i.xhttpServerMaxHeaderBytes,
+            xhttpXPaddingObfsMode: i.xhttpXPaddingObfsMode,
+            xhttpXPaddingKey: i.xhttpXPaddingKey,
+            xhttpXPaddingHeader: i.xhttpXPaddingHeader,
+            xhttpXPaddingPlacement: i.xhttpXPaddingPlacement,
+            xhttpXPaddingMethod: i.xhttpXPaddingMethod,
+            xhttpSessionPlacement: i.xhttpSessionPlacement,
+            xhttpSessionKey: i.xhttpSessionKey,
+            xhttpSessionIDTable: i.xhttpSessionIDTable,
+            xhttpSessionIDLength: i.xhttpSessionIDLength,
+            xhttpSeqPlacement: i.xhttpSeqPlacement,
+            xhttpSeqKey: i.xhttpSeqKey,
         }));
 
     return [main, ...extras];
@@ -512,12 +631,86 @@ function _createLabelDeduplicator() {
 const _passthroughLabel = label => label;
 
 /**
+ * Quote a value for the hand-rolled Clash YAML. Node names and paths are
+ * operator-supplied, and a single `"` in one of them would otherwise truncate
+ * the string and make the whole profile unparsable for the client.
+ *
+ * @param {string} value
+ * @returns {string} double-quoted YAML scalar
+ */
+function _yamlString(value) {
+    const escaped = String(value === undefined || value === null ? '' : value)
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"')
+        .replace(/[\r\n]+/g, ' ');
+    return `"${escaped}"`;
+}
+
+/**
  * Validate an XHTTP range value ("100-1000", or a bare "500" meaning 500-500).
  * Anything else is dropped so a typo cannot make the client reject the config.
  */
 function _xhttpRange(value) {
     const v = String(value || '').trim();
-    return /^\d{1,10}(-\d{1,10})?$/.test(v) ? v : null;
+    return isValidXhttpRange(v) ? v : null;
+}
+
+// XHTTP framing knobs that must be identical on both ends, paired as
+// [Xray camelCase, sing-box snake_case, mihomo kebab-case]. Every client format
+// walks this one list, so a knob can never reach one core and silently miss
+// another. `serverMaxHeaderBytes` is deliberately absent: it only sizes the
+// inbound's own header buffer and means nothing to a client.
+//
+// The Xray spelling is the post-v26.6.22 one (session* → sessionID*, see
+// XTLS/Xray-core#6258); mihomo kept the shorter names.
+const XHTTP_CLIENT_TUNING_KEYS = [
+    ['uplinkHTTPMethod', 'uplink_http_method', 'uplink-http-method'],
+    ['uplinkDataPlacement', 'uplink_data_placement', 'uplink-data-placement'],
+    ['uplinkDataKey', 'uplink_data_key', 'uplink-data-key'],
+    ['uplinkChunkSize', 'uplink_chunk_size', 'uplink-chunk-size'],
+    ['scMinPostsIntervalMs', 'sc_min_posts_interval_ms', 'sc-min-posts-interval-ms'],
+    ['xPaddingObfsMode', 'x_padding_obfs_mode', 'x-padding-obfs-mode'],
+    ['xPaddingKey', 'x_padding_key', 'x-padding-key'],
+    ['xPaddingHeader', 'x_padding_header', 'x-padding-header'],
+    ['xPaddingPlacement', 'x_padding_placement', 'x-padding-placement'],
+    ['xPaddingMethod', 'x_padding_method', 'x-padding-method'],
+    ['sessionIDPlacement', 'session_placement', 'session-placement'],
+    ['sessionIDKey', 'session_key', 'session-key'],
+    ['sessionIDTable', 'session_table', 'session-table'],
+    ['sessionIDLength', 'session_length', 'session-length'],
+    ['seqPlacement', 'seq_placement', 'seq-placement'],
+    ['seqKey', 'seq_key', 'seq-key'],
+];
+
+/**
+ * Add the pre-v26.6.22 spelling of the session keys to an Xray `extra` block.
+ *
+ * The rename carries no fallback in either direction, and the client core is
+ * whatever the user installed, so both spellings ship: the older core reads
+ * `session*` and ignores `sessionID*`, the newer one does the opposite.
+ *
+ * @param {Object} extra - Xray `extra` object, mutated in place
+ * @returns {Object} the same object
+ */
+function _withXhttpSessionKeyCompat(extra) {
+    if (extra.sessionIDPlacement) extra.sessionPlacement = extra.sessionIDPlacement;
+    if (extra.sessionIDKey) extra.sessionKey = extra.sessionIDKey;
+    return extra;
+}
+
+/**
+ * Mihomo reads the whole framing block in `xhttp-opts` (kebab-case mirror of
+ * Xray's `extra`), with one exception: `uplink-http-method: GET` parses but
+ * never connects (MetaCubeX/mihomo#2832). An inbound that requires GET uploads
+ * is therefore left out of the Clash profile instead of shipping a proxy that
+ * looks healthy and times out on every request.
+ *
+ * @param {Object} inbound - published inbound descriptor
+ * @returns {boolean}
+ */
+function _clashCanExpressInbound(inbound) {
+    if ((inbound.transport || 'tcp') !== 'xhttp') return true;
+    return _xhttpTuning(inbound).uplinkHTTPMethod !== 'GET';
 }
 
 /**
@@ -541,6 +734,23 @@ function _xhttpTuning(inbound) {
     return {
         xPaddingBytes: _xhttpRange(inbound.xhttpXPaddingBytes),
         scMaxEachPostBytes: _xhttpRange(inbound.xhttpScMaxEachPostBytes),
+        uplinkHTTPMethod: inbound.xhttpUplinkHTTPMethod || null,
+        uplinkDataPlacement: inbound.xhttpUplinkDataPlacement || null,
+        uplinkDataKey: inbound.xhttpUplinkDataKey || null,
+        uplinkChunkSize: _xhttpRange(inbound.xhttpUplinkChunkSize),
+        scMinPostsIntervalMs: _xhttpRange(inbound.xhttpScMinPostsIntervalMs),
+        serverMaxHeaderBytes: Number(inbound.xhttpServerMaxHeaderBytes) || null,
+        xPaddingObfsMode: !!inbound.xhttpXPaddingObfsMode,
+        xPaddingKey: inbound.xhttpXPaddingKey || null,
+        xPaddingHeader: inbound.xhttpXPaddingHeader || null,
+        xPaddingPlacement: inbound.xhttpXPaddingPlacement || null,
+        xPaddingMethod: inbound.xhttpXPaddingMethod || null,
+        sessionIDPlacement: inbound.xhttpSessionPlacement || null,
+        sessionIDKey: inbound.xhttpSessionKey || null,
+        sessionIDTable: inbound.xhttpSessionIDTable || null,
+        sessionIDLength: _xhttpRange(inbound.xhttpSessionIDLength),
+        seqPlacement: inbound.xhttpSeqPlacement || null,
+        seqKey: inbound.xhttpSeqKey || null,
         noGrpcHeader: !!inbound.xhttpNoGrpcHeader,
         xmux: Object.keys(xmux).length > 0 ? xmux : null,
     };
@@ -561,6 +771,15 @@ function _xhttpTuning(inbound) {
  * @returns {{ sni: string, host: string, allowInsecure: boolean, source: string }}
  */
 function _resolveXrayTlsClientHints(node) {
+    if (node?.type === 'cdn') {
+        const cdn = node.cdn || {};
+        return {
+            sni: cdn.sni || cdn.domain || '',
+            host: cdn.host || cdn.domain || '',
+            allowInsecure: false,
+            source: 'cdn',
+        };
+    }
     const tlsSource = node?.xray?.tlsSource || 'panel';
     const fallbackSni = node?.domain || node?.sni || '';
     if (tlsSource === 'panel') {
@@ -587,7 +806,7 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
     const uuid = user.xrayUuid;
     if (!uuid) return null;
 
-    const host = node.domain || node.ip;
+    const host = inbound.address || node.domain || node.ip;
     const port = inbound.port || node.port || 443;
     const transport = inbound.transport || 'tcp';
     const security = inbound.security || 'reality';
@@ -631,6 +850,7 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
     } else if (transport === 'grpc') {
         params.set('serviceName', inbound.grpcServiceName || 'grpc');
         params.set('mode', 'gun');
+        if (inbound.grpcAuthority) params.set('authority', inbound.grpcAuthority);
     } else if (transport === 'xhttp') {
         params.set('path', inbound.xhttpPath || '/');
         // Same reasoning as ws — use the masquerade domain as a Host hint when
@@ -638,25 +858,34 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
         const xhttpHost = inbound.xhttpHost || (security === 'tls' ? _resolveXrayTlsClientHints(node).host : '');
         if (xhttpHost) params.set('host', xhttpHost);
         if (inbound.xhttpMode && inbound.xhttpMode !== 'auto') params.set('mode', inbound.xhttpMode);
-        // Padding length and upload chunk size are enforced by the server: it
-        // answers 400 to a padding outside its range and drops oversized posts.
-        // A client that never learns them keeps the core defaults (100-1000 and
-        // 1 MB) and breaks, so both are published twice, the way clients read
-        // them: flat snake_case for the sing-box family, an `extra` JSON blob
-        // for the Xray family (v2rayNG, HAPP). One-sided knobs (xmux,
-        // noGRPCHeader) stay out — extra fields make some parsers reject the URI.
+        // Framing has to match on both ends or the inbound answers 400, so every
+        // knob is published twice, the way clients read it: flat snake_case for
+        // the sing-box family, an `extra` JSON blob for the Xray family
+        // (v2rayNG, HAPP). One-sided knobs (xmux, noGRPCHeader) stay out —
+        // extra fields make some parsers reject the URI.
         const tuning = _xhttpTuning(inbound);
         const extra = {};
         if (tuning.xPaddingBytes) {
             params.set('x_padding_bytes', tuning.xPaddingBytes);
             extra.xPaddingBytes = tuning.xPaddingBytes;
         }
-        if (tuning.scMaxEachPostBytes) extra.scMaxEachPostBytes = tuning.scMaxEachPostBytes;
+        if (tuning.scMaxEachPostBytes) {
+            params.set('sc_max_each_post_bytes', tuning.scMaxEachPostBytes);
+            extra.scMaxEachPostBytes = tuning.scMaxEachPostBytes;
+        }
+        for (const [camel, snake] of XHTTP_CLIENT_TUNING_KEYS) {
+            const value = tuning[camel];
+            if (value === null || value === false || value === '') continue;
+            params.set(snake, String(value));
+            extra[camel] = value;
+        }
+        _withXhttpSessionKeyCompat(extra);
         if (Object.keys(extra).length > 0) params.set('extra', JSON.stringify(extra));
     }
 
     const name = dedupeLabel(_xrayInboundName(node, inbound));
-    return `vless://${uuid}@${host}:${port}?${params.toString()}#${encodeURIComponent(name)}`;
+    const authorityHost = String(host).includes(':') ? `[${host}]` : host;
+    return `vless://${uuid}@${authorityHost}:${port}?${params.toString()}#${encodeURIComponent(name)}`;
 }
 
 /**
@@ -1113,7 +1342,7 @@ function generateURIList(user, nodes) {
             // will see only real nodes and fall back to manual selection.
             return;
         }
-        if (node.type === 'xray') {
+        if (node.type === 'xray' || node.type === 'cdn') {
             generateVlessURIs(user, node, dedupeLabel).forEach(uri => uris.push(uri));
         } else {
             getNodeConfigs(node).forEach(cfg => {
@@ -1125,13 +1354,17 @@ function generateURIList(user, nodes) {
 }
 
 function _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel = _passthroughLabel) {
-    const host = node.domain || node.ip;
+    if (!_clashCanExpressInbound(inbound)) {
+        logger.debug(`[Sub] Clash: skipped "${node.name}" inbound — XHTTP framing is not expressible in xhttp-opts`);
+        return { name: '', proxy: null };
+    }
+    const host = inbound.address || node.domain || node.ip;
     const transport = inbound.transport || 'tcp';
     const security = inbound.security || 'reality';
     const fingerprint = inbound.fingerprint || 'chrome';
     const name = dedupeLabel(_xrayInboundName(node, inbound));
 
-    let proxy = `  - name: "${name}"
+    let proxy = `  - name: ${_yamlString(name)}
     type: vless
     server: ${host}
     port: ${inbound.port || node.port || 443}
@@ -1170,23 +1403,52 @@ function _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel = _pas
     if (transport === 'ws') {
         proxy += `
     ws-opts:
-      path: "${inbound.wsPath || '/'}"`;
+      path: ${_yamlString(inbound.wsPath || '/')}`;
         const wsHost = inbound.wsHost || (tlsHints ? tlsHints.host : '');
-        if (wsHost) proxy += `\n      headers:\n        Host: "${wsHost}"`;
+        if (wsHost) proxy += `\n      headers:\n        Host: ${_yamlString(wsHost)}`;
     } else if (transport === 'grpc') {
         proxy += `
     grpc-opts:
-      grpc-service-name: "${inbound.grpcServiceName || 'grpc'}"`;
+      grpc-service-name: ${_yamlString(inbound.grpcServiceName || 'grpc')}`;
     } else if (transport === 'xhttp') {
         // Mihomo (Clash Meta) reads xhttp-opts only since 1.19.22, and only when
         // `network: xhttp` is set as well (emitted by the reality/tls branches
         // above). Older builds ignore the block and fail to dial.
         proxy += `
     xhttp-opts:
-      path: "${inbound.xhttpPath || '/'}"
-      mode: "${inbound.xhttpMode || 'auto'}"`;
+      path: ${_yamlString(inbound.xhttpPath || '/')}
+      mode: ${_yamlString(inbound.xhttpMode || 'auto')}`;
         const xhttpHost = inbound.xhttpHost || (tlsHints ? tlsHints.host : '');
-        if (xhttpHost) proxy += `\n      host: "${xhttpHost}"`;
+        if (xhttpHost) proxy += `\n      host: ${_yamlString(xhttpHost)}`;
+
+        const tuning = _xhttpTuning(inbound);
+        // "0-0" disables padding for Xray but keeps mihomo from ever completing
+        // the handshake (MetaCubeX/mihomo#3068), so it is simply not published.
+        if (tuning.xPaddingBytes && !isAllZeroRange(tuning.xPaddingBytes)) {
+            proxy += `\n      x-padding-bytes: ${_yamlString(tuning.xPaddingBytes)}`;
+        }
+        if (tuning.scMaxEachPostBytes) {
+            proxy += `\n      sc-max-each-post-bytes: ${_yamlString(tuning.scMaxEachPostBytes)}`;
+        }
+        for (const [camel, , kebab] of XHTTP_CLIENT_TUNING_KEYS) {
+            const value = tuning[camel];
+            if (value === null || value === false || value === '') continue;
+            proxy += `\n      ${kebab}: ${typeof value === 'boolean' ? value : _yamlString(String(value))}`;
+        }
+        if (tuning.noGrpcHeader) proxy += `\n      no-grpc-header: true`;
+        if (tuning.xmux) {
+            // XMUX under its mihomo name; the knobs themselves match Xray's.
+            proxy += `\n      reuse-settings:`;
+            if (tuning.xmux.maxConcurrency) {
+                proxy += `\n        max-concurrency: ${_yamlString(tuning.xmux.maxConcurrency)}`;
+            }
+            if (tuning.xmux.hMaxRequestTimes) {
+                proxy += `\n        h-max-request-times: ${_yamlString(tuning.xmux.hMaxRequestTimes)}`;
+            }
+            if (tuning.xmux.hMaxReusableSecs) {
+                proxy += `\n        h-max-reusable-secs: ${_yamlString(tuning.xmux.hMaxReusableSecs)}`;
+            }
+        }
     }
 
     return { name, proxy };
@@ -1217,7 +1479,7 @@ function generateClashYAML(user, nodes, routing) {
             return;
         }
         const beforeIdx = proxyNames.length;
-        if (node.type === 'xray') {
+        if (node.type === 'xray' || node.type === 'cdn') {
             if (!user.xrayUuid) return;
             _buildClashVlessProxies(user, node, dedupeLabel).forEach(({ name, proxy }) => {
                 if (!proxy) return;
@@ -1229,11 +1491,11 @@ function generateClashYAML(user, nodes, routing) {
                 const name = dedupeLabel(`${node.flag || ''} ${node.name} ${cfg.name}`.trim());
                 proxyNames.push(name);
 
-                let proxy = `  - name: "${name}"
+                let proxy = `  - name: ${_yamlString(name)}
     type: hysteria2
     server: ${cfg.host}
     port: ${cfg.port}
-    password: "${auth}"
+    password: ${_yamlString(auth)}
     sni: ${cfg.sni || cfg.host}
     skip-cert-verify: ${!cfg.hasCert}
     alpn:
@@ -1243,7 +1505,7 @@ function generateClashYAML(user, nodes, routing) {
                 const hopIntervalSec = parseDurationSeconds(normalizeHopInterval(cfg.hopInterval));
                 if (hopIntervalSec > 0) proxy += `\n    hop-interval: ${hopIntervalSec}`;
                 if (cfg.obfs && cfg.obfsPassword) {
-                    proxy += `\n    obfs: ${cfg.obfs}\n    obfs-password: "${cfg.obfsPassword}"`;
+                    proxy += `\n    obfs: ${cfg.obfs}\n    obfs-password: ${_yamlString(cfg.obfsPassword)}`;
                 }
                 proxies.push(proxy);
             });
@@ -1274,13 +1536,13 @@ function generateClashYAML(user, nodes, routing) {
             ? `\n    tolerance: ${vcfg.tolerance}`
             : '';
         virtualGroups.push(
-            `  - name: "${groupName}"\n    type: ${groupType}\n    url: ${url}\n    interval: ${intervalSec}${toleranceLine}\n    proxies:\n${sourceNames.map(n => `      - "${n}"`).join('\n')}`
+            `  - name: ${_yamlString(groupName)}\n    type: ${groupType}\n    url: ${url}\n    interval: ${intervalSec}${toleranceLine}\n    proxies:\n${sourceNames.map(n => `      - ${_yamlString(n)}`).join('\n')}`
         );
         // Surface the balancer at the top of the user-facing select group too.
         proxyNames.unshift(groupName);
     });
 
-    let yaml = `proxies:\n${proxies.join('\n')}\n\nproxy-groups:\n  - name: "Proxy"\n    type: select\n    proxies:\n${proxyNames.map(n => `      - "${n}"`).join('\n')}\n`;
+    let yaml = `proxies:\n${proxies.join('\n')}\n\nproxy-groups:\n  - name: "Proxy"\n    type: select\n    proxies:\n${proxyNames.map(n => `      - ${_yamlString(n)}`).join('\n')}\n`;
     if (virtualGroups.length > 0) {
         yaml += virtualGroups.join('\n') + '\n';
     }
@@ -1311,7 +1573,7 @@ function generateClashYAML(user, nodes, routing) {
 }
 
 function _buildSingboxVlessOutboundForInbound(user, node, inbound) {
-    const host = node.domain || node.ip;
+    const host = inbound.address || node.domain || node.ip;
     const transport = inbound.transport || 'tcp';
     const security = inbound.security || 'reality';
     const fingerprint = inbound.fingerprint || 'chrome';
@@ -1384,6 +1646,11 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound) {
         const tuning = _xhttpTuning(inbound);
         if (tuning.xPaddingBytes) outbound.transport.x_padding_bytes = tuning.xPaddingBytes;
         if (tuning.scMaxEachPostBytes) outbound.transport.sc_max_each_post_bytes = tuning.scMaxEachPostBytes;
+        for (const [camel, snake] of XHTTP_CLIENT_TUNING_KEYS) {
+            const value = tuning[camel];
+            if (value === null || value === false || value === '') continue;
+            outbound.transport[snake] = value;
+        }
         if (tuning.noGrpcHeader) outbound.transport.no_grpc_header = true;
         if (tuning.xmux) {
             const xmux = {};
@@ -1424,10 +1691,10 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
     const auth = `${user.userId}:${user.password}`;
     const built = [];
 
-    if (node.type === 'xray') {
+    if (node.type === 'xray' || node.type === 'cdn') {
         if (!user.xrayUuid) return [];
-        const host = node.domain || node.ip;
         getXrayPublishedInbounds(node).forEach((inbound, idx) => {
+            const host = inbound.address || node.domain || node.ip;
             const transport = inbound.transport || 'tcp';
             const security = inbound.security || 'reality';
             const displayName = dedupeLabel(_xrayInboundName(node, inbound));
@@ -1466,7 +1733,11 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
                 const wsHost = inbound.wsHost || (tlsHints ? tlsHints.host : '');
                 streamSettings.wsSettings = { path: inbound.wsPath || '/', headers: wsHost ? { Host: wsHost } : {} };
             } else if (transport === 'grpc') {
-                streamSettings.grpcSettings = { serviceName: inbound.grpcServiceName || 'grpc', multiMode: false };
+                streamSettings.grpcSettings = {
+                    serviceName: inbound.grpcServiceName || 'grpc',
+                    multiMode: false,
+                };
+                if (inbound.grpcAuthority) streamSettings.grpcSettings.authority = inbound.grpcAuthority;
             } else if (transport === 'xhttp') {
                 streamSettings.xhttpSettings = {
                     path: inbound.xhttpPath || '/',
@@ -1479,8 +1750,14 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
                 const extra = {};
                 if (tuning.xPaddingBytes) extra.xPaddingBytes = tuning.xPaddingBytes;
                 if (tuning.scMaxEachPostBytes) extra.scMaxEachPostBytes = tuning.scMaxEachPostBytes;
+                for (const [camel] of XHTTP_CLIENT_TUNING_KEYS) {
+                    const value = tuning[camel];
+                    if (value === null || value === false || value === '') continue;
+                    extra[camel] = value;
+                }
                 if (tuning.noGrpcHeader) extra.noGRPCHeader = true;
                 if (tuning.xmux) extra.xmux = tuning.xmux;
+                _withXhttpSessionKeyCompat(extra);
                 if (Object.keys(extra).length > 0) {
                     streamSettings.xhttpSettings.extra = extra;
                 }
@@ -1784,7 +2061,7 @@ function generateSingboxJSON(user, nodes, routing) {
             return;
         }
         const beforeIdx = tags.length;
-        if (node.type === 'xray') {
+        if (node.type === 'xray' || node.type === 'cdn') {
             if (!user.xrayUuid) return;
             _buildSingboxVlessOutbounds(user, node).forEach(({ tag, outbound }) => {
                 if (!outbound) return;
@@ -2055,7 +2332,7 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
         // page entirely. They still appear (always pinned to the top) inside
         // the actual subscription payloads served to clients via ?format=…
         if (node.type === 'virtual') return;
-        if (node.type === 'xray') {
+        if (node.type === 'xray' || node.type === 'cdn') {
             // Render one card per published inbound (main + extras).
             const inbounds = getXrayPublishedInbounds(node);
             inbounds.forEach(inbound => {
@@ -3369,3 +3646,6 @@ module.exports.xrayInboundName = _xrayInboundName;
 // either wrong silently breaks configs rather than failing loudly.
 module.exports.singboxRuleSetTag = _singboxRuleSetTag;
 module.exports.vlessURIForInbound = generateVlessURIForInbound;
+module.exports.singboxVlessOutboundForInbound = _buildSingboxVlessOutboundForInbound;
+module.exports.clashVlessProxyForInbound = _buildClashVlessProxyForInbound;
+module.exports.resolveCdnOrigins = resolveCdnOrigins;

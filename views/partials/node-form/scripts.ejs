@@ -529,7 +529,14 @@ const i18n = {
     confirmUndeployCascade: <%- JSON.stringify(t("nodes.confirmUndeployCascade")) %>,
     confirmDeleteCascade: <%- JSON.stringify(t("nodes.confirmDeleteCascade")) %>,
     xrayGenerateKeysConfirm: <%- JSON.stringify(t("nodes.xrayGenerateKeysConfirm")) %>,
-    xrayKeysSuccess: <%- JSON.stringify(t("nodes.xrayKeysSuccess")) %>
+    xrayKeysSuccess: <%- JSON.stringify(t("nodes.xrayKeysSuccess")) %>,
+    cdnDomainRequired: <%- JSON.stringify(t("nodes.cdnDomainRequired")) %>,
+    cdnResolved: <%- JSON.stringify(t("nodes.cdnResolved")) %>,
+    cdnEdgeLimit: <%- JSON.stringify(t("nodes.cdnEdgeLimit")) %>,
+    cdnPathMustExtend: <%- JSON.stringify(t("nodes.cdnPathMustExtend")) %>,
+    cdnPathMustMatchOrigin: <%- JSON.stringify(t("nodes.cdnPathMustMatchOrigin")) %>,
+    cdnPathMustEqual: <%- JSON.stringify(t("nodes.cdnPathMustEqual")) %>,
+    cdnPathUnsupported: <%- JSON.stringify(t("nodes.cdnPathUnsupported")) %>
 };
 const i18nConfig = {
     copied: <%- JSON.stringify(t("common.copied")) %>,
@@ -598,31 +605,59 @@ function checkXrayPortConflict() {
     });
 }
 
+// Sections that belong to a serverless node type. switchProto shows exactly one
+// of them and never restores either through the `.virtual-hidden` sweep.
+const SERVERLESS_SECTION_IDS = ['virtualSection', 'cdnSection'];
+
+// A `required` control inside a hidden section aborts submission browser-side
+// with no visible error, so the attribute only lives on CDN fields while the
+// CDN section is on screen.
+function syncCdnRequired(isCdn) {
+    document.querySelectorAll('#cdnSection [data-cdn-required]').forEach(el => {
+        if (isCdn) el.setAttribute('required', 'required');
+        else el.removeAttribute('required');
+    });
+    // A custom validity message set on a hidden field blocks submission just as
+    // silently as `required`, so the path check only lives while CDN is picked.
+    const path = document.getElementById('cdnPath');
+    if (!path) return;
+    if (isCdn) syncCdnPathHint();
+    else path.setCustomValidity('');
+}
+
 function switchProto(proto) {
     const xraySection = document.getElementById('xraySection');
     const virtualSection = document.getElementById('virtualSection');
+    const cdnSection = document.getElementById('cdnSection');
     const cascadeSection = document.getElementById('cascadeRoleSection');
     const labelHysteria = document.getElementById('protoHysteriaLabel');
     const labelXray = document.getElementById('protoXrayLabel');
     const labelVirtual = document.getElementById('protoVirtualLabel');
+    const labelCdn = document.getElementById('protoCdnLabel');
     const hysteriaOnlyEls = document.querySelectorAll('.hysteria-only');
     const ipFormGroup = document.getElementById('ipFormGroup');
     const ipInput = document.getElementById('ip');
 
-    [labelHysteria, labelXray, labelVirtual].forEach(l => l && l.classList.remove('active'));
+    [labelHysteria, labelXray, labelVirtual, labelCdn].forEach(l => l && l.classList.remove('active'));
 
-    if (proto === 'virtual') {
+    if (proto === 'virtual' || proto === 'cdn') {
         if (xraySection) xraySection.style.display = 'none';
         if (cascadeSection) cascadeSection.style.display = 'none';
-        if (virtualSection) virtualSection.style.display = '';
-        if (labelVirtual) labelVirtual.classList.add('active');
+        if (virtualSection) virtualSection.style.display = proto === 'virtual' ? '' : 'none';
+        if (cdnSection) cdnSection.style.display = proto === 'cdn' ? '' : 'none';
+        if (proto === 'virtual' && labelVirtual) labelVirtual.classList.add('active');
+        if (proto === 'cdn' && labelCdn) labelCdn.classList.add('active');
         hysteriaOnlyEls.forEach(el => el.style.display = 'none');
-        // Hide everything except: protocol switcher, identification, groups, virtual section.
+        const activeSectionId = proto === 'virtual' ? 'virtualSection' : 'cdnSection';
+        // Hide everything except the shared fields and selected serverless section.
+        // The inactive serverless section is hidden without the `virtual-hidden`
+        // marker: that class means "restore me when a server-backed type is
+        // picked again", which is exactly what must not happen to it.
         document.querySelectorAll('.form-section').forEach(sec => {
-            if (sec.id === 'virtualSection') return;
+            if (sec.id === activeSectionId) return;
             if (sec.querySelector('.proto-switcher')) return;
             if (sec.querySelector('input[name="groups"]')) return;
-            sec.classList.add('virtual-hidden');
+            if (!SERVERLESS_SECTION_IDS.includes(sec.id)) sec.classList.add('virtual-hidden');
             sec.style.display = 'none';
         });
         // Non-form-section elements that don't belong on virtual nodes
@@ -635,12 +670,15 @@ function switchProto(proto) {
         });
         if (ipFormGroup) ipFormGroup.style.display = 'none';
         if (ipInput) ipInput.removeAttribute('required');
+        syncCdnRequired(proto === 'cdn');
         checkXrayPortConflict();
         return;
     }
 
     // Restore everything hidden by 'virtual'.
     if (virtualSection) virtualSection.style.display = 'none';
+    if (cdnSection) cdnSection.style.display = 'none';
+    syncCdnRequired(false);
     document.querySelectorAll('.form-section.virtual-hidden, .non-virtual-only.virtual-hidden').forEach(sec => {
         sec.style.display = '';
         sec.classList.remove('virtual-hidden');
@@ -920,6 +958,11 @@ function addExtraInbound() {
     if (noGrpcHeaderCb) {
         noGrpcHeaderCb.value = id;
         noGrpcHeaderCb.checked = false;
+    }
+    const paddingObfsCb = root.querySelector('input[name="xray_extra_xhttpXPaddingObfsMode"]');
+    if (paddingObfsCb) {
+        paddingObfsCb.value = id;
+        paddingObfsCb.checked = false;
     }
 
     const titleSpan = root.querySelector('.extra-inbound-title');
@@ -1414,7 +1457,7 @@ async function resetStatus() {
     }
 }
 
-<% if (node?._id && node.type !== 'virtual') { %>
+<% if (node?._id && node.type !== 'virtual' && node.type !== 'cdn') { %>
 async function restartNodeService(btn) {
     const target = btn || document.getElementById('btnRestart');
     const original = target ? target.innerHTML : '';
@@ -1825,10 +1868,159 @@ async function generateXrayKeys(btn) {
     }
 }
 
+// Mirrors CDN_EDGES_MAX in src/utils/cdnConfig.js.
+const CDN_EDGES_MAX = 32;
+
+function updateCdnInboundOptions() {
+    const originId = document.getElementById('cdnOriginNode')?.value || '';
+    const select = document.getElementById('cdnOriginInbound');
+    if (!select) return;
+    let firstVisible = null;
+    let selectedVisible = false;
+    Array.from(select.options).forEach(option => {
+        const visible = !!originId && option.dataset.origin === originId;
+        option.hidden = !visible;
+        option.disabled = !visible;
+        if (visible && !firstVisible) firstVisible = option;
+        if (visible && option.selected) selectedVisible = true;
+    });
+    if (!selectedVisible && firstVisible) firstVisible.selected = true;
+    syncCdnPathHint();
+}
+
+// Mirrors validateCdnClientPath in src/utils/cdnConfig.js. The rule is not
+// guessable — with the default placements Xray reads the segment after the
+// inbound path as the session ID, so a longer client path breaks every session
+// at once — and finding that out after a save costs a debugging session.
+function syncCdnPathHint() {
+    const input = document.getElementById('cdnPath');
+    if (!input) return;
+    // Same reason as in syncCdnRequired: never leave a validity message behind
+    // on a field the operator cannot see.
+    if (document.querySelector('input[name="type"]:checked')?.value !== 'cdn') {
+        input.setCustomValidity('');
+        return;
+    }
+    const option = document.getElementById('cdnOriginInbound')?.selectedOptions?.[0];
+    const transport = option?.dataset.transport || '';
+    const originPath = option?.dataset.path || '/';
+    const value = input.value.trim();
+
+    if (transport === 'xhttp') {
+        const stripSlash = path => (path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path);
+        const prefix = originPath.endsWith('/') ? originPath : originPath + '/';
+        if (option?.dataset.markersInPath === 'true') {
+            input.placeholder = originPath;
+            input.setCustomValidity(
+                !value || stripSlash(value) === stripSlash(originPath)
+                    ? ''
+                    : i18n.cdnPathMustMatchOrigin.replace('{path}', originPath)
+            );
+        } else {
+            input.placeholder = prefix + 'events.php';
+            input.setCustomValidity(
+                !value || stripSlash(value) === stripSlash(originPath) || value.startsWith(prefix)
+                    ? ''
+                    : i18n.cdnPathMustExtend.replace('{prefix}', prefix)
+            );
+        }
+    } else if (transport === 'ws') {
+        input.placeholder = originPath;
+        input.setCustomValidity(
+            !value || value === originPath ? '' : i18n.cdnPathMustEqual.replace('{path}', originPath)
+        );
+    } else {
+        input.placeholder = '';
+        input.setCustomValidity(value ? i18n.cdnPathUnsupported : '');
+    }
+}
+
+function updateCdnTlsUi() {
+    const enabled = document.getElementById('cdnSecurity')?.value === 'tls';
+    document.querySelectorAll('.cdn-tls-only').forEach(element => {
+        element.style.display = enabled ? '' : 'none';
+    });
+}
+
+function addCdnEdge(values = {}) {
+    const container = document.getElementById('cdnEdgesContainer');
+    const template = document.getElementById('cdnEdgeTemplate');
+    if (!container || !template) return false;
+    if (container.children.length >= CDN_EDGES_MAX) {
+        const status = document.getElementById('cdnResolveStatus');
+        if (status) status.textContent = i18n.cdnEdgeLimit.replace('{max}', String(CDN_EDGES_MAX));
+        return false;
+    }
+    const id = (window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : `edge-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const fragment = template.content.cloneNode(true);
+    const row = fragment.querySelector('.cdn-edge-row');
+    const edgeId = String(values.id || id);
+    row.querySelector('input[name="cdn_edge_id"]').value = edgeId;
+    row.querySelector('input[name="cdn_edge_label"]').value = values.label || '';
+    row.querySelector('input[name="cdn_edge_address"]').value = values.address || '';
+    const enabled = row.querySelector('input[name="cdn_edge_enabled"]');
+    enabled.value = edgeId;
+    enabled.checked = values.enabled !== false;
+    container.appendChild(fragment);
+    syncCdnRequired(document.querySelector('input[name="type"]:checked')?.value === 'cdn');
+    return true;
+}
+
+function removeCdnEdge(button) {
+    button.closest('.cdn-edge-row')?.remove();
+}
+
+async function resolveCdnEdges() {
+    const domain = document.getElementById('cdnDomain')?.value.trim();
+    const status = document.getElementById('cdnResolveStatus');
+    if (!domain) {
+        if (status) status.textContent = i18n.cdnDomainRequired;
+        return;
+    }
+    if (status) status.textContent = i18n.checking;
+    try {
+        const response = await fetch(`/panel/nodes/resolve-cdn?domain=${encodeURIComponent(domain)}`, {
+            credentials: 'include',
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        const existing = new Set(
+            Array.from(document.querySelectorAll('input[name="cdn_edge_address"]'))
+                .map(input => input.value.trim())
+                .filter(Boolean)
+        );
+        const container = document.getElementById('cdnEdgesContainer');
+        let added = 0;
+        data.addresses.forEach(address => {
+            if (existing.has(address)) return;
+            const label = `Edge ${(container ? container.children.length : 0) + 1}`;
+            if (addCdnEdge({ address, label })) {
+                existing.add(address);
+                added++;
+            }
+        });
+        if (status) {
+            status.textContent = container && container.children.length >= CDN_EDGES_MAX
+                ? i18n.cdnEdgeLimit.replace('{max}', String(CDN_EDGES_MAX))
+                : i18n.cdnResolved.replace('{count}', String(added));
+        }
+        const sni = document.getElementById('cdnSni');
+        const host = document.getElementById('cdnHost');
+        if (sni && !sni.value) sni.value = domain;
+        if (host && !host.value) host.value = domain;
+    } catch (error) {
+        if (status) status.textContent = `${i18n.error}: ${error.message}`;
+    }
+}
+
 // Init UI on page load
 (function() {
     const proto = document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
     switchProto(proto);
+    updateCdnInboundOptions();
+    updateCdnTlsUi();
     toggleAcmeByDomain();
     toggleAcmeTypeFields();
     toggleObfsPassword();

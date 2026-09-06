@@ -9,6 +9,7 @@ const HyNode = require('../../models/hyNodeModel');
 const cascadeService = require('../../services/cascadeService');
 const cache = require('../../services/cacheService');
 const logger = require('../../utils/logger');
+const { isServerlessNode } = require('../../utils/nodeTypes');
 
 async function invalidateCascadeCache() {
     await cache.invalidateAllSubscriptions();
@@ -89,6 +90,11 @@ async function manageCascade(args, emit) {
             if (!bridgeNode) return { error: 'Bridge node not found', code: 404 };
             if (data.portalNodeId === data.bridgeNodeId) {
                 return { error: 'Portal and Bridge must be different nodes', code: 400 };
+            }
+            // Same rule as the REST route: a tunnel needs two reachable hosts,
+            // and CDN/virtual nodes have neither an IP nor SSH credentials.
+            if (isServerlessNode(portalNode) || isServerlessNode(bridgeNode)) {
+                return { error: 'Serverless nodes cannot participate in cascade links', code: 400 };
             }
 
             const port = data.tunnelPort || 10086;
@@ -176,6 +182,9 @@ async function manageCascade(args, emit) {
                 .populate('portalNode')
                 .populate('bridgeNode');
             if (!link) return { error: `Cascade link '${id}' not found`, code: 404 };
+            if (isServerlessNode(link.portalNode) || isServerlessNode(link.bridgeNode)) {
+                return { error: 'Serverless nodes cannot participate in cascade links', code: 400 };
+            }
 
             emit('progress', { message: `Deploying cascade link '${link.name}'...` });
             const result = await cascadeService.deployLink(link);
@@ -205,6 +214,9 @@ async function manageCascade(args, emit) {
                 .populate('portalNode')
                 .populate('bridgeNode');
             if (!link) return { error: `Cascade link '${id}' not found`, code: 404 };
+            if (isServerlessNode(link.portalNode) || isServerlessNode(link.bridgeNode)) {
+                return { error: 'Serverless nodes cannot participate in cascade links', code: 400 };
+            }
 
             emit('progress', { message: `Reconnecting cascade link '${link.name}'...` });
             await cascadeService.deployLink(link);

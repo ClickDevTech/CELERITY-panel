@@ -17,6 +17,7 @@ const Settings = require('../../models/settingsModel');
 const cryptoService = require('../../services/cryptoService');
 const sshKeyService = require('../../services/sshKeyService');
 const nodeSetup = require('../../services/nodeSetup');
+const { isServerlessNode } = require('../../utils/nodeTypes');
 const config = require('../../../config');
 const logger = require('../../utils/logger');
 const { invalidateOnboardingCache } = require('./helpers');
@@ -377,8 +378,8 @@ async function _runBootstrap(taskId, nodeIds) {
             allSuccess = false;
             continue;
         }
-        if (node.type === 'virtual') {
-            pushLog(`[Skip] Virtual node ${node.name}: nothing to install`);
+        if (isServerlessNode(node)) {
+            pushLog(`[Skip] Serverless node ${node.name}: nothing to install`);
             continue;
         }
 

@@ -432,6 +432,13 @@
                             </label>
                             <small style="display:block;margin-top:4px;"><%= t('nodes.xrayXhttpNoGrpcHeaderHint') %></small>
                         </div>
+                        <%- include('xray-xhttp-advanced', {
+                            xhttp: node?.xray || {},
+                            fieldPrefix: 'xray.',
+                            idPrefix: 'xrayXhttpAdvanced',
+                            checkboxValue: '',
+                            t,
+                        }) %>
                     </div>
                 </div>
 

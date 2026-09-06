@@ -140,7 +140,9 @@
                         <% effectiveNodes.forEach(node => { %>
                         <div class="node-badge">
                             <span class="node-name"><%= node.name %></span>
-                            <span class="node-ip"><%= node.type === 'virtual' ? 'virtual / balancer' : (node.ip || '—') %></span>
+                            <span class="node-ip"><%= node.type === 'virtual'
+                                ? 'virtual / balancer'
+                                : (node.type === 'cdn' ? (node.cdn?.domain || 'CDN edge') : (node.ip || '—')) %></span>
                         </div>
                         <% }); %>
                     <% } else { %>

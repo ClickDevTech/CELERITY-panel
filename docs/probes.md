@@ -138,6 +138,7 @@ Two warnings worth acting on:
 
 - **Same host.** If a probe's egress IP matches one of your nodes, its traffic to that node never leaves the machine. The UI flags this.
 - **Virtual nodes.** A virtual node is a `urltest` group. Both the group and its leaves are checked, and the group result records which leaf the balancer actually picked.
+- **CDN nodes.** A CDN node is checked through the CDN, never against its origin: every enabled edge address is a separate inbound with its own history, so one dead edge stands out instead of averaging into the rest. The origin keeps its own entry, so a failure on all edges at once while the origin stays green points at the CDN, not at the server.
 
 ---
 

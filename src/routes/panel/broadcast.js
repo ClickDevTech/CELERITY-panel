@@ -44,7 +44,7 @@ function normalizeBroadcastNodes(nodes) {
 
 async function loadBroadcastPageNodes() {
   const nodes = await HyNode.find({
-    type: { $ne: 'virtual' },
+    type: { $nin: ['virtual', 'cdn'] },
     $or: [
       { 'ssh.password': { $exists: true, $ne: '' } },
       { 'ssh.privateKey': { $exists: true, $ne: '' } },
@@ -60,7 +60,7 @@ async function loadCronTargetNodes(nodeIds) {
   const requested = new Set(nodeIds.map(id => String(id)));
   const nodes = await HyNode.find({
     _id: { $in: nodeIds },
-    type: { $ne: 'virtual' },
+    type: { $nin: ['virtual', 'cdn'] },
     $or: [
       { 'ssh.password': { $exists: true, $ne: '' } },
       { 'ssh.privateKey': { $exists: true, $ne: '' } },

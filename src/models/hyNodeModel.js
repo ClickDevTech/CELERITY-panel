@@ -4,6 +4,28 @@
 
 const mongoose = require('mongoose');
 const net = require('net');
+const { isServerlessNode } = require('../utils/nodeTypes');
+const {
+    CDN_ALPN_VALUES,
+    CDN_FINGERPRINT_VALUES,
+    normalizeCdnConfig,
+    validateCdnOrigin,
+} = require('../utils/cdnConfig');
+const {
+    XHTTP_DATA_PLACEMENT_VALUES,
+    XHTTP_METHOD_VALUES,
+    XHTTP_PADDING_METHOD_VALUES,
+    XHTTP_PADDING_PLACEMENT_VALUES,
+    XHTTP_PLACEMENT_VALUES,
+    XHTTP_SESSION_TABLE_VALUES,
+    isValidXhttpRange,
+    validateXrayXhttp,
+} = require('../utils/xhttpOptions');
+
+const xhttpRangeValidator = {
+    validator: value => !value || isValidXhttpRange(value),
+    message: props => `"${props.value}" is not a valid XHTTP range (expected "N" or an ascending "min-max")`,
+};
 
 const ipLiteralField = {
     type: String,
@@ -118,6 +140,32 @@ const quicSchema = new mongoose.Schema({
     disablePathMTUDiscovery: { type: Boolean, default: false },
 }, { _id: false });
 
+// Field names follow the DB history, not the wire: xray-core v26.6.22 renamed
+// `sessionPlacement`/`sessionKey` to `sessionID*` with no fallback, and the
+// generators emit the new keys — renaming the columns too would drop the values
+// of every inbound saved before the upgrade.
+function xhttpAdvancedFields() {
+    return {
+        xhttpUplinkHTTPMethod: { type: String, enum: XHTTP_METHOD_VALUES, default: '' },
+        xhttpUplinkDataPlacement: { type: String, enum: XHTTP_DATA_PLACEMENT_VALUES, default: '' },
+        xhttpUplinkDataKey: { type: String, default: '', trim: true, maxlength: 64, match: /^$|^[A-Za-z0-9_-]{1,64}$/ },
+        xhttpUplinkChunkSize: { type: String, default: '', validate: xhttpRangeValidator },
+        xhttpScMinPostsIntervalMs: { type: String, default: '', validate: xhttpRangeValidator },
+        xhttpServerMaxHeaderBytes: { type: Number, default: 0, min: 0, max: 1048576 },
+        xhttpXPaddingObfsMode: { type: Boolean, default: false },
+        xhttpXPaddingKey: { type: String, default: '', trim: true, maxlength: 64, match: /^$|^[A-Za-z0-9_-]{1,64}$/ },
+        xhttpXPaddingHeader: { type: String, default: '', trim: true, maxlength: 64, match: /^$|^[A-Za-z0-9-]{1,64}$/ },
+        xhttpXPaddingPlacement: { type: String, enum: XHTTP_PADDING_PLACEMENT_VALUES, default: '' },
+        xhttpXPaddingMethod: { type: String, enum: XHTTP_PADDING_METHOD_VALUES, default: '' },
+        xhttpSessionPlacement: { type: String, enum: XHTTP_PLACEMENT_VALUES, default: '' },
+        xhttpSessionKey: { type: String, default: '', trim: true, maxlength: 64, match: /^$|^[A-Za-z0-9_-]{1,64}$/ },
+        xhttpSessionIDTable: { type: String, enum: XHTTP_SESSION_TABLE_VALUES, default: '' },
+        xhttpSessionIDLength: { type: String, default: '', validate: xhttpRangeValidator },
+        xhttpSeqPlacement: { type: String, enum: XHTTP_PLACEMENT_VALUES, default: '' },
+        xhttpSeqKey: { type: String, default: '', trim: true, maxlength: 64, match: /^$|^[A-Za-z0-9_-]{1,64}$/ },
+    };
+}
+
 // Per-inbound stream/security settings shared by the main inbound and extras.
 // Extras add `id`, `label`, `port` and reuse their own `inboundTag` instead of
 // the node-level fields.
@@ -162,12 +210,13 @@ const xrayExtraInboundSchema = new mongoose.Schema({
     // string (a bare number means min==max), empty = let the core default.
     // Generators map them to camelCase `extra` for Xray and snake_case for
     // sing-box forks that implement the transport.
-    xhttpXPaddingBytes: { type: String, default: '' },
-    xhttpScMaxEachPostBytes: { type: String, default: '' },
+    xhttpXPaddingBytes: { type: String, default: '', validate: xhttpRangeValidator },
+    xhttpScMaxEachPostBytes: { type: String, default: '', validate: xhttpRangeValidator },
     xhttpNoGrpcHeader: { type: Boolean, default: false },
-    xhttpXmuxMaxConcurrency: { type: String, default: '' },
-    xhttpXmuxHMaxRequestTimes: { type: String, default: '' },
-    xhttpXmuxHMaxReusableSecs: { type: String, default: '' },
+    xhttpXmuxMaxConcurrency: { type: String, default: '', validate: xhttpRangeValidator },
+    xhttpXmuxHMaxRequestTimes: { type: String, default: '', validate: xhttpRangeValidator },
+    xhttpXmuxHMaxReusableSecs: { type: String, default: '', validate: xhttpRangeValidator },
+    ...xhttpAdvancedFields(),
 
     // VLESS fallbacks[].dest — emitted only on tcp+tls; empty = no fallback.
     fallbackDest: { type: String, default: '', trim: true, maxlength: 253 },
@@ -213,12 +262,13 @@ const xrayConfigSchema = new mongoose.Schema({
     xhttpHost: { type: String, default: '' },
     xhttpMode: { type: String, enum: ['auto', 'packet-up', 'stream-up', 'stream-one'], default: 'auto' },
     // See xrayExtraInboundSchema above for the storage format of these.
-    xhttpXPaddingBytes: { type: String, default: '' },
-    xhttpScMaxEachPostBytes: { type: String, default: '' },
+    xhttpXPaddingBytes: { type: String, default: '', validate: xhttpRangeValidator },
+    xhttpScMaxEachPostBytes: { type: String, default: '', validate: xhttpRangeValidator },
     xhttpNoGrpcHeader: { type: Boolean, default: false },
-    xhttpXmuxMaxConcurrency: { type: String, default: '' },
-    xhttpXmuxHMaxRequestTimes: { type: String, default: '' },
-    xhttpXmuxHMaxReusableSecs: { type: String, default: '' },
+    xhttpXmuxMaxConcurrency: { type: String, default: '', validate: xhttpRangeValidator },
+    xhttpXmuxHMaxRequestTimes: { type: String, default: '', validate: xhttpRangeValidator },
+    xhttpXmuxHMaxReusableSecs: { type: String, default: '', validate: xhttpRangeValidator },
+    ...xhttpAdvancedFields(),
 
     // VLESS fallbacks[].dest — emitted only on tcp+tls; empty = no fallback.
     fallbackDest: { type: String, default: '', trim: true, maxlength: 253 },
@@ -319,16 +369,47 @@ const virtualConfigSchema = new mongoose.Schema({
     interruptExistConnections: { type: Boolean, default: true },
 }, { _id: false });
 
+const cdnEdgeSchema = new mongoose.Schema({
+    id: { type: String, required: true, trim: true, maxlength: 64 },
+    label: { type: String, default: '', trim: true, maxlength: 64 },
+    address: { type: String, required: true, trim: true, maxlength: 253 },
+    enabled: { type: Boolean, default: true },
+}, { _id: false });
+
+const cdnConfigSchema = new mongoose.Schema({
+    originNode: { type: mongoose.Schema.Types.ObjectId, ref: 'HyNode', default: null },
+    // Empty selects the origin's main inbound; otherwise this is extraInbounds[].id.
+    originInboundId: { type: String, default: '', trim: true, maxlength: 64 },
+    edges: {
+        type: [cdnEdgeSchema],
+        default: [],
+        validate: {
+            validator: edges => Array.isArray(edges) && edges.length <= 32,
+            message: 'CDN node supports at most 32 edge addresses',
+        },
+    },
+    domain: { type: String, default: '', trim: true, maxlength: 253 },
+    port: { type: Number, default: 443, min: 1, max: 65535 },
+    security: { type: String, enum: ['tls', 'none'], default: 'tls' },
+    sni: { type: String, default: '', trim: true, maxlength: 253 },
+    host: { type: String, default: '', trim: true, maxlength: 253 },
+    path: { type: String, default: '', trim: true, maxlength: 255 },
+    alpn: { type: [String], default: [], enum: CDN_ALPN_VALUES },
+    fingerprint: { type: String, default: 'chrome', enum: CDN_FINGERPRINT_VALUES },
+    allowInsecure: { type: Boolean, default: false },
+    xhttpMode: { type: String, enum: ['', 'auto', 'packet-up', 'stream-up', 'stream-one'], default: '' },
+}, { _id: false });
+
 const hyNodeSchema = new mongoose.Schema({
-    // 'hysteria' (default), 'xray' or 'virtual' (balancer aggregator).
-    type: { type: String, enum: ['hysteria', 'xray', 'virtual'], default: 'hysteria' },
+    // 'hysteria' (default), 'xray', 'virtual' (balancer), or 'cdn' (edge front).
+    type: { type: String, enum: ['hysteria', 'xray', 'virtual', 'cdn'], default: 'hysteria' },
 
     name: { type: String, required: true },
     flag: { type: String, default: '' },
     // Free-form operator note displayed in the node list and dashboard.
     // Trimmed and capped to avoid abuse / excessive payload size.
     comment: { type: String, default: '', trim: true, maxlength: 500 },
-    // Required for hysteria/xray; null for virtual (no transport).
+    // Required for hysteria/xray; null for serverless virtual/CDN nodes.
     ip: { type: String, default: null },
     domain: { type: String, default: '' },
     sni: { type: String, default: '' },
@@ -359,6 +440,9 @@ const hyNodeSchema = new mongoose.Schema({
 
     // Virtual-specific configuration (only used when type === 'virtual')
     virtual: { type: virtualConfigSchema, default: () => ({}) },
+
+    // CDN-specific publication configuration (only used when type === 'cdn')
+    cdn: { type: cdnConfigSchema, default: () => ({}) },
 
     groups: [{
         type: mongoose.Schema.Types.ObjectId,
@@ -428,8 +512,8 @@ const hyNodeSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
-// One IP may host at most one node per protocol type. Virtual nodes have no IP
-// (null), so the partial filter excludes them from the unique constraint.
+// One IP may host at most one node per protocol type. Serverless nodes have no
+// IP, so the partial filter excludes them from the unique constraint.
 hyNodeSchema.index(
     { ip: 1, type: 1 },
     { unique: true, partialFilterExpression: { ip: { $type: 'string' } } }
@@ -437,25 +521,57 @@ hyNodeSchema.index(
 hyNodeSchema.index({ active: 1 });
 hyNodeSchema.index({ groups: 1 });
 hyNodeSchema.index({ status: 1 });
+hyNodeSchema.index(
+    { 'cdn.originNode': 1 },
+    { partialFilterExpression: { type: 'cdn' } }
+);
 
-// Type-conditional validation: hysteria/xray require ip; virtual requires either
-// a non-empty sources list (manual) or a sourceGroup (group mode), and must not
-// reference another virtual node (anti-cycle).
-hyNodeSchema.pre('validate', function(next) {
+// Type-conditional validation keeps serverless node references safe even when a
+// caller bypasses the panel form and writes through the REST API.
+hyNodeSchema.pre('validate', async function() {
+    if (isServerlessNode(this)) {
+        // Only the two fields that would corrupt shared state if left over from
+        // a previous type: `ip` feeds the {ip,type} unique index and cascade
+        // roles are meaningless without a remote server. Credentials and TLS
+        // hints are cleared by the write paths, not here.
+        this.ip = null;
+        this.cascadeRole = 'standalone';
+    }
     if (this.type === 'virtual') {
         const v = this.virtual || {};
         if (v.selectMode === 'manual' && (!v.sources || v.sources.length === 0)) {
-            return next(new Error('Virtual node (manual): at least one source required'));
+            throw new Error('Virtual node (manual): at least one source required');
         }
         if (v.selectMode === 'group' && !v.sourceGroup) {
-            return next(new Error('Virtual node (group): sourceGroup required'));
+            throw new Error('Virtual node (group): sourceGroup required');
         }
-        return next();
+        return;
+    }
+    if (this.type === 'cdn') {
+        // Reuse the same rules the REST/MCP/panel paths apply so a direct
+        // save() (seed, migration, script) cannot store a CDN front that would
+        // hand clients an unusable config.
+        const cdn = typeof this.cdn?.toObject === 'function'
+            ? this.cdn.toObject({ depopulate: true })
+            : (this.cdn || {});
+        const normalized = normalizeCdnConfig(cdn);
+        if (normalized.error) throw new Error(normalized.error);
+        const originCheck = await validateCdnOrigin(normalized.value, this.constructor, {
+            selfId: this._id,
+        });
+        if (originCheck.error) throw new Error(originCheck.error);
+        return;
+    }
+    if (this.type === 'xray') {
+        const xray = typeof this.xray?.toObject === 'function'
+            ? this.xray.toObject()
+            : (this.xray || {});
+        const xhttpError = validateXrayXhttp(xray);
+        if (xhttpError) throw new Error(xhttpError);
     }
     if (!this.ip) {
-        return next(new Error(`Node type ${this.type} requires ip`));
+        throw new Error(`Node type ${this.type} requires ip`);
     }
-    return next();
 });
 
 /**
@@ -481,13 +597,13 @@ hyNodeSchema.statics.findLabelConflict = async function(name, flag, excludeId = 
 };
 
 hyNodeSchema.virtual('serverAddress').get(function() {
-    if (this.type === 'virtual') return '';
+    if (isServerlessNode(this)) return '';
     const host = this.domain || this.ip;
     return `${host}:${this.portRange}`;
 });
 
 hyNodeSchema.methods.getSubscriptionAddress = function() {
-    if (this.type === 'virtual') return '';
+    if (isServerlessNode(this)) return '';
     const host = this.domain || this.ip;
     if (this.portRange && this.portRange.includes('-')) {
         return `${host}:${this.portRange}`;

@@ -607,9 +607,10 @@ class CascadeService {
         }
 
         const [allNodes, allLinks] = await Promise.all([
-            // Virtual nodes have no IP/country and don't participate in the cascade.
+            // Virtual balancers have no topology endpoint. CDN fronts do and are
+            // linked to their origin below.
             HyNode.find({ active: true, type: { $ne: 'virtual' } })
-                .select('name ip domain flag type status onlineUsers cascadeRole mapPosition country port ssh')
+                .select('name ip domain flag type status onlineUsers cascadeRole mapPosition country port ssh cdn')
                 .lean(),
             CascadeLink.find({ active: true })
                 .populate('portalNode', 'name ip')
@@ -617,15 +618,18 @@ class CascadeService {
                 .lean(),
         ]);
 
+        const nodeById = new Map(allNodes.map(node => [String(node._id), node]));
         const nodes = allNodes.map(n => ({
             data: {
                 id: String(n._id),
                 label: n.name,
-                ip: n.ip,
-                domain: n.domain || '',
+                ip: n.type === 'cdn' ? (n.cdn?.domain || '') : n.ip,
+                domain: n.type === 'cdn' ? (n.cdn?.domain || '') : (n.domain || ''),
                 flag: n.flag || '',
                 type: n.type,
-                status: n.status,
+                status: n.type === 'cdn'
+                    ? (nodeById.get(String(n.cdn?.originNode))?.status || 'offline')
+                    : n.status,
                 onlineUsers: n.onlineUsers || 0,
                 cascadeRole: n.cascadeRole || 'standalone',
                 country: n.country || '',
@@ -655,9 +659,31 @@ class CascadeService {
             },
         }));
 
+        for (const cdnNode of allNodes.filter(node => node.type === 'cdn')) {
+            const originId = String(cdnNode.cdn?.originNode || '');
+            if (!nodeById.has(originId)) continue;
+            edges.push({
+                data: {
+                    id: `cdn-${cdnNode._id}-${originId}`,
+                    linkId: null,
+                    source: String(cdnNode._id),
+                    target: originId,
+                    label: 'CDN',
+                    status: nodeById.get(originId)?.status || 'offline',
+                    tunnelPort: cdnNode.cdn?.port || 443,
+                    latencyMs: null,
+                    tunnelProtocol: 'vless',
+                    tunnelTransport: 'cdn',
+                    mode: 'forward',
+                    isCdnEdge: true,
+                },
+            });
+        }
+
         // Add virtual "Internet" node and edges from exit/standalone nodes
         const exitNodes = allNodes.filter(n =>
-            n.cascadeRole === 'bridge' || n.cascadeRole === 'standalone' || !n.cascadeRole
+            n.type !== 'cdn'
+            && (n.cascadeRole === 'bridge' || n.cascadeRole === 'standalone' || !n.cascadeRole)
         );
 
         if (exitNodes.length > 0) {
@@ -995,7 +1021,10 @@ class CascadeService {
         const portalSet = new Set(links.map(l => String(l.portalNode)));
         const bridgeSet = new Set(links.map(l => String(l.bridgeNode)));
 
-        const allNodes = await HyNode.find({ active: true, type: { $ne: 'virtual' } }).select('_id cascadeRole').lean();
+        const allNodes = await HyNode.find({
+            active: true,
+            type: { $nin: ['virtual', 'cdn'] },
+        }).select('_id cascadeRole').lean();
 
         const bulkOps = [];
         for (const node of allNodes) {

@@ -18,6 +18,17 @@ const totpService = require('../../services/totpService');
 const config = require('../../../config');
 const logger = require('../../utils/logger');
 const { parseDurationSeconds } = require('../../utils/helpers');
+const { isServerlessNode } = require('../../utils/nodeTypes');
+const {
+    XHTTP_DATA_PLACEMENT_VALUES,
+    XHTTP_METHOD_VALUES,
+    XHTTP_PADDING_METHOD_VALUES,
+    XHTTP_PADDING_PLACEMENT_VALUES,
+    XHTTP_PLACEMENT_VALUES,
+    XHTTP_SESSION_TABLE_VALUES,
+    sanitizeXhttpRange,
+    validateXhttpInbound,
+} = require('../../utils/xhttpOptions');
 const { formatTraffic } = require('../../utils/formatTraffic');
 const { version: appVersion } = require('../../../package.json');
 
@@ -83,6 +94,10 @@ const XRAY_TRANSPORT_VALUES = ['tcp', 'ws', 'grpc', 'xhttp'];
 const XRAY_SECURITY_VALUES = ['reality', 'tls', 'none'];
 const XRAY_XHTTP_MODE_VALUES = ['auto', 'packet-up', 'stream-up', 'stream-one'];
 const XRAY_TLS_SOURCE_VALUES = ['panel', 'acme', 'manual', 'self-signed'];
+const XRAY_XHTTP_METHOD_VALUES = XHTTP_METHOD_VALUES;
+const XRAY_XHTTP_DATA_PLACEMENT_VALUES = XHTTP_DATA_PLACEMENT_VALUES;
+const XRAY_XHTTP_PLACEMENT_VALUES = XHTTP_PLACEMENT_VALUES;
+const XRAY_XHTTP_PADDING_PLACEMENT_VALUES = XHTTP_PADDING_PLACEMENT_VALUES;
 
 const ACME_EMAIL_RE = /^(?=.{3,254}$)[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
 
@@ -131,15 +146,7 @@ function _parseFingerprintPool(raw) {
     return out;
 }
 
-/**
- * Keep an XHTTP range field only when it is a plain number or "min-max" range.
- * Garbage is stored as empty (core default) rather than passed through, because
- * both Xray and the sing-box forks treat a malformed range as a fatal error.
- */
-function _sanitizeXhttpRange(raw) {
-    const v = String(raw === undefined || raw === null ? '' : raw).trim();
-    return /^\d{1,10}(-\d{1,10})?$/.test(v) ? v : '';
-}
+const _sanitizeXhttpRange = sanitizeXhttpRange;
 
 /**
  * Parse the `xray.extraInbounds[]` array out of parallel form arrays
@@ -190,6 +197,23 @@ function parseExtraInbounds(body) {
     const xhttpXmuxMaxConcurrency = arr('xray_extra_xhttpXmuxMaxConcurrency');
     const xhttpXmuxHMaxRequestTimes = arr('xray_extra_xhttpXmuxHMaxRequestTimes');
     const xhttpXmuxHMaxReusableSecs = arr('xray_extra_xhttpXmuxHMaxReusableSecs');
+    const xhttpUplinkHTTPMethods = arr('xray_extra_xhttpUplinkHTTPMethod');
+    const xhttpUplinkDataPlacements = arr('xray_extra_xhttpUplinkDataPlacement');
+    const xhttpUplinkDataKeys = arr('xray_extra_xhttpUplinkDataKey');
+    const xhttpUplinkChunkSizes = arr('xray_extra_xhttpUplinkChunkSize');
+    const xhttpScMinPostsIntervalMs = arr('xray_extra_xhttpScMinPostsIntervalMs');
+    const xhttpServerMaxHeaderBytes = arr('xray_extra_xhttpServerMaxHeaderBytes');
+    const xhttpXPaddingObfsModeIds = new Set(arr('xray_extra_xhttpXPaddingObfsMode').map(v => String(v || '')));
+    const xhttpXPaddingKeys = arr('xray_extra_xhttpXPaddingKey');
+    const xhttpXPaddingHeaders = arr('xray_extra_xhttpXPaddingHeader');
+    const xhttpXPaddingPlacements = arr('xray_extra_xhttpXPaddingPlacement');
+    const xhttpXPaddingMethods = arr('xray_extra_xhttpXPaddingMethod');
+    const xhttpSessionPlacements = arr('xray_extra_xhttpSessionPlacement');
+    const xhttpSessionKeys = arr('xray_extra_xhttpSessionKey');
+    const xhttpSessionIDTables = arr('xray_extra_xhttpSessionIDTable');
+    const xhttpSessionIDLengths = arr('xray_extra_xhttpSessionIDLength');
+    const xhttpSeqPlacements = arr('xray_extra_xhttpSeqPlacement');
+    const xhttpSeqKeys = arr('xray_extra_xhttpSeqKey');
     const fallbackDests = arr('xray_extra_fallbackDest');
 
     const result = [];
@@ -242,6 +266,23 @@ function parseExtraInbounds(body) {
             xhttpXmuxMaxConcurrency: _sanitizeXhttpRange(xhttpXmuxMaxConcurrency[i]),
             xhttpXmuxHMaxRequestTimes: _sanitizeXhttpRange(xhttpXmuxHMaxRequestTimes[i]),
             xhttpXmuxHMaxReusableSecs: _sanitizeXhttpRange(xhttpXmuxHMaxReusableSecs[i]),
+            xhttpUplinkHTTPMethod: _pickEnum(xhttpUplinkHTTPMethods[i], XRAY_XHTTP_METHOD_VALUES, ''),
+            xhttpUplinkDataPlacement: _pickEnum(xhttpUplinkDataPlacements[i], XRAY_XHTTP_DATA_PLACEMENT_VALUES, ''),
+            xhttpUplinkDataKey: String(xhttpUplinkDataKeys[i] || '').trim().slice(0, 64),
+            xhttpUplinkChunkSize: _sanitizeXhttpRange(xhttpUplinkChunkSizes[i]),
+            xhttpScMinPostsIntervalMs: _sanitizeXhttpRange(xhttpScMinPostsIntervalMs[i]),
+            xhttpServerMaxHeaderBytes: Math.min(Math.max(parseInt(xhttpServerMaxHeaderBytes[i], 10) || 0, 0), 1048576),
+            xhttpXPaddingObfsMode: xhttpXPaddingObfsModeIds.has(id),
+            xhttpXPaddingKey: String(xhttpXPaddingKeys[i] || '').trim().slice(0, 64),
+            xhttpXPaddingHeader: String(xhttpXPaddingHeaders[i] || '').trim().slice(0, 64),
+            xhttpXPaddingPlacement: _pickEnum(xhttpXPaddingPlacements[i], XRAY_XHTTP_PADDING_PLACEMENT_VALUES, ''),
+            xhttpXPaddingMethod: _pickEnum(xhttpXPaddingMethods[i], XHTTP_PADDING_METHOD_VALUES, ''),
+            xhttpSessionPlacement: _pickEnum(xhttpSessionPlacements[i], XRAY_XHTTP_PLACEMENT_VALUES, ''),
+            xhttpSessionKey: String(xhttpSessionKeys[i] || '').trim().slice(0, 64),
+            xhttpSessionIDTable: _pickEnum(xhttpSessionIDTables[i], XHTTP_SESSION_TABLE_VALUES, ''),
+            xhttpSessionIDLength: _sanitizeXhttpRange(xhttpSessionIDLengths[i]),
+            xhttpSeqPlacement: _pickEnum(xhttpSeqPlacements[i], XRAY_XHTTP_PLACEMENT_VALUES, ''),
+            xhttpSeqKey: String(xhttpSeqKeys[i] || '').trim().slice(0, 64),
             fallbackDest: String(fallbackDests[i] || '').trim().slice(0, 253),
         };
         // Empty short-id list is invalid for Reality; restore the empty marker.
@@ -315,6 +356,26 @@ function parseXrayFormFields(body) {
     if (body['xray.xhttpXmuxHMaxReusableSecs'] !== undefined) {
         xray.xhttpXmuxHMaxReusableSecs = _sanitizeXhttpRange(body['xray.xhttpXmuxHMaxReusableSecs']);
     }
+    xray.xhttpUplinkHTTPMethod = _pickEnum(body['xray.xhttpUplinkHTTPMethod'], XRAY_XHTTP_METHOD_VALUES, '');
+    xray.xhttpUplinkDataPlacement = _pickEnum(body['xray.xhttpUplinkDataPlacement'], XRAY_XHTTP_DATA_PLACEMENT_VALUES, '');
+    xray.xhttpUplinkDataKey = String(body['xray.xhttpUplinkDataKey'] || '').trim().slice(0, 64);
+    xray.xhttpUplinkChunkSize = _sanitizeXhttpRange(body['xray.xhttpUplinkChunkSize']);
+    xray.xhttpScMinPostsIntervalMs = _sanitizeXhttpRange(body['xray.xhttpScMinPostsIntervalMs']);
+    xray.xhttpServerMaxHeaderBytes = Math.min(
+        Math.max(parseInt(body['xray.xhttpServerMaxHeaderBytes'], 10) || 0, 0),
+        1048576
+    );
+    xray.xhttpXPaddingObfsMode = body['xray.xhttpXPaddingObfsMode'] === 'on';
+    xray.xhttpXPaddingKey = String(body['xray.xhttpXPaddingKey'] || '').trim().slice(0, 64);
+    xray.xhttpXPaddingHeader = String(body['xray.xhttpXPaddingHeader'] || '').trim().slice(0, 64);
+    xray.xhttpXPaddingPlacement = _pickEnum(body['xray.xhttpXPaddingPlacement'], XRAY_XHTTP_PADDING_PLACEMENT_VALUES, '');
+    xray.xhttpXPaddingMethod = _pickEnum(body['xray.xhttpXPaddingMethod'], XHTTP_PADDING_METHOD_VALUES, '');
+    xray.xhttpSessionPlacement = _pickEnum(body['xray.xhttpSessionPlacement'], XRAY_XHTTP_PLACEMENT_VALUES, '');
+    xray.xhttpSessionKey = String(body['xray.xhttpSessionKey'] || '').trim().slice(0, 64);
+    xray.xhttpSessionIDTable = _pickEnum(body['xray.xhttpSessionIDTable'], XHTTP_SESSION_TABLE_VALUES, '');
+    xray.xhttpSessionIDLength = _sanitizeXhttpRange(body['xray.xhttpSessionIDLength']);
+    xray.xhttpSeqPlacement = _pickEnum(body['xray.xhttpSeqPlacement'], XRAY_XHTTP_PLACEMENT_VALUES, '');
+    xray.xhttpSeqKey = String(body['xray.xhttpSeqKey'] || '').trim().slice(0, 64);
     if (body['xray.apiPort']) xray.apiPort = parseInt(body['xray.apiPort']) || 61000;
 
     if (body['xray.fallbackDest'] !== undefined) {
@@ -458,6 +519,9 @@ function validateXrayFormFields(xray, node) {
     const mainFallbackErr = validateFallbackDest(xray?.fallbackDest, 'Main inbound');
     if (mainFallbackErr) return mainFallbackErr;
 
+    const mainXhttpErr = validateXhttpInbound(xray, 'Main inbound');
+    if (mainXhttpErr) return mainXhttpErr;
+
     if (!xray || !Array.isArray(xray.extraInbounds) || xray.extraInbounds.length === 0) {
         return null;
     }
@@ -508,6 +572,8 @@ function validateXrayFormFields(xray, node) {
         }
         const extraFallbackErr = validateFallbackDest(inbound.fallbackDest, `Extra inbound #${idx}`);
         if (extraFallbackErr) return extraFallbackErr;
+        const extraXhttpErr = validateXhttpInbound(inbound, `Extra inbound #${idx}`);
+        if (extraXhttpErr) return extraXhttpErr;
         // Reality private key is auto-generated server-side when missing
         // (see ensureExtraInboundReality in panel/nodes.js), so we do NOT
         // reject submissions with empty privateKey here.
@@ -677,7 +743,7 @@ function parseOutboundsFormFields(body) {
 }
 
 function getHysteriaAclInlineState(node) {
-    if (!node || node.type === 'xray' || node.type === 'virtual') {
+    if (!node || node.type === 'xray' || isServerlessNode(node)) {
         return { editable: true, reason: '' };
     }
     const aclEnabled = node.acl?.enabled !== false;
@@ -1383,6 +1449,7 @@ function buildClonedNodePrefill(source) {
         statsSecret: '',
         xray,
         virtual: source.virtual,
+        cdn: source.cdn,
         groups: source.groups || [],
         ssh: { port: 22, username: 'root', privateKey: '', password: '' },
         paths: source.paths,

@@ -45,7 +45,9 @@ class StatsService {
 
     async collectSnapshot() {
         try {
-            const nodes = await HyNode.find({ active: true })
+            // CDN fronts carry no counters of their own — their traffic is
+            // already accounted for on the origin node.
+            const nodes = await HyNode.find({ active: true, type: { $ne: 'cdn' } })
                 .select('name domain onlineUsers status traffic')
                 .lean();
             

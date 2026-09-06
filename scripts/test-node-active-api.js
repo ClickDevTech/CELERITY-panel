@@ -35,6 +35,13 @@ function applySet(target, values) {
 
 const HyNode = {
     findById: async (id) => clone(db.get(id) || null),
+    // Used by the CDN-dependency guard on disable; mirrors the Mongoose chain.
+    find: (filter) => ({
+        select: () => ({
+            lean: async () => [...db.values()].filter(node => node.type === 'cdn'
+                && String(node.cdn?.originNode || '') === String(filter?.['cdn.originNode'] || '')).map(clone),
+        }),
+    }),
     findByIdAndUpdate: async (id, update, options) => {
         updates.push({ method: 'findByIdAndUpdate', id, update: clone(update), options });
         const node = db.get(id);
@@ -76,6 +83,7 @@ const stubs = {
         schedulePush: () => {
             throw new Error('schedulePush must not be called by active toggles');
         },
+        maybePushCdnOrigins: () => {},
     },
     '../utils/logger': {
         info: () => {},
@@ -256,6 +264,31 @@ function reset() {
     assert.strictEqual(runtimeStopCalls.length, 0);
     assert.strictEqual(db.get('virtual-1').active, false);
     assert.strictEqual(db.get('virtual-1').status, 'offline');
+
+    // Disabling an origin would drop its CDN fronts from every subscription.
+    reset();
+    db.set('xray-origin', {
+        _id: 'xray-origin',
+        name: 'Xray Origin',
+        type: 'xray',
+        active: true,
+        status: 'online',
+        onlineUsers: 0,
+        xray: { transport: 'xhttp', security: 'tls', xhttpPath: '/api' },
+        ssh: { password: 'encrypted' },
+    });
+    db.set('cdn-front', {
+        _id: 'cdn-front',
+        name: 'CDN Front',
+        type: 'cdn',
+        active: true,
+        cdn: { originNode: 'xray-origin', path: '/api/events.php', security: 'tls' },
+    });
+    res = await runRoute('/:id/disable', 'xray-origin');
+    assert.strictEqual(res.statusCode, 409);
+    assert.match(res.body.error, /CDN node "CDN Front"/);
+    assert.strictEqual(db.get('xray-origin').active, true);
+    assert.strictEqual(runtimeStopCalls.length, 0);
 
     reset();
     res = await runRoute('/:id/enable', 'missing-node');
