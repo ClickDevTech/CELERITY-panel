@@ -314,6 +314,74 @@
     color: var(--text-primary);
     font-weight: 600;
 }
+
+/* ── CDN edge addresses ── */
+#cdnEdgesContainer {
+    display: grid;
+    gap: 8px;
+}
+.cdn-edge-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 0.8fr) minmax(220px, 1.4fr) auto 40px;
+    gap: 12px;
+    align-items: end;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.025);
+}
+.cdn-edge-row:hover {
+    border-color: var(--border-light);
+    background: rgba(255, 255, 255, 0.04);
+}
+.cdn-edge-row .form-group {
+    margin-bottom: 0;
+}
+.cdn-edge-row .form-group label {
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+.cdn-edge-row .form-group input {
+    min-height: 40px;
+    padding: 9px 12px;
+}
+.cdn-edge-enabled {
+    min-height: 40px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    white-space: nowrap;
+}
+.cdn-edge-remove {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--danger);
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.22);
+}
+.cdn-edge-remove:hover {
+    color: #fff;
+    background: var(--danger);
+    border-color: var(--danger);
+}
+@media (max-width: 760px) {
+    .cdn-edge-row {
+        grid-template-columns: minmax(0, 1fr) 40px;
+    }
+    .cdn-edge-label-field,
+    .cdn-edge-address-field {
+        grid-column: 1 / -1;
+    }
+    .cdn-edge-enabled {
+        justify-self: start;
+    }
+}
 .input-error {
     border-color: var(--error, #ff6b6b) !important;
     box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.15);
@@ -532,6 +600,7 @@ const i18n = {
     xrayKeysSuccess: <%- JSON.stringify(t("nodes.xrayKeysSuccess")) %>,
     cdnDomainRequired: <%- JSON.stringify(t("nodes.cdnDomainRequired")) %>,
     cdnResolved: <%- JSON.stringify(t("nodes.cdnResolved")) %>,
+    cdnResolvedSources: <%- JSON.stringify(t("nodes.cdnResolvedSources")) %>,
     cdnEdgeLimit: <%- JSON.stringify(t("nodes.cdnEdgeLimit")) %>,
     cdnPathMustExtend: <%- JSON.stringify(t("nodes.cdnPathMustExtend")) %>,
     cdnPathMustMatchOrigin: <%- JSON.stringify(t("nodes.cdnPathMustMatchOrigin")) %>,
@@ -1975,11 +2044,15 @@ function removeCdnEdge(button) {
 async function resolveCdnEdges() {
     const domain = document.getElementById('cdnDomain')?.value.trim();
     const status = document.getElementById('cdnResolveStatus');
+    const button = document.getElementById('cdnResolveBtn');
+    const icon = button?.querySelector('i');
     if (!domain) {
         if (status) status.textContent = i18n.cdnDomainRequired;
         return;
     }
     if (status) status.textContent = i18n.checking;
+    if (button) button.disabled = true;
+    if (icon) icon.classList.add('spin');
     try {
         const response = await fetch(`/panel/nodes/resolve-cdn?domain=${encodeURIComponent(domain)}`, {
             credentials: 'include',
@@ -2004,7 +2077,11 @@ async function resolveCdnEdges() {
         if (status) {
             status.textContent = container && container.children.length >= CDN_EDGES_MAX
                 ? i18n.cdnEdgeLimit.replace('{max}', String(CDN_EDGES_MAX))
-                : i18n.cdnResolved.replace('{count}', String(added));
+                : i18n.cdnResolvedSources
+                    .replace('{found}', String(data.addresses.length))
+                    .replace('{count}', String(added))
+                    .replace('{sources}', String((data.sources || []).length))
+                    .replace('{total}', String((data.attemptedSources || []).length));
         }
         const sni = document.getElementById('cdnSni');
         const host = document.getElementById('cdnHost');
@@ -2012,6 +2089,9 @@ async function resolveCdnEdges() {
         if (host && !host.value) host.value = domain;
     } catch (error) {
         if (status) status.textContent = `${i18n.error}: ${error.message}`;
+    } finally {
+        if (button) button.disabled = false;
+        if (icon) icon.classList.remove('spin');
     }
 }
 

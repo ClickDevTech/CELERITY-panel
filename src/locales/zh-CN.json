@@ -701,6 +701,7 @@
     "cdnResolveEdges": "解析边缘地址",
     "cdnDomainRequired": "请先输入 CDN 域名。",
     "cdnResolved": "已添加 {count} 个新边缘地址。",
+    "cdnResolvedSources": "找到 {found} 个地址，新增 {count} 个。已检查 DNS 来源：{sources}/{total}。",
     "cdnEdgeLimit": "已达到边缘地址上限（{max}）。",
     "cdnPathMustExtend": "必须以 {prefix} 开头，或与源站路径完全一致。",
     "cdnPathMustMatchOrigin": "请留空或填写与 {path} 完全一致的路径——该入站把会话 ID 放在路径中，更长的路径会破坏所有会话。",

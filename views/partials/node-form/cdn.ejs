@@ -63,7 +63,7 @@
             <label for="cdnDomain"><%= t('nodes.cdnDomain') %></label>
             <div class="input-with-button">
                 <input id="cdnDomain" name="cdn.domain" value="<%= cdn.domain || '' %>" maxlength="253" placeholder="cdn.example.com">
-                <button type="button" class="btn btn-sm" onclick="resolveCdnEdges()">
+                <button type="button" class="btn btn-sm" id="cdnResolveBtn" onclick="resolveCdnEdges()">
                     <i class="ti ti-world-search"></i> <%= t('nodes.cdnResolveEdges') %>
                 </button>
             </div>

@@ -701,6 +701,7 @@
     "cdnResolveEdges": "Resolve edges",
     "cdnDomainRequired": "Enter a CDN domain first.",
     "cdnResolved": "Added {count} new edge address(es).",
+    "cdnResolvedSources": "Found {found} address(es); added {count} new. DNS sources checked: {sources}/{total}.",
     "cdnEdgeLimit": "Edge address limit reached ({max}).",
     "cdnPathMustExtend": "Must start with {prefix} or be exactly the origin path.",
     "cdnPathMustMatchOrigin": "Must be empty or exactly {path} — this inbound keeps its session ID in the path, so a longer path breaks every session.",

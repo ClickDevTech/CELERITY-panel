@@ -2,21 +2,22 @@
     const edgeValue = edge || {};
     const edgeId = edgeValue.id || '';
 %>
-<div class="form-row cdn-edge-row">
+<div class="cdn-edge-row">
     <input type="hidden" name="cdn_edge_id" value="<%= edgeId %>">
-    <div class="form-group">
+    <div class="form-group cdn-edge-label-field">
         <label><%= t('nodes.cdnEdgeLabel') %></label>
         <input name="cdn_edge_label" value="<%= edgeValue.label || '' %>" maxlength="64" placeholder="Edge 1">
     </div>
-    <div class="form-group">
+    <div class="form-group cdn-edge-address-field">
         <label><%= t('nodes.cdnEdgeAddress') %></label>
         <input name="cdn_edge_address" value="<%= edgeValue.address || '' %>" maxlength="253" placeholder="203.0.113.10" data-cdn-required>
     </div>
-    <label class="checkbox-label" style="align-self:center;">
+    <label class="checkbox-label cdn-edge-enabled">
         <input type="checkbox" name="cdn_edge_enabled" value="<%= edgeId %>" <%= edgeValue.enabled !== false ? 'checked' : '' %>>
         <span><%= t('common.enabled') %></span>
     </label>
-    <button type="button" class="btn btn-sm btn-danger" onclick="removeCdnEdge(this)" aria-label="<%= t('common.delete') %>">
+    <button type="button" class="btn btn-sm cdn-edge-remove" onclick="removeCdnEdge(this)"
+            title="<%= t('common.delete') %>" aria-label="<%= t('common.delete') %>">
         <i class="ti ti-trash"></i>
     </button>
 </div>

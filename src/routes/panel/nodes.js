@@ -1,6 +1,5 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const dns = require('dns').promises;
 const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
@@ -12,6 +11,7 @@ const Settings = require('../../models/settingsModel');
 const cryptoService = require('../../services/cryptoService');
 const syncService = require('../../services/syncService');
 const configGenerator = require('../../services/configGenerator');
+const { discoverCdnAddresses } = require('../../services/cdnDiscoveryService');
 const nodeSetup = require('../../services/nodeSetup');
 const xrayVersionService = require('../../services/xrayVersionService');
 const totpService = require('../../services/totpService');
@@ -427,17 +427,11 @@ router.get('/nodes/resolve-cdn', cdnResolveLimiter, async (req, res) => {
         return res.status(400).json({ error: 'A valid CDN domain is required' });
     }
     try {
-        const [v4, v6] = await Promise.allSettled([
-            dns.resolve4(domain),
-            dns.resolve6(domain),
-        ]);
-        const addresses = [
-            ...(v4.status === 'fulfilled' ? v4.value : []),
-            ...(v6.status === 'fulfilled' ? v6.value : []),
-        ];
-        const unique = [...new Set(addresses)].slice(0, 32);
-        if (unique.length === 0) return res.status(404).json({ error: 'No A or AAAA records found' });
-        return res.json({ domain, addresses: unique });
+        const result = await discoverCdnAddresses(domain, 32);
+        if (result.addresses.length === 0) {
+            return res.status(404).json({ error: 'No A or AAAA records found' });
+        }
+        return res.json({ domain, ...result });
     } catch (error) {
         logger.warn(`[Panel] CDN DNS lookup failed for ${domain}: ${error.code || error.message}`);
         return res.status(502).json({ error: 'DNS lookup failed' });

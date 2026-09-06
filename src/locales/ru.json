@@ -701,6 +701,7 @@
     "cdnResolveEdges": "Найти edge",
     "cdnDomainRequired": "Сначала укажите домен CDN.",
     "cdnResolved": "Добавлено новых адресов: {count}.",
+    "cdnResolvedSources": "Найдено адресов: {found}; добавлено новых: {count}. Проверено DNS-источников: {sources}/{total}.",
     "cdnEdgeLimit": "Достигнут лимит edge-адресов ({max}).",
     "cdnPathMustExtend": "Должен начинаться с {prefix} либо в точности совпадать с origin path.",
     "cdnPathMustMatchOrigin": "Оставьте пустым или укажите в точности {path} — этот inbound держит идентификатор сессии в пути, и более длинный path сломает все сессии.",
