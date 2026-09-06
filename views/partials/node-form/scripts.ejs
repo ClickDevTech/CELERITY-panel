@@ -2046,8 +2046,26 @@ function updateCdnInboundOptions() {
         if (visible && compatible && option.selected) selectedVisible = true;
     });
     if (!selectedVisible && firstCompatible) firstCompatible.selected = true;
+    updateCdnXhttpModeUI();
     syncCdnPathHint();
     updateCdnConnectionPreview();
+}
+
+function updateCdnXhttpModeUI() {
+    const option = document.getElementById('cdnOriginInbound')?.selectedOptions?.[0];
+    const select = document.getElementById('cdnXhttpMode');
+    const group = document.getElementById('cdnXhttpModeGroup');
+    if (!select || !group) return;
+
+    const enabled = option?.dataset.transport === 'xhttp';
+    if (!enabled) {
+        if (!select.disabled) select.dataset.lastValue = select.value;
+        select.value = '';
+    } else if (select.disabled && select.dataset.lastValue) {
+        select.value = select.dataset.lastValue;
+    }
+    select.disabled = !enabled;
+    group.style.display = enabled ? '' : 'none';
 }
 
 function markCdnFieldManual(input) {

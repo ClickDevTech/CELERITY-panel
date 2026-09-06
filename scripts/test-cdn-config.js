@@ -419,6 +419,10 @@ async function originModel(origin) {
     assert.match(fingerprintTemplate, /data-fingerprint-picker/);
     assert.match(cdnTemplate, /cdnConnectionCard/);
     assert.match(cdnTemplate, /data-compatible/);
+    assert.match(cdnTemplate, /cdnXhttpModeGroup/);
+    const formScripts = fs.readFileSync(path.join(__dirname, '../views/partials/node-form/scripts.ejs'), 'utf8');
+    assert.match(formScripts, /function updateCdnXhttpModeUI\(\)/);
+    assert.match(formScripts, /option\?\.dataset\.transport === 'xhttp'/);
 
     // ---- Publication: edges expand into one entry each, with a domain fallback ----
     const { getXrayPublishedInbounds } = require('../src/routes/subscription');
