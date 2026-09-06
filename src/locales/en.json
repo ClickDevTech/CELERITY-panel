@@ -706,6 +706,7 @@
     "cdnClientSide": "Client",
     "cdnPublishedFormats": "Subscription formats:",
     "cdnMihomoExcluded": "Mihomo excluded: GET uplink is unsupported",
+    "cdnFingerprintPoolHint": "Fingerprints are distributed across edges without repeats until the pool is exhausted.",
     "cdnSaveFailed": "Check the CDN settings",
     "cdnSaving": "Validating and saving…",
     "cdnDomain": "Public CDN domain",

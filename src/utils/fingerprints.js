@@ -25,9 +25,24 @@ function pickFingerprint(fingerprint, pool, random = Math.random) {
     return normalizeFingerprint(fingerprint);
 }
 
+function distributeFingerprints(fingerprint, pool, count, random = Math.random) {
+    const size = Number.isSafeInteger(count) && count > 0 ? count : 0;
+    const normalizedPool = normalizeFingerprintPool(pool);
+    if (normalizedPool.length === 0) {
+        return Array(size).fill(normalizeFingerprint(fingerprint));
+    }
+
+    const offset = Math.floor(random() * normalizedPool.length);
+    return Array.from(
+        { length: size },
+        (_, index) => normalizedPool[(offset + index) % normalizedPool.length]
+    );
+}
+
 module.exports = {
     FINGERPRINT_VALUES,
     normalizeFingerprint,
     normalizeFingerprintPool,
     pickFingerprint,
+    distributeFingerprints,
 };

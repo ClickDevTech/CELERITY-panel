@@ -53,6 +53,6 @@
                 </label>
             <% }); %>
         </div>
-        <small style="display:block;margin-top:8px;"><%= t('nodes.xrayFingerprintPoolHint') %></small>
+        <small style="display:block;margin-top:8px;"><%= typeof poolHint === 'string' ? poolHint : t('nodes.xrayFingerprintPoolHint') %></small>
     </div>
 </div>

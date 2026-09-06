@@ -26,7 +26,7 @@ const hwidDeviceService = require('../services/hwidDeviceService');
 const webhookService = require('../services/webhookService');
 const { isServerlessNode } = require('../utils/nodeTypes');
 const { isValidXhttpRange, isAllZeroRange } = require('../utils/xhttpOptions');
-const { pickFingerprint } = require('../utils/fingerprints');
+const { distributeFingerprints, pickFingerprint } = require('../utils/fingerprints');
 
 // ==================== HELPERS ====================
 
@@ -441,9 +441,10 @@ function getXrayPublishedInbounds(node) {
         const edges = onDomain
             ? [{ id: 'domain', label: '', address: node.cdn?.domain }]
             : enabledEdges;
-        const fingerprint = pickFingerprint(
+        const fingerprints = distributeFingerprints(
             node.cdn?.fingerprint || source.fingerprint,
-            node.cdn?.fingerprintPool
+            node.cdn?.fingerprintPool,
+            edges.length
         );
         return edges
             .filter(edge => edge.address)
@@ -458,7 +459,7 @@ function getXrayPublishedInbounds(node) {
                 extraId: source.extraId,
                 edgeId: edge.id,
                 security: 'tls',
-                fingerprint,
+                fingerprint: fingerprints[index],
                 alpn: node.cdn?.alpn || [],
                 wsPath: node.cdn?.path || source.wsPath,
                 wsHost: node.cdn?.host || source.wsHost,

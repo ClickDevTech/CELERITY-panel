@@ -12,6 +12,7 @@ const {
     CDN_ORIGIN_CANDIDATE_SELECT,
 } = require('../src/utils/cdnConfig');
 const {
+    distributeFingerprints,
     normalizeFingerprintPool,
     pickFingerprint,
 } = require('../src/utils/fingerprints');
@@ -42,6 +43,10 @@ const originId = '64b000000000000000000001';
     assert.deepStrictEqual(result.value.fingerprintPool, ['safari', 'chrome']);
     assert.deepStrictEqual(normalizeFingerprintPool('edge, chrome, edge'), ['edge', 'chrome']);
     assert.strictEqual(pickFingerprint('firefox', ['safari', 'chrome'], () => 0.99), 'chrome');
+    assert.deepStrictEqual(
+        distributeFingerprints('firefox', ['safari', 'chrome'], 5, () => 0.99),
+        ['chrome', 'safari', 'chrome', 'safari', 'chrome']
+    );
 }
 
 {
@@ -460,7 +465,7 @@ async function originModel(origin) {
         },
     });
     Math.random = previousRandom;
-    assert.deepStrictEqual(pooled.map(inbound => inbound.fingerprint), ['chrome', 'chrome']);
+    assert.deepStrictEqual(pooled.map(inbound => inbound.fingerprint), ['chrome', 'safari']);
 
     const allDisabled = getXrayPublishedInbounds(cdnNode([
         { id: 'e1', label: 'Moscow', address: '203.0.113.10', enabled: false },

@@ -706,6 +706,7 @@
     "cdnClientSide": "Клиент",
     "cdnPublishedFormats": "Форматы подписки:",
     "cdnMihomoExcluded": "Mihomo исключён: GET uplink не поддерживается",
+    "cdnFingerprintPoolHint": "Отпечатки распределяются по edge без повторов, пока пул не исчерпан.",
     "cdnSaveFailed": "Проверьте настройки CDN",
     "cdnSaving": "Проверяем и сохраняем…",
     "cdnDomain": "Публичный домен CDN",

@@ -706,6 +706,7 @@
     "cdnClientSide": "客户端",
     "cdnPublishedFormats": "订阅格式：",
     "cdnMihomoExcluded": "已排除 Mihomo：不支持 GET 上行",
+    "cdnFingerprintPoolHint": "指纹会分配到各个边缘，池用完前不会重复。",
     "cdnSaveFailed": "请检查 CDN 设置",
     "cdnSaving": "正在验证并保存…",
     "cdnDomain": "公共 CDN 域名",
