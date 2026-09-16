@@ -1,0 +1,11 @@
+<%# The single `domain` input. For Hysteria it drives ACME, for Xray it is the
+    serverName of an operator-supplied certificate — so it lives next to the
+    ACME module or inside the manual TLS sub-block, whichever applies.
+    Moved between the two slots by moveSharedFields(). %>
+<div class="form-group" id="domainGroup">
+    <label for="domain"><%= t('nodes.domain') %></label>
+    <input type="text" id="domain" name="domain" value="<%= node?.domain || '' %>"
+           placeholder="de.example.com" oninput="toggleAcmeByDomain()">
+    <small id="domainHintHysteria" style="<%= node?.type === 'xray' ? 'display:none' : '' %>"><%= t('nodes.domainHintHysteria') %></small>
+    <small id="domainHintXrayManual" style="<%= node?.type === 'xray' ? '' : 'display:none' %>"><%= t('nodes.domainHintXrayManual') %></small>
+</div>

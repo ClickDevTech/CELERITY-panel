@@ -107,11 +107,23 @@
 
     function statusOf(probe) {
         if (!probe.enrolledAt) return { cls: 'pending', label: t('pending', 'pending') };
+        // Blocked outranks silence: the probe is quiet because the panel stopped
+        // serving it, and saying "offline" would send the operator to the host.
+        if (probe.blocked) return { cls: 'blocked', label: t('blocked', 'blocked') };
         if (probe.live) return { cls: 'online', label: t('online', 'online') };
         return { cls: 'offline', label: t('offline', 'offline') };
     }
 
     // ── Probe row ────────────────────────────────────────────────────────────
+
+    // The cap is only worth showing once it exists, and the used half alone is
+    // what the operator reads while everything is fine.
+    function trafficLabel(probe) {
+        const used = fmtBytes(probe.trafficUsedBytes);
+        return probe.trafficLimitBytes > 0
+            ? `${used} / ${fmtBytes(probe.trafficLimitBytes)}`
+            : used;
+    }
 
     function renderProbeRow(probe) {
         const status = statusOf(probe);
@@ -127,11 +139,14 @@
                         ${location ? esc(location) + ' · ' : ''}
                         ${esc(status.label)} · ${esc(t('lastSeen', 'last report'))} ${esc(fmtAgo(probe.lastSeenAt))}
                     </div>
+                    ${probe.exhausted ? `<div class="probe-meta probe-meta-warn">
+                        <i class="ti ti-alert-triangle"></i> ${esc(t('blockedHint', ''))}
+                    </div>` : ''}
                 </div>
             </div>
             <div class="probe-facts">
                 <span title="${esc(t('traffic', 'traffic'))}">
-                    <i class="ti ti-arrows-up-down"></i> ${esc(fmtBytes(probe.trafficUsedBytes))}
+                    <i class="ti ti-arrows-up-down"></i> ${esc(trafficLabel(probe))}
                 </span>
                 ${probe.version ? `<span><i class="ti ti-tag"></i> ${esc(probe.version)}</span>` : ''}
                 ${probe.os ? `<span><i class="ti ti-device-desktop"></i> ${esc(probe.os)}/${esc(probe.arch)}</span>` : ''}
@@ -140,6 +155,10 @@
                 <button type="button" class="btn btn-sm ${open ? 'btn-active' : ''}" data-probe-history>
                     <i class="ti ti-timeline"></i> ${esc(open ? t('historyClose', 'Hide') : t('historyOpen', 'History'))}
                 </button>
+                ${probe.blocked ? `
+                <button type="button" class="btn btn-sm btn-primary" data-probe-reset>
+                    <i class="ti ti-player-play"></i> ${esc(t('resetTraffic', 'Reset traffic'))}
+                </button>` : ''}
                 <button type="button" class="btn btn-sm" data-probe-reissue>
                     <i class="ti ti-refresh"></i> ${esc(t('reinstall', 'Reinstall'))}
                 </button>
@@ -847,6 +866,20 @@
         }
     }
 
+    async function resetTraffic(id) {
+        try {
+            const res = await fetch(`/panel/probes/api/${encodeURIComponent(id)}/reset-traffic`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'failed');
+            loadProbes();
+        } catch (err) {
+            toast(String(err.message || err), 'error');
+        }
+    }
+
     async function removeProbe(id) {
         if (!window.confirm(t('confirmRemove', 'Delete this probe?'))) return;
 
@@ -955,6 +988,7 @@
             return loadHistory(id);
         }
 
+        if (event.target.closest('[data-probe-reset]')) return resetTraffic(row.dataset.id);
         if (event.target.closest('[data-probe-reissue]')) return reissue(row.dataset.id);
         if (event.target.closest('[data-probe-delete]')) return removeProbe(row.dataset.id);
     });

@@ -20,11 +20,13 @@ const cryptoService = require('../cryptoService');
 const logger = require('../../utils/logger');
 const { getSettings, invalidateUserCache } = require('../../utils/helpers');
 
+const USER_PREFIX = 'probe-';
+
 /**
  * Deterministic hidden user id for a probe.
  */
 function probeUserId(probeDoc) {
-    return `probe-${String(probeDoc._id)}`;
+    return `${USER_PREFIX}${String(probeDoc._id)}`;
 }
 
 /**
@@ -175,6 +177,65 @@ async function regenerateEnrollToken(probeId) {
 }
 
 /**
+ * Traffic state of every probe, keyed by probe id. One query rather than one
+ * per probe: the list is polled while the page is open.
+ */
+async function probeTrafficStates() {
+    const users = await HyUser.find({ isProbe: true })
+        .select('userId enabled trafficLimit traffic')
+        .lean();
+
+    const states = new Map();
+    for (const user of users) {
+        const usedBytes = (user.traffic?.tx || 0) + (user.traffic?.rx || 0);
+        const limitBytes = user.trafficLimit || 0;
+        states.set(String(user.userId).slice(USER_PREFIX.length), {
+            usedBytes,
+            limitBytes,
+            exhausted: limitBytes > 0 && usedBytes >= limitBytes,
+            // Over the cap the subscription is refused, so the probe is blind
+            // until someone clears it.
+            blocked: !user.enabled,
+        });
+    }
+    return states;
+}
+
+/**
+ * Clear the traffic counter of a probe and put its user back in service.
+ *
+ * Hitting the cap disables the hidden user, and nothing re-enables it: before
+ * this the only cure was deleting the probe and installing it again.
+ */
+async function resetProbeTraffic(probeId) {
+    const probe = await Probe.findById(probeId);
+    if (!probe) return false;
+
+    const user = await HyUser.findOne({ userId: probeUserId(probe) });
+    if (!user) return false;
+
+    await HyUser.updateOne(
+        { _id: user._id },
+        {
+            $set: {
+                'traffic.tx': 0,
+                'traffic.rx': 0,
+                'traffic.lastUpdate': new Date(),
+                enabled: true,
+            },
+        }
+    );
+    await Probe.updateOne({ _id: probe._id }, { $set: { trafficUsedBytes: 0 } });
+
+    user.enabled = true;
+    await invalidateUserCache(user.userId, user.subscriptionToken);
+    pushProbeUserToNodes(user);
+
+    logger.info(`[Probes] Traffic reset for ${user.userId}`);
+    return true;
+}
+
+/**
  * Apply a changed traffic cap to the probes that already exist. A cap that only
  * covers future probes would not bound the operator's traffic at all.
  */
@@ -231,6 +292,8 @@ module.exports = {
     ensureProbeUser,
     syncProbeUserNodes,
     applyProbeTrafficLimit,
+    probeTrafficStates,
+    resetProbeTraffic,
     regenerateEnrollToken,
     deleteProbe,
     probeUserId,

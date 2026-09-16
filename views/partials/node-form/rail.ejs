@@ -1,0 +1,93 @@
+<%#
+    Section rail. Visibility is declarative: `data-types` lists the node types
+    an element belongs to, and the router in scripts.ejs toggles by that list.
+    Badges are server-rendered for a saved node and refreshed by
+    refreshRailBadges() as the form is edited; an empty badge is hidden by CSS.
+%>
+<%
+    const railExtras = (node?.xray?.extraInbounds || []).length;
+    const railFront = node?.xray?.front || {};
+    const railEdges = (node?.cdn?.edges || []).length;
+    const railSources = node?.virtual?.selectMode === 'group'
+        ? (node?.virtual?.sourceGroup ? 1 : 0)
+        : (node?.virtual?.sources || []).length;
+    const railSsh = !!(node?.ssh?.password || node?.ssh?.privateKey);
+    const railSaved = !!node?._id;
+%>
+<div class="nf-rail" role="tablist" aria-label="<%= node?._id ? t('nodes.editNode') : t('nodes.newNode') %>">
+    <button type="button" class="nf-tab is-active" role="tab" data-pane="main" data-types="hysteria xray virtual cdn">
+        <span class="nf-tab__ico"><i class="ti ti-id"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneMain') %></span>
+        <span class="nf-tab__badge"></span>
+    </button>
+
+    <button type="button" class="nf-tab" role="tab" data-pane="hy-network" data-types="hysteria">
+        <span class="nf-tab__ico"><i class="ti ti-network"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneNetwork') %></span>
+        <span class="nf-tab__badge" data-badge="port"><%= railSaved ? (node.port || 443) : '' %></span>
+    </button>
+    <button type="button" class="nf-tab" role="tab" data-pane="hy-masq" data-types="hysteria">
+        <span class="nf-tab__ico"><i class="ti ti-eye-off"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneMasq') %></span>
+        <%# Obfuscation and SSH carry no number worth showing: an empty is-on
+            badge renders as a dot. %>
+        <span class="nf-tab__badge <%= node?.obfs?.type ? 'is-on' : '' %>" data-badge="obfs"></span>
+    </button>
+
+    <button type="button" class="nf-tab" role="tab" data-pane="xr-inbounds" data-types="xray">
+        <span class="nf-tab__ico"><i class="ti ti-plug-connected"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneInbounds') %></span>
+        <span class="nf-tab__badge" data-badge="inbounds"><%= railExtras + 1 %></span>
+    </button>
+    <button type="button" class="nf-tab" role="tab" data-pane="xr-front" data-types="xray">
+        <span class="nf-tab__ico"><i class="ti ti-shield-lock"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneFront') %></span>
+        <span class="nf-tab__badge <%= railFront.enabled ? 'is-on' : '' %>" data-badge="front"><%= railFront.enabled ? (railFront.publicPort || 443) : '' %></span>
+    </button>
+
+    <button type="button" class="nf-tab" role="tab" data-pane="vt-sources" data-types="virtual">
+        <span class="nf-tab__ico"><i class="ti ti-list-check"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneSources') %></span>
+        <span class="nf-tab__badge" data-badge="sources"><%= railSources || '' %></span>
+    </button>
+    <button type="button" class="nf-tab" role="tab" data-pane="vt-probe" data-types="virtual">
+        <span class="nf-tab__ico"><i class="ti ti-radar"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneProbe') %></span>
+        <span class="nf-tab__badge"></span>
+    </button>
+
+    <button type="button" class="nf-tab" role="tab" data-pane="cd-origin" data-types="cdn">
+        <span class="nf-tab__ico"><i class="ti ti-arrow-ramp-right-2"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneOrigin') %></span>
+        <span class="nf-tab__badge"></span>
+    </button>
+    <button type="button" class="nf-tab" role="tab" data-pane="cd-publish" data-types="cdn">
+        <span class="nf-tab__ico"><i class="ti ti-cloud-network"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.panePublish') %></span>
+        <span class="nf-tab__badge" data-badge="edges"><%= railEdges || '' %></span>
+    </button>
+
+    <button type="button" class="nf-tab" role="tab" data-pane="access" data-types="hysteria xray">
+        <span class="nf-tab__ico"><i class="ti ti-terminal-2"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneAccess') %></span>
+        <span class="nf-tab__badge <%= railSsh ? 'is-on' : '' %>" data-badge="ssh"></span>
+    </button>
+
+    <div class="nf-rail__sep"></div>
+
+    <button type="button" class="nf-tab" role="tab" data-pane="limits" data-types="hysteria xray virtual cdn">
+        <span class="nf-tab__ico"><i class="ti ti-gauge"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneLimits') %></span>
+        <span class="nf-tab__badge"></span>
+    </button>
+    <button type="button" class="nf-tab" role="tab" data-pane="hy-advanced" data-types="hysteria">
+        <span class="nf-tab__ico"><i class="ti ti-adjustments"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneAdvanced') %></span>
+        <span class="nf-tab__badge"></span>
+    </button>
+    <button type="button" class="nf-tab" role="tab" data-pane="xr-advanced" data-types="xray">
+        <span class="nf-tab__ico"><i class="ti ti-adjustments"></i></span>
+        <span class="nf-tab__label"><%= t('nodes.paneAdvanced') %></span>
+        <span class="nf-tab__badge"></span>
+    </button>
+</div>

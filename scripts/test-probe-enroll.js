@@ -8,6 +8,8 @@
  *   - the probe token is stored only as a hash plus a reversible copy for
  *     re-displaying the install command,
  *   - node rebinding is a no-op when the fleet has not changed,
+ *   - a probe stopped by its traffic cap is reported as such and can be put
+ *     back in service without a reinstall,
  *   - deleting a probe removes its user, drops it from the running nodes,
  *     invalidates the subscription cache and wipes its results.
  */
@@ -22,6 +24,21 @@ function normalizePath(p) {
 
 function hashToken(t) {
     return crypto.createHash('sha256').update(t).digest('hex');
+}
+
+// Mongo-style dotted paths: the service clears `traffic.tx`, not a key
+// literally named that.
+function applySet(doc, changes) {
+    for (const [path, value] of Object.entries(changes)) {
+        const parts = path.split('.');
+        let target = doc;
+        while (parts.length > 1) {
+            const key = parts.shift();
+            if (!target[key] || typeof target[key] !== 'object') target[key] = {};
+            target = target[key];
+        }
+        target[parts[0]] = value;
+    }
 }
 
 const SETTINGS = { probes: { enabled: true, probeTrafficLimitBytes: 53687091200 } };
@@ -92,6 +109,10 @@ async function withStubs(state, run) {
         async findOne(filter) {
             return state.users.find((u) => u.userId === filter.userId) || null;
         },
+        find(filter) {
+            const matched = state.users.filter((u) => !filter.isProbe || u.isProbe === true);
+            return { select: () => ({ lean: async () => matched }) };
+        },
         async findById(id) {
             return state.users.find((u) => String(u._id) === String(id)) || null;
         },
@@ -107,7 +128,7 @@ async function withStubs(state, run) {
         },
         async updateOne(filter, update) {
             const user = state.users.find((u) => String(u._id) === String(filter._id));
-            if (user && update.$set) Object.assign(user, update.$set);
+            if (user && update.$set) applySet(user, update.$set);
             state.userUpdates.push(update);
         },
         async deleteOne(filter) {
@@ -125,6 +146,9 @@ async function withStubs(state, run) {
     const syncService = {
         async removeUserFromAllXrayNodes(user) {
             state.removedFromNodes.push(user.userId);
+        },
+        async addUserToAllXrayNodes(user) {
+            state.pushedToNodes.push(user.userId);
         },
     };
 
@@ -187,6 +211,7 @@ async function withStubs(state, run) {
         cacheInvalidations: [],
         deletedResults: [],
         removedFromNodes: [],
+        pushedToNodes: [],
     };
 
     await withStubs(state, async (enrollService) => {
@@ -247,6 +272,35 @@ async function withStubs(state, run) {
         state.nodes.push({ _id: 'node-3', active: true, type: 'xray' });
         assert.strictEqual(await enrollService.syncProbeUserNodes(user), true, 'new node picked up');
         assert.strictEqual(state.cacheInvalidations.length, 1, 'subscription refreshed once');
+
+        // ── Traffic cap ──────────────────────────────────────────────────
+        //
+        // Crossing the cap disables the hidden user and nothing ever turns it
+        // back on, so the probe went silent until it was reinstalled.
+        user.trafficLimit = 1000;
+        user.traffic = { tx: 600, rx: 400 };
+        user.enabled = false;
+
+        const stopped = (await enrollService.probeTrafficStates()).get('probe-1');
+        assert.ok(stopped.exhausted, 'the counter is reported against the cap');
+        assert.ok(stopped.blocked, 'a disabled probe user is reported as stopped');
+
+        state.cacheInvalidations.length = 0;
+        state.pushedToNodes.length = 0;
+
+        assert.strictEqual(await enrollService.resetProbeTraffic('probe-1'), true);
+        assert.strictEqual(user.enabled, true, 'the probe user is back in service');
+        assert.strictEqual(user.traffic.tx + user.traffic.rx, 0, 'the counter is cleared');
+        assert.deepStrictEqual(state.pushedToNodes, ['probe-probe-1'], 'and pushed back to the nodes');
+        assert.ok(
+            state.cacheInvalidations.some((c) => c.token === 'sub-token'),
+            'the subscription is served again without waiting for the cache'
+        );
+        assert.strictEqual(
+            (await enrollService.probeTrafficStates()).get('probe-1').blocked,
+            false,
+            'the panel stops reporting it as stopped'
+        );
 
         // Re-issuing the enrollment token invalidates the current one.
         const again = await enrollService.regenerateEnrollToken('probe-1');

@@ -1,423 +1,517 @@
-            <%# ========== 5. Hysteria: Stats API ========== %>
-            <div class="form-section hysteria-only" id="hysteriaStatsSection" style="<%= node?.type === 'xray' ? 'display:none' : '' %>">
-                <h3><%= t('nodes.sectionStatsApi') %></h3>
-                <small class="section-hint"><%- renderDocsIcon('stats') %><%= t('nodes.sectionStatsHint') %></small>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="statsPort"><%= t('nodes.statsPort') %></label>
-                        <input type="number" id="statsPort" name="statsPort" value="<%= node?.statsPort || 9999 %>">
-                    </div>
-                    <div class="form-group">
-                        <label for="statsSecret"><%= t('nodes.statsSecret') %></label>
-                        <div class="input-with-button">
-                            <input type="text" id="statsSecret" name="statsSecret" value="<%= node?.statsSecret || '' %>"
-                                   placeholder="<%= node ? 'secret123' : 'Auto-generated if empty' %>">
-                            <button type="button" class="btn btn-sm" onclick="generateSecret()" title="Generate random secret"><i class="ti ti-dice"></i></button>
-                        </div>
-                        <% if (!node) { %><small><%= t('nodes.statsSecretAutoHint') %></small><% } %>
-                    </div>
-                </div>
-            </div>
+<%# Panes: hy-masq (obfuscation + masquerade) and hy-advanced (seven optional
+    modules + custom config). Stats API moved to the access pane. %>
+<div class="nf-pane" data-pane="hy-masq" data-types="hysteria">
+    <div class="nf-pane__head">
+        <h3><%= t('nodes.paneMasq') %></h3>
+        <p><%= t('nodes.paneMasqHint') %></p>
+    </div>
 
-            <%# ========== 6. Hysteria: Obfuscation ========== %>
-            <div class="form-section hysteria-only" id="hysteriaObfsSection" style="<%= node?.type === 'xray' ? 'display:none' : '' %>">
-                <h3><%= t('nodes.sectionObfuscation') %></h3>
-                <small class="section-hint"><%- renderDocsIcon('obfuscation') %><%= t('nodes.sectionObfuscationHint') %></small>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="obfsType"><%= t('nodes.obfsType') %></label>
-                        <select id="obfsType" name="obfs.type" onchange="toggleObfsPassword()">
-                            <option value="" <%= !node?.obfs?.type ? 'selected' : '' %>><%= t('nodes.off') %></option>
-                            <option value="salamander" <%= node?.obfs?.type === 'salamander' ? 'selected' : '' %>>Salamander</option>
-                            <option value="gecko" <%= node?.obfs?.type === 'gecko' ? 'selected' : '' %>>Gecko</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="obfsPasswordGroup" style="<%= node?.obfs?.type ? '' : 'display:none' %>">
-                        <label for="obfsPassword"><%= t('nodes.obfsPassword') %></label>
-                        <div class="input-with-button">
-                            <input type="text" id="obfsPassword" name="obfs.password"
-                                   value="<%= node?.obfs?.password || '' %>"
-                                   placeholder="cry_me_a_r1ver">
-                            <button type="button" class="btn btn-sm" onclick="generateObfsPassword()" title="Generate password"><i class="ti ti-dice"></i></button>
-                        </div>
-                        <small><%= t('nodes.obfsPasswordHint') %></small>
-                    </div>
-                </div>
-            </div>
-
-            <%# ========== 7. Hysteria: Masquerade ========== %>
-            <div class="form-section hysteria-only" id="hysteriaMasqueradeSection" style="<%= node?.type === 'xray' ? 'display:none' : '' %>">
-                <h3><%= t('nodes.sectionMasquerade') %></h3>
-                <small class="section-hint"><%- renderDocsIcon('masquerade') %><%= t('nodes.sectionMasqueradeHint') %></small>
-
+    <details class="nf-module <%= node?.obfs?.type ? 'is-on' : '' %>" id="hysteriaObfsSection" <%= node?.obfs?.type ? 'open' : '' %>>
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-wave-sine"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.sectionObfuscation') %></span>
+                <span class="nf-module__sub"><%- renderDocsIcon('obfuscation') %><%= t('nodes.sectionObfuscationHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-wave-sine"></i><%= node?.obfs?.type || t('nodes.off') %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <div class="form-row">
                 <div class="form-group">
-                    <label for="masqueradeType"><%= t('nodes.masqueradeType') %></label>
-                    <select id="masqueradeType" name="masquerade.type" onchange="toggleMasqueradeType()">
-                        <option value="proxy" <%= (node?.masquerade?.type || 'proxy') === 'proxy' ? 'selected' : '' %>>proxy</option>
-                        <option value="string" <%= node?.masquerade?.type === 'string' ? 'selected' : '' %>>string</option>
+                    <label for="obfsType"><%= t('nodes.obfsType') %></label>
+                    <select id="obfsType" name="obfs.type" onchange="toggleObfsPassword()">
+                        <option value="" <%= !node?.obfs?.type ? 'selected' : '' %>><%= t('nodes.off') %></option>
+                        <option value="salamander" <%= node?.obfs?.type === 'salamander' ? 'selected' : '' %>>Salamander</option>
+                        <option value="gecko" <%= node?.obfs?.type === 'gecko' ? 'selected' : '' %>>Gecko</option>
                     </select>
                 </div>
-
-                <div id="masqueradeProxyFields" style="<%= (node?.masquerade?.type || 'proxy') === 'proxy' ? '' : 'display:none' %>">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="masqProxyUrl"><%= t('nodes.masqueradeProxyUrl') %></label>
-                            <input type="text" id="masqProxyUrl" name="masquerade.proxy.url" value="<%= node?.masquerade?.proxy?.url || 'https://www.google.com' %>" placeholder="https://www.google.com">
-                        </div>
+                <div class="form-group" id="obfsPasswordGroup" style="<%= node?.obfs?.type ? '' : 'display:none' %>">
+                    <label for="obfsPassword"><%= t('nodes.obfsPassword') %></label>
+                    <div class="input-with-button">
+                        <input type="text" id="obfsPassword" name="obfs.password"
+                               value="<%= node?.obfs?.password || '' %>"
+                               placeholder="cry_me_a_r1ver">
+                        <button type="button" class="btn btn-sm" onclick="generateObfsPassword()" title="Generate password"><i class="ti ti-dice"></i></button>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="masquerade.proxy.rewriteHost" <%= node?.masquerade?.proxy?.rewriteHost === false ? '' : 'checked' %>>
-                                <span class="checkbox-text"><%= t('nodes.masqueradeProxyRewriteHost') %></span>
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" name="masquerade.proxy.insecure" <%= node?.masquerade?.proxy?.insecure ? 'checked' : '' %>>
-                                <span class="checkbox-text"><%= t('nodes.masqueradeProxyInsecure') %></span>
-                            </label>
-                        </div>
-                    </div>
+                    <small><%= t('nodes.obfsPasswordHint') %></small>
                 </div>
+            </div>
+        </div>
+    </details>
 
-                <div id="masqueradeStringFields" style="<%= node?.masquerade?.type === 'string' ? '' : 'display:none' %>">
-                    <div class="form-group">
-                        <label for="masqStringContent"><%= t('nodes.masqueradeStringContent') %></label>
-                        <textarea id="masqStringContent" name="masquerade.string.content" rows="8" class="code-textarea" placeholder="Service Unavailable"><%= node?.masquerade?.string?.content || 'Service Unavailable' %></textarea>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="masqStringStatusCode"><%= t('nodes.masqueradeStringStatusCode') %></label>
-                            <input type="number" id="masqStringStatusCode" name="masquerade.string.statusCode" value="<%= node?.masquerade?.string?.statusCode || 503 %>" min="100" max="599">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="masqStringHeaders"><%= t('nodes.masqueradeStringHeaders') %></label>
-                        <textarea id="masqStringHeaders" name="masquerade.string.headers" rows="4" class="code-textarea" placeholder="content-type: text/plain"><%= node?.masquerade?.string?.headers ? Object.entries(node.masquerade.string.headers).map(([k, v]) => `${k}: ${v}`).join('\n') : 'content-type: text/plain' %></textarea>
-                        <small><%= t('nodes.masqueradeStringHeadersHint') %></small>
-                    </div>
+    <details class="nf-module is-on" id="hysteriaMasqueradeSection">
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-mask"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.sectionMasquerade') %></span>
+                <span class="nf-module__sub"><%- renderDocsIcon('masquerade') %><%= t('nodes.sectionMasqueradeHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-mask"></i><%= node?.masquerade?.type || 'proxy' %></span>
+                    <span class="nf-chip"><i class="ti ti-world"></i><%= (node?.masquerade?.type || 'proxy') === 'proxy' ? (node?.masquerade?.proxy?.url || 'https://www.google.com') : (node?.masquerade?.string?.statusCode || 503) %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <div class="form-group" style="max-width:260px;">
+                <label for="masqueradeType"><%= t('nodes.masqueradeType') %></label>
+                <select id="masqueradeType" name="masquerade.type" onchange="toggleMasqueradeType()">
+                    <option value="proxy" <%= (node?.masquerade?.type || 'proxy') === 'proxy' ? 'selected' : '' %>>proxy</option>
+                    <option value="string" <%= node?.masquerade?.type === 'string' ? 'selected' : '' %>>string</option>
+                </select>
+            </div>
+
+            <div id="masqueradeProxyFields" style="<%= (node?.masquerade?.type || 'proxy') === 'proxy' ? '' : 'display:none' %>">
+                <div class="form-group">
+                    <label for="masqProxyUrl"><%= t('nodes.masqueradeProxyUrl') %></label>
+                    <input type="text" id="masqProxyUrl" name="masquerade.proxy.url" value="<%= node?.masquerade?.proxy?.url || 'https://www.google.com' %>" placeholder="https://www.google.com">
                 </div>
-
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="masqListenHttp"><%= t('nodes.masqueradeListenHttp') %></label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="masquerade.proxy.rewriteHost" <%= node?.masquerade?.proxy?.rewriteHost === false ? '' : 'checked' %>>
+                            <span class="checkbox-text"><%= t('nodes.masqueradeProxyRewriteHost') %></span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="masquerade.proxy.insecure" <%= node?.masquerade?.proxy?.insecure ? 'checked' : '' %>>
+                            <span class="checkbox-text"><%= t('nodes.masqueradeProxyInsecure') %></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div id="masqueradeStringFields" style="<%= node?.masquerade?.type === 'string' ? '' : 'display:none' %>">
+                <div class="form-group">
+                    <label for="masqStringContent"><%= t('nodes.masqueradeStringContent') %></label>
+                    <textarea id="masqStringContent" name="masquerade.string.content" rows="8" class="code-textarea" placeholder="Service Unavailable"><%= node?.masquerade?.string?.content || 'Service Unavailable' %></textarea>
+                </div>
+                <div class="form-group" style="max-width:200px;">
+                    <label for="masqStringStatusCode"><%= t('nodes.masqueradeStringStatusCode') %></label>
+                    <input type="number" id="masqStringStatusCode" name="masquerade.string.statusCode" value="<%= node?.masquerade?.string?.statusCode || 503 %>" min="100" max="599">
+                </div>
+                <div class="form-group">
+                    <label for="masqStringHeaders"><%= t('nodes.masqueradeStringHeaders') %></label>
+                    <textarea id="masqStringHeaders" name="masquerade.string.headers" rows="4" class="code-textarea" placeholder="content-type: text/plain"><%= node?.masquerade?.string?.headers ? Object.entries(node.masquerade.string.headers).map(([k, v]) => `${k}: ${v}`).join('\n') : 'content-type: text/plain' %></textarea>
+                    <small><%= t('nodes.masqueradeStringHeadersHint') %></small>
+                </div>
+            </div>
+
+            <div class="nf-group">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="masqListenHttp"><%= t('nodes.masqueradeListenHttp') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
                         <input type="text" id="masqListenHttp" name="masquerade.listenHTTP" value="<%= node?.masquerade?.listenHTTP || '' %>" placeholder=":80">
                     </div>
                     <div class="form-group">
-                        <label for="masqListenHttps"><%= t('nodes.masqueradeListenHttps') %></label>
+                        <label for="masqListenHttps"><%= t('nodes.masqueradeListenHttps') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
                         <input type="text" id="masqListenHttps" name="masquerade.listenHTTPS" value="<%= node?.masquerade?.listenHTTPS || '' %>" placeholder=":443">
                     </div>
                 </div>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="masqForceHttps" name="masquerade.forceHTTPS" <%= node?.masquerade?.forceHTTPS ? 'checked' : '' %>>
+                    <span class="checkbox-text"><%= t('nodes.masqueradeForceHttps') %></span>
+                </label>
+            </div>
+        </div>
+    </details>
+</div>
+
+<div class="nf-pane" data-pane="hy-advanced" data-types="hysteria">
+    <div class="nf-pane__head">
+        <h3><%= t('nodes.paneAdvanced') %></h3>
+        <p><%= t('nodes.paneAdvancedHint') %></p>
+    </div>
+
+    <details class="nf-module <%= sniffBaseEnabled ? 'is-on' : '' %>" id="hysteriaSniffSection">
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-eye-search"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.sectionSniff') %></span>
+                <span class="nf-module__sub"><%- renderDocsIcon('sniff') %><%= t('nodes.sectionSniffHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-eye-search"></i><%= sniffBaseEnabled ? t('common.enabled') : t('nodes.off') %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="hidden" name="sniff.enable" value="0">
+                    <input type="checkbox" name="sniff.enable" <%= sniffBaseEnabled ? 'checked' : '' %>>
+                    <span class="checkbox-text"><%= t('nodes.sniffEnable') %></span>
+                </label>
+            </div>
+            <label class="checkbox-label">
+                <input type="checkbox" id="sniffEnabled" name="sniff.enabled" <%= sniffAdvancedEnabled ? 'checked' : '' %> onchange="toggleSniffFields()">
+                <span class="checkbox-text"><%= t('nodes.enableOptionalSection') %></span>
+            </label>
+            <div class="optional-fields-wrap" id="sniffFieldsWrap" style="<%= sniffAdvancedEnabled ? '' : 'display:none' %>">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="sniff.rewriteDomain" <%= node?.sniff?.rewriteDomain ? 'checked' : '' %>>
+                    <span class="checkbox-text"><%= t('nodes.sniffRewriteDomain') %></span>
+                </label>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sniffTimeout"><%= t('nodes.sniffTimeout') %></label>
+                        <input type="text" id="sniffTimeout" name="sniff.timeout" value="<%= node?.sniff?.timeout || '2s' %>" placeholder="2s">
+                    </div>
+                    <div class="form-group">
+                        <label for="sniffTcpPorts"><%= t('nodes.sniffTcpPorts') %></label>
+                        <input type="text" id="sniffTcpPorts" name="sniff.tcpPorts" value="<%= node?.sniff?.tcpPorts || '80,443,8000-9000' %>" placeholder="80,443,8000-9000">
+                    </div>
+                </div>
                 <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="masqForceHttps" name="masquerade.forceHTTPS" <%= node?.masquerade?.forceHTTPS ? 'checked' : '' %>>
-                        <span class="checkbox-text"><%= t('nodes.masqueradeForceHttps') %></span>
-                    </label>
+                    <label for="sniffUdpPorts"><%= t('nodes.sniffUdpPorts') %></label>
+                    <input type="text" id="sniffUdpPorts" name="sniff.udpPorts" value="<%= node?.sniff?.udpPorts || '443,80,53' %>" placeholder="443,80,53">
+                    <small><%= t('nodes.sniffPortsHint') %></small>
                 </div>
             </div>
+        </div>
+    </details>
 
-            <%# ========== Advanced optional sections (collapsible) ========== %>
-            <details class="hysteria-only node-advanced-details" id="hysteriaAdvancedDetails"
-                     style="<%= node?.type === 'xray' ? 'display:none' : '' %>">
-                <summary class="node-advanced-summary">
-                    <span><i class="ti ti-adjustments-horizontal"></i> <%= t('nodes.advancedSettings') %></span>
-                    <i class="ti ti-chevron-down node-advanced-chevron"></i>
-                </summary>
+    <details class="nf-module <%= aclSectionEnabled ? 'is-on' : '' %>" id="hysteriaAclSection">
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-filter"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.sectionAcl') %></span>
+                <span class="nf-module__sub"><%- renderDocsIcon('acl') %><%= t('nodes.sectionAclHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-filter"></i><%= aclSectionEnabled ? (node?.acl?.type || 'inline') : t('nodes.off') %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <label class="checkbox-label">
+                <input type="hidden" name="acl.enabled" value="0">
+                <input type="checkbox" id="aclEnabled" name="acl.enabled" <%= aclSectionEnabled ? 'checked' : '' %> onchange="toggleAclFields()">
+                <span class="checkbox-text"><%= t('nodes.enableAcl') %></span>
+            </label>
+            <div class="optional-fields-wrap" id="aclFieldsWrap" style="<%= aclSectionEnabled ? '' : 'display:none' %>">
+                <div class="form-row">
+                    <div class="form-group" id="aclTypeGroup" style="<%= aclSectionEnabled && node?.acl?.type === 'file' ? '' : 'grid-column: 1 / -1;' %>">
+                        <label for="aclType"><%= t('nodes.aclType') %></label>
+                        <select id="aclType" name="acl.type" onchange="toggleAclTypeFields()">
+                            <option value="inline" <%= (node?.acl?.type || 'inline') === 'inline' ? 'selected' : '' %>>inline</option>
+                            <option value="file" <%= node?.acl?.type === 'file' ? 'selected' : '' %>>file</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="aclFileGroup" style="<%= aclSectionEnabled && node?.acl?.type === 'file' ? '' : 'display:none' %>">
+                        <label for="aclFile"><%= t('nodes.aclFile') %></label>
+                        <input type="text" id="aclFile" name="acl.file" value="<%= node?.acl?.file || '' %>" placeholder="/etc/hysteria/acl.txt">
+                    </div>
+                </div>
+                <div class="form-group" id="aclInlineRulesGroup" style="<%= aclSectionEnabled && (node?.acl?.type || 'inline') === 'inline' ? '' : 'display:none' %>">
+                    <label for="aclInlineRules"><%= t('nodes.aclInlineRules') %></label>
+                    <textarea id="aclInlineRules" name="acl.inlineRules" rows="8" class="code-textarea" placeholder="reject(geoip:cn)&#10;reject(geoip:private)"><%= aclInlineRulesValue %></textarea>
+                    <small><%= t('nodes.aclInlineRulesHint') %></small>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="aclGeoip"><%= t('nodes.aclGeoip') %></label>
+                        <input type="text" id="aclGeoip" name="acl.geoip" value="<%= node?.acl?.geoip || '' %>" placeholder="/etc/hysteria/geoip.dat">
+                    </div>
+                    <div class="form-group">
+                        <label for="aclGeosite"><%= t('nodes.aclGeosite') %></label>
+                        <input type="text" id="aclGeosite" name="acl.geosite" value="<%= node?.acl?.geosite || '' %>" placeholder="/etc/hysteria/geosite.dat">
+                    </div>
+                </div>
+                <div class="form-group" style="max-width:220px;">
+                    <label for="aclGeoUpdateInterval"><%= t('nodes.aclGeoUpdateInterval') %></label>
+                    <input type="text" id="aclGeoUpdateInterval" name="acl.geoUpdateInterval" value="<%= node?.acl?.geoUpdateInterval || '' %>" placeholder="168h">
+                </div>
+            </div>
+        </div>
+    </details>
 
-                <%# ========== Protocol Sniffing ========== %>
-                <div class="form-section" id="hysteriaSniffSection">
-                    <h3><%= t('nodes.sectionSniff') %></h3>
-                    <small class="section-hint">
-                        <%- renderDocsIcon('sniff') %>
-                        <%= t('nodes.sectionSniffHint') %>
-                    </small>
+    <details class="nf-module <%= bandwidthEnabled ? 'is-on' : '' %>" id="hysteriaBandwidthSection">
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-gauge"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.sectionBandwidth') %></span>
+                <span class="nf-module__sub"><%- renderDocsIcon('bandwidth') %><%= t('nodes.sectionBandwidthHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-arrow-up"></i><%= node?.bandwidth?.up || 'auto' %></span>
+                    <span class="nf-chip"><i class="ti ti-arrow-down"></i><%= node?.bandwidth?.down || 'auto' %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <label class="checkbox-label">
+                <input type="checkbox" id="bandwidthEnabled" name="bandwidth.enabled" <%= bandwidthEnabled ? 'checked' : '' %> onchange="toggleBandwidthFields()">
+                <span class="checkbox-text"><%= t('nodes.enableBandwidth') %></span>
+            </label>
+            <div class="optional-fields-wrap" id="bandwidthFieldsWrap" style="<%= bandwidthEnabled ? '' : 'display:none' %>">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="bandwidthUp"><%= t('nodes.bandwidthUp') %></label>
+                        <input type="text" id="bandwidthUp" name="bandwidth.up" value="<%= node?.bandwidth?.up || '' %>" placeholder="100 mbps">
+                    </div>
+                    <div class="form-group">
+                        <label for="bandwidthDown"><%= t('nodes.bandwidthDown') %></label>
+                        <input type="text" id="bandwidthDown" name="bandwidth.down" value="<%= node?.bandwidth?.down || '' %>" placeholder="100 mbps">
+                    </div>
+                </div>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="ignoreClientBandwidth" <%= node?.ignoreClientBandwidth ? 'checked' : '' %>>
+                    <span class="checkbox-text"><%= t('nodes.ignoreClientBandwidth') %></span>
+                </label>
+            </div>
+        </div>
+    </details>
+
+    <details class="nf-module <%= node?.speedTest ? 'is-on' : '' %>" id="hysteriaSpeedTestSection">
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-activity"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.sectionSpeedTest') %></span>
+                <span class="nf-module__sub"><%- renderDocsIcon('speedTest') %><%= t('nodes.sectionSpeedTestHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-activity"></i><%= node?.speedTest ? t('common.enabled') : t('nodes.off') %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <label class="checkbox-label">
+                <input type="checkbox" name="speedTest" <%= node?.speedTest ? 'checked' : '' %>>
+                <span class="checkbox-text"><%= t('nodes.speedTest') %></span>
+            </label>
+        </div>
+    </details>
+
+    <details class="nf-module <%= udpOptionsEnabled ? 'is-on' : '' %>" id="hysteriaUdpSection">
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-network"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.sectionUdp') %></span>
+                <span class="nf-module__sub"><%- renderDocsIcon('udp') %><%= t('nodes.sectionUdpHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-network"></i><%= node?.disableUDP ? t('nodes.disableUdp') : t('common.enabled') %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <label class="checkbox-label">
+                <input type="checkbox" id="udpOptionsEnabled" name="udp.options.enabled" <%= udpOptionsEnabled ? 'checked' : '' %> onchange="toggleUdpFields()">
+                <span class="checkbox-text"><%= t('nodes.enableUdpTweaks') %></span>
+            </label>
+            <div class="optional-fields-wrap" id="udpFieldsWrap" style="<%= udpOptionsEnabled ? '' : 'display:none' %>">
+                <div class="form-row">
                     <div class="form-group">
                         <label class="checkbox-label">
-                            <input type="hidden" name="sniff.enable" value="0">
-                            <input type="checkbox" name="sniff.enable" <%= sniffBaseEnabled ? 'checked' : '' %>>
-                            <span class="checkbox-text"><%= t('nodes.sniffEnable') %></span>
+                            <input type="checkbox" name="disableUDP" <%= node?.disableUDP ? 'checked' : '' %>>
+                            <span class="checkbox-text"><%= t('nodes.disableUdp') %></span>
                         </label>
                     </div>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="sniffEnabled" name="sniff.enabled" <%= sniffAdvancedEnabled ? 'checked' : '' %> onchange="toggleSniffFields()">
-                        <span class="checkbox-text"><%= t('nodes.enableOptionalSection') %></span>
-                    </label>
-                    <div class="optional-fields-wrap" id="sniffFieldsWrap" style="<%= sniffAdvancedEnabled ? '' : 'display:none' %>">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" name="sniff.rewriteDomain" <%= node?.sniff?.rewriteDomain ? 'checked' : '' %>>
-                                    <span class="checkbox-text"><%= t('nodes.sniffRewriteDomain') %></span>
-                                </label>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="sniffTimeout"><%= t('nodes.sniffTimeout') %></label>
-                                <input type="text" id="sniffTimeout" name="sniff.timeout" value="<%= node?.sniff?.timeout || '2s' %>" placeholder="2s">
-                            </div>
-                            <div class="form-group">
-                                <label for="sniffTcpPorts"><%= t('nodes.sniffTcpPorts') %></label>
-                                <input type="text" id="sniffTcpPorts" name="sniff.tcpPorts" value="<%= node?.sniff?.tcpPorts || '80,443,8000-9000' %>" placeholder="80,443,8000-9000">
-                            </div>
+                    <div class="form-group">
+                        <label for="udpIdleTimeout"><%= t('nodes.udpIdleTimeout') %></label>
+                        <input type="text" id="udpIdleTimeout" name="udpIdleTimeout" value="<%= node?.udpIdleTimeout || '' %>" placeholder="60s">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </details>
+
+    <details class="nf-module <%= quicSectionEnabled ? 'is-on' : '' %>" id="hysteriaQuicSection">
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-rocket"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.sectionQuic') %></span>
+                <span class="nf-module__sub"><%- renderDocsIcon('quic') %><%= t('nodes.sectionQuicHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-clock"></i><%= node?.quic?.maxIdleTimeout || '60s' %></span>
+                    <span class="nf-chip"><i class="ti ti-stack-2"></i><%= node?.quic?.maxIncomingStreams || 256 %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <label class="checkbox-label">
+                <input type="checkbox" id="quicEnabled" name="quic.enabled" <%= quicSectionEnabled ? 'checked' : '' %> onchange="toggleQuicFields()">
+                <span class="checkbox-text"><%= t('nodes.enableOptionalSection') %></span>
+            </label>
+            <div class="optional-fields-wrap" id="quicFieldsWrap" style="<%= quicSectionEnabled ? '' : 'display:none' %>">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="quicInitStreamReceiveWindow"><%= t('nodes.quicInitStreamReceiveWindow') %></label>
+                        <input type="number" id="quicInitStreamReceiveWindow" name="quic.initStreamReceiveWindow" value="<%= node?.quic?.initStreamReceiveWindow || 8388608 %>" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="quicMaxStreamReceiveWindow"><%= t('nodes.quicMaxStreamReceiveWindow') %></label>
+                        <input type="number" id="quicMaxStreamReceiveWindow" name="quic.maxStreamReceiveWindow" value="<%= node?.quic?.maxStreamReceiveWindow || 8388608 %>" min="1">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="quicInitConnReceiveWindow"><%= t('nodes.quicInitConnReceiveWindow') %></label>
+                        <input type="number" id="quicInitConnReceiveWindow" name="quic.initConnReceiveWindow" value="<%= node?.quic?.initConnReceiveWindow || 20971520 %>" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="quicMaxConnReceiveWindow"><%= t('nodes.quicMaxConnReceiveWindow') %></label>
+                        <input type="number" id="quicMaxConnReceiveWindow" name="quic.maxConnReceiveWindow" value="<%= node?.quic?.maxConnReceiveWindow || 20971520 %>" min="1">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="quicMaxIdleTimeout"><%= t('nodes.quicMaxIdleTimeout') %></label>
+                        <input type="text" id="quicMaxIdleTimeout" name="quic.maxIdleTimeout" value="<%= node?.quic?.maxIdleTimeout || '60s' %>" placeholder="60s">
+                    </div>
+                    <div class="form-group">
+                        <label for="quicMaxIncomingStreams"><%= t('nodes.quicMaxIncomingStreams') %></label>
+                        <input type="number" id="quicMaxIncomingStreams" name="quic.maxIncomingStreams" value="<%= node?.quic?.maxIncomingStreams || 256 %>" min="1">
+                    </div>
+                </div>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="quic.disablePathMTUDiscovery" <%= node?.quic?.disablePathMTUDiscovery ? 'checked' : '' %>>
+                    <span class="checkbox-text"><%= t('nodes.quicDisablePathMtuDiscovery') %></span>
+                </label>
+            </div>
+        </div>
+    </details>
+
+    <details class="nf-module <%= node?.resolver?.enabled ? 'is-on' : '' %>" id="hysteriaResolverSection">
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-world-search"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.sectionResolver') %></span>
+                <span class="nf-module__sub"><%- renderDocsIcon('resolver') %><%= t('nodes.sectionResolverHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-world-search"></i><%= node?.resolver?.enabled ? (node?.resolver?.type || 'udp') : t('nodes.off') %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <label class="checkbox-label">
+                <input type="checkbox" id="resolverEnabled" name="resolver.enabled" <%= node?.resolver?.enabled ? 'checked' : '' %> onchange="toggleResolverFields()">
+                <span class="checkbox-text"><%= t('nodes.resolverEnabled') %></span>
+            </label>
+            <div class="optional-fields-wrap" id="resolverFieldsWrap" style="<%= node?.resolver?.enabled ? '' : 'display:none' %>">
+                <div class="form-group" style="max-width:200px;">
+                    <label for="resolverType"><%= t('nodes.resolverType') %></label>
+                    <select id="resolverType" name="resolver.type" onchange="toggleResolverTypeFields()">
+                        <option value="udp" <%= (node?.resolver?.type || 'udp') === 'udp' ? 'selected' : '' %>>udp</option>
+                        <option value="tcp" <%= node?.resolver?.type === 'tcp' ? 'selected' : '' %>>tcp</option>
+                        <option value="tls" <%= node?.resolver?.type === 'tls' ? 'selected' : '' %>>tls</option>
+                        <option value="https" <%= node?.resolver?.type === 'https' ? 'selected' : '' %>>https</option>
+                    </select>
+                </div>
+                <div id="resolverUdpFields" style="<%= (node?.resolver?.type || 'udp') === 'udp' ? '' : 'display:none' %>">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="resolverUdpAddr"><%= t('nodes.resolverAddr') %></label>
+                            <input type="text" id="resolverUdpAddr" name="resolver.udp.addr" value="<%= node?.resolver?.udpAddr || '8.8.4.4:53' %>" placeholder="8.8.4.4:53">
                         </div>
                         <div class="form-group">
-                            <label for="sniffUdpPorts"><%= t('nodes.sniffUdpPorts') %></label>
-                            <input type="text" id="sniffUdpPorts" name="sniff.udpPorts" value="<%= node?.sniff?.udpPorts || '443,80,53' %>" placeholder="443,80,53">
-                            <small><%= t('nodes.sniffPortsHint') %></small>
+                            <label for="resolverUdpTimeout"><%= t('nodes.resolverTimeout') %></label>
+                            <input type="text" id="resolverUdpTimeout" name="resolver.udp.timeout" value="<%= node?.resolver?.udpTimeout || '4s' %>" placeholder="4s">
                         </div>
                     </div>
                 </div>
-
-                <%# ========== ACL Settings ========== %>
-                <div class="form-section" id="hysteriaAclSection">
-                    <h3><%= t('nodes.sectionAcl') %></h3>
-                    <small class="section-hint"><%- renderDocsIcon('acl') %><%= t('nodes.sectionAclHint') %></small>
-                    <label class="checkbox-label">
-                        <input type="hidden" name="acl.enabled" value="0">
-                        <input type="checkbox" id="aclEnabled" name="acl.enabled" <%= aclSectionEnabled ? 'checked' : '' %> onchange="toggleAclFields()">
-                        <span class="checkbox-text"><%= t('nodes.enableAcl') %></span>
-                    </label>
-                    <div class="optional-fields-wrap" id="aclFieldsWrap" style="<%= aclSectionEnabled ? '' : 'display:none' %>">
-                        <div class="form-row">
-                            <div class="form-group" id="aclTypeGroup" style="<%= aclSectionEnabled && node?.acl?.type === 'file' ? '' : 'grid-column: 1 / -1;' %>">
-                                <label for="aclType"><%= t('nodes.aclType') %></label>
-                                <select id="aclType" name="acl.type" onchange="toggleAclTypeFields()">
-                                    <option value="inline" <%= (node?.acl?.type || 'inline') === 'inline' ? 'selected' : '' %>>inline</option>
-                                    <option value="file" <%= node?.acl?.type === 'file' ? 'selected' : '' %>>file</option>
-                                </select>
-                            </div>
-                            <div class="form-group" id="aclFileGroup" style="<%= aclSectionEnabled && node?.acl?.type === 'file' ? '' : 'display:none' %>">
-                                <label for="aclFile"><%= t('nodes.aclFile') %></label>
-                                <input type="text" id="aclFile" name="acl.file" value="<%= node?.acl?.file || '' %>" placeholder="/etc/hysteria/acl.txt">
-                            </div>
-                        </div>
-                        <div class="form-group" id="aclInlineRulesGroup" style="<%= aclSectionEnabled && (node?.acl?.type || 'inline') === 'inline' ? '' : 'display:none' %>">
-                            <label for="aclInlineRules"><%= t('nodes.aclInlineRules') %></label>
-                            <textarea id="aclInlineRules" name="acl.inlineRules" rows="8" class="code-textarea" placeholder="reject(geoip:cn)&#10;reject(geoip:private)"><%= aclInlineRulesValue %></textarea>
-                            <small><%= t('nodes.aclInlineRulesHint') %></small>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="aclGeoip"><%= t('nodes.aclGeoip') %></label>
-                                <input type="text" id="aclGeoip" name="acl.geoip" value="<%= node?.acl?.geoip || '' %>" placeholder="/etc/hysteria/geoip.dat">
-                            </div>
-                            <div class="form-group">
-                                <label for="aclGeosite"><%= t('nodes.aclGeosite') %></label>
-                                <input type="text" id="aclGeosite" name="acl.geosite" value="<%= node?.acl?.geosite || '' %>" placeholder="/etc/hysteria/geosite.dat">
-                            </div>
+                <div id="resolverTcpFields" style="<%= node?.resolver?.type === 'tcp' ? '' : 'display:none' %>">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="resolverTcpAddr"><%= t('nodes.resolverAddr') %></label>
+                            <input type="text" id="resolverTcpAddr" name="resolver.tcp.addr" value="<%= node?.resolver?.tcpAddr || '8.8.8.8:53' %>" placeholder="8.8.8.8:53">
                         </div>
                         <div class="form-group">
-                            <label for="aclGeoUpdateInterval"><%= t('nodes.aclGeoUpdateInterval') %></label>
-                            <input type="text" id="aclGeoUpdateInterval" name="acl.geoUpdateInterval" value="<%= node?.acl?.geoUpdateInterval || '' %>" placeholder="168h">
+                            <label for="resolverTcpTimeout"><%= t('nodes.resolverTimeout') %></label>
+                            <input type="text" id="resolverTcpTimeout" name="resolver.tcp.timeout" value="<%= node?.resolver?.tcpTimeout || '4s' %>" placeholder="4s">
                         </div>
                     </div>
                 </div>
-
-                <%# ========== Bandwidth ========== %>
-                <div class="form-section" id="hysteriaBandwidthSection">
-                    <h3><%= t('nodes.sectionBandwidth') %> (<%= t('nodes.optionalSuffix') %>)</h3>
-                    <small class="section-hint"><%- renderDocsIcon('bandwidth') %><%= t('nodes.sectionBandwidthHint') %></small>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="bandwidthEnabled" name="bandwidth.enabled" <%= bandwidthEnabled ? 'checked' : '' %> onchange="toggleBandwidthFields()">
-                        <span class="checkbox-text"><%= t('nodes.enableBandwidth') %></span>
-                    </label>
-                    <div class="optional-fields-wrap" id="bandwidthFieldsWrap" style="<%= bandwidthEnabled ? '' : 'display:none' %>">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="bandwidthUp"><%= t('nodes.bandwidthUp') %></label>
-                                <input type="text" id="bandwidthUp" name="bandwidth.up" value="<%= node?.bandwidth?.up || '' %>" placeholder="100 mbps">
-                            </div>
-                            <div class="form-group">
-                                <label for="bandwidthDown"><%= t('nodes.bandwidthDown') %></label>
-                                <input type="text" id="bandwidthDown" name="bandwidth.down" value="<%= node?.bandwidth?.down || '' %>" placeholder="100 mbps">
-                            </div>
+                <div id="resolverTlsFields" style="<%= node?.resolver?.type === 'tls' ? '' : 'display:none' %>">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="resolverTlsAddr"><%= t('nodes.resolverAddr') %></label>
+                            <input type="text" id="resolverTlsAddr" name="resolver.tls.addr" value="<%= node?.resolver?.tlsAddr || '1.1.1.1:853' %>" placeholder="1.1.1.1:853">
                         </div>
-                        <label class="checkbox-label">
-                            <input type="checkbox" name="ignoreClientBandwidth" <%= node?.ignoreClientBandwidth ? 'checked' : '' %>>
-                            <span class="checkbox-text"><%= t('nodes.ignoreClientBandwidth') %></span>
-                        </label>
-                    </div>
-                </div>
-
-                <%# ========== Speed Test ========== %>
-                <div class="form-section" id="hysteriaSpeedTestSection">
-                    <h3><%= t('nodes.sectionSpeedTest') %> (<%= t('nodes.optionalSuffix') %>)</h3>
-                    <small class="section-hint"><%- renderDocsIcon('speedTest') %><%= t('nodes.sectionSpeedTestHint') %></small>
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="speedTest" <%= node?.speedTest ? 'checked' : '' %>>
-                        <span class="checkbox-text"><%= t('nodes.speedTest') %></span>
-                    </label>
-                </div>
-
-                <%# ========== UDP ========== %>
-                <div class="form-section" id="hysteriaUdpSection">
-                    <h3><%= t('nodes.sectionUdp') %> (<%= t('nodes.optionalSuffix') %>)</h3>
-                    <small class="section-hint"><%- renderDocsIcon('udp') %><%= t('nodes.sectionUdpHint') %></small>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="udpOptionsEnabled" name="udp.options.enabled" <%= udpOptionsEnabled ? 'checked' : '' %> onchange="toggleUdpFields()">
-                        <span class="checkbox-text"><%= t('nodes.enableUdpTweaks') %></span>
-                    </label>
-                    <div class="optional-fields-wrap" id="udpFieldsWrap" style="<%= udpOptionsEnabled ? '' : 'display:none' %>">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" name="disableUDP" <%= node?.disableUDP ? 'checked' : '' %>>
-                                    <span class="checkbox-text"><%= t('nodes.disableUdp') %></span>
-                                </label>
-                            </div>
-                            <div class="form-group">
-                                <label for="udpIdleTimeout"><%= t('nodes.udpIdleTimeout') %></label>
-                                <input type="text" id="udpIdleTimeout" name="udpIdleTimeout" value="<%= node?.udpIdleTimeout || '' %>" placeholder="60s">
-                            </div>
+                        <div class="form-group">
+                            <label for="resolverTlsTimeout"><%= t('nodes.resolverTimeout') %></label>
+                            <input type="text" id="resolverTlsTimeout" name="resolver.tls.timeout" value="<%= node?.resolver?.tlsTimeout || '10s' %>" placeholder="10s">
                         </div>
                     </div>
-                </div>
-
-                <%# ========== QUIC Parameters ========== %>
-                <div class="form-section" id="hysteriaQuicSection">
-                    <h3><%= t('nodes.sectionQuic') %> (<%= t('nodes.optionalSuffix') %>)</h3>
-                    <small class="section-hint">
-                        <%- renderDocsIcon('quic') %>
-                        <%= t('nodes.sectionQuicHint') %>
-                    </small>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="quicEnabled" name="quic.enabled" <%= quicSectionEnabled ? 'checked' : '' %> onchange="toggleQuicFields()">
-                        <span class="checkbox-text"><%= t('nodes.enableOptionalSection') %></span>
-                    </label>
-                    <div class="optional-fields-wrap" id="quicFieldsWrap" style="<%= quicSectionEnabled ? '' : 'display:none' %>">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="quicInitStreamReceiveWindow"><%= t('nodes.quicInitStreamReceiveWindow') %></label>
-                                <input type="number" id="quicInitStreamReceiveWindow" name="quic.initStreamReceiveWindow" value="<%= node?.quic?.initStreamReceiveWindow || 8388608 %>" min="1">
-                            </div>
-                            <div class="form-group">
-                                <label for="quicMaxStreamReceiveWindow"><%= t('nodes.quicMaxStreamReceiveWindow') %></label>
-                                <input type="number" id="quicMaxStreamReceiveWindow" name="quic.maxStreamReceiveWindow" value="<%= node?.quic?.maxStreamReceiveWindow || 8388608 %>" min="1">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="quicInitConnReceiveWindow"><%= t('nodes.quicInitConnReceiveWindow') %></label>
-                                <input type="number" id="quicInitConnReceiveWindow" name="quic.initConnReceiveWindow" value="<%= node?.quic?.initConnReceiveWindow || 20971520 %>" min="1">
-                            </div>
-                            <div class="form-group">
-                                <label for="quicMaxConnReceiveWindow"><%= t('nodes.quicMaxConnReceiveWindow') %></label>
-                                <input type="number" id="quicMaxConnReceiveWindow" name="quic.maxConnReceiveWindow" value="<%= node?.quic?.maxConnReceiveWindow || 20971520 %>" min="1">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="quicMaxIdleTimeout"><%= t('nodes.quicMaxIdleTimeout') %></label>
-                                <input type="text" id="quicMaxIdleTimeout" name="quic.maxIdleTimeout" value="<%= node?.quic?.maxIdleTimeout || '60s' %>" placeholder="60s">
-                            </div>
-                            <div class="form-group">
-                                <label for="quicMaxIncomingStreams"><%= t('nodes.quicMaxIncomingStreams') %></label>
-                                <input type="number" id="quicMaxIncomingStreams" name="quic.maxIncomingStreams" value="<%= node?.quic?.maxIncomingStreams || 256 %>" min="1">
-                            </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="resolverTlsSni"><%= t('nodes.resolverSni') %></label>
+                            <input type="text" id="resolverTlsSni" name="resolver.tls.sni" value="<%= node?.resolver?.tlsSni || 'cloudflare-dns.com' %>" placeholder="cloudflare-dns.com">
                         </div>
                         <div class="form-group">
                             <label class="checkbox-label">
-                                <input type="checkbox" name="quic.disablePathMTUDiscovery" <%= node?.quic?.disablePathMTUDiscovery ? 'checked' : '' %>>
-                                <span class="checkbox-text"><%= t('nodes.quicDisablePathMtuDiscovery') %></span>
+                                <input type="checkbox" name="resolver.tls.insecure" <%= node?.resolver?.tlsInsecure ? 'checked' : '' %>>
+                                <span class="checkbox-text"><%= t('nodes.resolverInsecure') %></span>
                             </label>
                         </div>
                     </div>
                 </div>
-
-                <%# ========== Resolver ========== %>
-                <div class="form-section" id="hysteriaResolverSection">
-                    <h3><%= t('nodes.sectionResolver') %> (<%= t('nodes.optionalSuffix') %>)</h3>
-                    <small class="section-hint"><%- renderDocsIcon('resolver') %><%= t('nodes.sectionResolverHint') %></small>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="resolverEnabled" name="resolver.enabled" <%= node?.resolver?.enabled ? 'checked' : '' %> onchange="toggleResolverFields()">
-                        <span class="checkbox-text"><%= t('nodes.resolverEnabled') %></span>
-                    </label>
-                    <div class="optional-fields-wrap" id="resolverFieldsWrap" style="<%= node?.resolver?.enabled ? '' : 'display:none' %>">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="resolverType"><%= t('nodes.resolverType') %></label>
-                                <select id="resolverType" name="resolver.type" onchange="toggleResolverTypeFields()">
-                                    <option value="udp" <%= (node?.resolver?.type || 'udp') === 'udp' ? 'selected' : '' %>>udp</option>
-                                    <option value="tcp" <%= node?.resolver?.type === 'tcp' ? 'selected' : '' %>>tcp</option>
-                                    <option value="tls" <%= node?.resolver?.type === 'tls' ? 'selected' : '' %>>tls</option>
-                                    <option value="https" <%= node?.resolver?.type === 'https' ? 'selected' : '' %>>https</option>
-                                </select>
-                            </div>
+                <div id="resolverHttpsFields" style="<%= node?.resolver?.type === 'https' ? '' : 'display:none' %>">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="resolverHttpsAddr"><%= t('nodes.resolverAddr') %></label>
+                            <input type="text" id="resolverHttpsAddr" name="resolver.https.addr" value="<%= node?.resolver?.httpsAddr || '1.1.1.1:443' %>" placeholder="1.1.1.1:443">
                         </div>
-                        <div id="resolverUdpFields" style="<%= (node?.resolver?.type || 'udp') === 'udp' ? '' : 'display:none' %>">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="resolverUdpAddr"><%= t('nodes.resolverAddr') %></label>
-                                    <input type="text" id="resolverUdpAddr" name="resolver.udp.addr" value="<%= node?.resolver?.udpAddr || '8.8.4.4:53' %>" placeholder="8.8.4.4:53">
-                                </div>
-                                <div class="form-group">
-                                    <label for="resolverUdpTimeout"><%= t('nodes.resolverTimeout') %></label>
-                                    <input type="text" id="resolverUdpTimeout" name="resolver.udp.timeout" value="<%= node?.resolver?.udpTimeout || '4s' %>" placeholder="4s">
-                                </div>
-                            </div>
+                        <div class="form-group">
+                            <label for="resolverHttpsTimeout"><%= t('nodes.resolverTimeout') %></label>
+                            <input type="text" id="resolverHttpsTimeout" name="resolver.https.timeout" value="<%= node?.resolver?.httpsTimeout || '10s' %>" placeholder="10s">
                         </div>
-                        <div id="resolverTcpFields" style="<%= node?.resolver?.type === 'tcp' ? '' : 'display:none' %>">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="resolverTcpAddr"><%= t('nodes.resolverAddr') %></label>
-                                    <input type="text" id="resolverTcpAddr" name="resolver.tcp.addr" value="<%= node?.resolver?.tcpAddr || '8.8.8.8:53' %>" placeholder="8.8.8.8:53">
-                                </div>
-                                <div class="form-group">
-                                    <label for="resolverTcpTimeout"><%= t('nodes.resolverTimeout') %></label>
-                                    <input type="text" id="resolverTcpTimeout" name="resolver.tcp.timeout" value="<%= node?.resolver?.tcpTimeout || '4s' %>" placeholder="4s">
-                                </div>
-                            </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="resolverHttpsSni"><%= t('nodes.resolverSni') %></label>
+                            <input type="text" id="resolverHttpsSni" name="resolver.https.sni" value="<%= node?.resolver?.httpsSni || 'cloudflare-dns.com' %>" placeholder="cloudflare-dns.com">
                         </div>
-                        <div id="resolverTlsFields" style="<%= node?.resolver?.type === 'tls' ? '' : 'display:none' %>">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="resolverTlsAddr"><%= t('nodes.resolverAddr') %></label>
-                                    <input type="text" id="resolverTlsAddr" name="resolver.tls.addr" value="<%= node?.resolver?.tlsAddr || '1.1.1.1:853' %>" placeholder="1.1.1.1:853">
-                                </div>
-                                <div class="form-group">
-                                    <label for="resolverTlsTimeout"><%= t('nodes.resolverTimeout') %></label>
-                                    <input type="text" id="resolverTlsTimeout" name="resolver.tls.timeout" value="<%= node?.resolver?.tlsTimeout || '10s' %>" placeholder="10s">
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="resolverTlsSni"><%= t('nodes.resolverSni') %></label>
-                                    <input type="text" id="resolverTlsSni" name="resolver.tls.sni" value="<%= node?.resolver?.tlsSni || 'cloudflare-dns.com' %>" placeholder="cloudflare-dns.com">
-                                </div>
-                                <div class="form-group">
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" name="resolver.tls.insecure" <%= node?.resolver?.tlsInsecure ? 'checked' : '' %>>
-                                        <span class="checkbox-text"><%= t('nodes.resolverInsecure') %></span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        <div id="resolverHttpsFields" style="<%= node?.resolver?.type === 'https' ? '' : 'display:none' %>">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="resolverHttpsAddr"><%= t('nodes.resolverAddr') %></label>
-                                    <input type="text" id="resolverHttpsAddr" name="resolver.https.addr" value="<%= node?.resolver?.httpsAddr || '1.1.1.1:443' %>" placeholder="1.1.1.1:443">
-                                </div>
-                                <div class="form-group">
-                                    <label for="resolverHttpsTimeout"><%= t('nodes.resolverTimeout') %></label>
-                                    <input type="text" id="resolverHttpsTimeout" name="resolver.https.timeout" value="<%= node?.resolver?.httpsTimeout || '10s' %>" placeholder="10s">
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="resolverHttpsSni"><%= t('nodes.resolverSni') %></label>
-                                    <input type="text" id="resolverHttpsSni" name="resolver.https.sni" value="<%= node?.resolver?.httpsSni || 'cloudflare-dns.com' %>" placeholder="cloudflare-dns.com">
-                                </div>
-                                <div class="form-group">
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" name="resolver.https.insecure" <%= node?.resolver?.httpsInsecure ? 'checked' : '' %>>
-                                        <span class="checkbox-text"><%= t('nodes.resolverInsecure') %></span>
-                                    </label>
-                                </div>
-                            </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" name="resolver.https.insecure" <%= node?.resolver?.httpsInsecure ? 'checked' : '' %>>
+                                <span class="checkbox-text"><%= t('nodes.resolverInsecure') %></span>
+                            </label>
                         </div>
                     </div>
                 </div>
-            </details>
+            </div>
+        </div>
+    </details>
+
+    <details class="nf-module <%= node?.useCustomConfig ? 'is-on' : '' %>" id="hysteriaConfigSection" <%= node?.useCustomConfig ? 'open' : '' %>>
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-file-code"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.hysteriaConfig') %></span>
+                <span class="nf-module__sub"><%= t('nodes.customConfigHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-file-code"></i><%= node?.useCustomConfig ? t('common.enabled') : t('nodes.off') %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <label class="checkbox-label">
+                <input type="checkbox" name="useCustomConfig" id="useCustomConfig"
+                       <%= node?.useCustomConfig ? 'checked' : '' %>
+                       onchange="toggleCustomConfig()">
+                <span class="checkbox-text"><%= t('nodes.useCustomConfig') %></span>
+            </label>
+            <div id="customConfigSection" style="<%= node?.useCustomConfig ? '' : 'display:none' %>">
+                <div class="form-group" style="margin-top:12px;">
+                    <label for="customConfig"><%= t('nodes.customConfigLabel') %></label>
+                    <textarea id="customConfig" name="customConfig" rows="20"
+                              class="code-textarea" placeholder="listen: :443&#10;&#10;acme:&#10;  domains:&#10;    - example.com..."><%= node?.customConfig || '' %></textarea>
+                    <small><%= t('nodes.customConfigFormat') %></small>
+                </div>
+                <div class="nf-actions">
+                    <button type="button" class="btn btn-sm" onclick="generateConfig()"><i class="ti ti-wand"></i> <%= t('nodes.generateConfig') %></button>
+                    <button type="button" class="btn btn-sm" onclick="loadCurrentConfig()"><i class="ti ti-cloud-download"></i> <%= t('nodes.loadCurrentConfig') %></button>
+                </div>
+            </div>
+        </div>
+    </details>
+</div>

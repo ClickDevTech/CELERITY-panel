@@ -228,164 +228,6 @@
     .form-row-3 { grid-template-columns: 1fr; }
 }
 
-.node-advanced-details {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    margin-bottom: 16px;
-    background: var(--bg-secondary);
-}
-.node-advanced-summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 20px;
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 14px;
-    color: var(--text-secondary);
-    user-select: none;
-    list-style: none;
-    gap: 8px;
-}
-.node-advanced-summary::-webkit-details-marker { display: none; }
-.node-advanced-summary:hover { color: var(--text-primary); }
-.node-advanced-summary span { display: flex; align-items: center; gap: 8px; }
-.node-advanced-chevron {
-    transition: transform 0.2s;
-    font-size: 16px;
-    flex-shrink: 0;
-}
-.node-advanced-details[open] .node-advanced-chevron {
-    transform: rotate(180deg);
-}
-.node-advanced-details > .form-section {
-    border-top: 1px solid var(--border);
-    border-radius: 0;
-    margin-bottom: 0;
-    margin-top: 0;
-    padding: 20px 20px 16px;
-    background: transparent;
-}
-.node-advanced-details > .form-section:last-of-type {
-    border-bottom-left-radius: var(--radius);
-    border-bottom-right-radius: var(--radius);
-}
-
-/* ── Extra Xray inbounds ── */
-.extra-inbounds-section {
-    margin-top: 24px;
-    padding-top: 18px;
-    border-top: 1px dashed var(--border);
-}
-.extra-inbounds-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 16px;
-    margin-bottom: 12px;
-}
-.extra-inbounds-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.extra-inbounds-hint {
-    color: var(--text-muted);
-    font-size: 12px;
-    display: block;
-    margin-top: 4px;
-}
-.extra-inbound-card { margin-bottom: 12px; }
-.extra-inbound-card .extra-inbound-summary {
-    margin-left: 8px;
-    padding: 2px 8px;
-    border-radius: 10px;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.2px;
-}
-.extra-inbound-card .extra-inbound-title {
-    color: var(--text-primary);
-    font-weight: 600;
-}
-
-/* ── Reverse proxy front ── */
-.efp-section {
-    margin-top: 24px;
-    padding-top: 18px;
-    border-top: 1px dashed var(--border);
-}
-.efp-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 16px;
-}
-.efp-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.efp-hint {
-    color: var(--text-muted);
-    font-size: 12px;
-    display: block;
-    margin-top: 4px;
-}
-.efp-toggle { flex-shrink: 0; }
-.efp-body { margin-top: 16px; }
-.efp-site {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-}
-.efp-inbounds {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 8px;
-}
-.efp-inbound-empty {
-    color: var(--text-muted);
-    font-size: 12px;
-    padding: 10px 0;
-}
-.efp-inbound-note {
-    display: block;
-    color: var(--text-muted);
-    font-size: 11px;
-    margin-top: 2px;
-}
-.efp-site-state { color: var(--text-muted); font-size: 12px; }
-.efp-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-top: 16px;
-}
-.efp-log {
-    margin-top: 12px;
-    max-height: 240px;
-    overflow: auto;
-    padding: 12px;
-    border-radius: var(--radius-sm);
-    background: rgba(0, 0, 0, 0.45);
-    color: #d4d4d8;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font: 12px/1.55 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
-}
-
 /* ── CDN edge addresses ── */
 .cdn-connection-card {
     margin: 4px 0 18px;
@@ -758,7 +600,10 @@ const i18n = {
     frontSaveFirst: <%- JSON.stringify(t("nodes.frontSaveFirst")) %>,
     frontApplying: <%- JSON.stringify(t("nodes.frontApplying")) %>,
     frontApplied: <%- JSON.stringify(t("nodes.frontApplied")) %>,
-    frontSiteStored: <%- JSON.stringify(t("nodes.frontSiteStored")) %>
+    frontSiteStored: <%- JSON.stringify(t("nodes.frontSiteStored")) %>,
+    frontLockedTransport: <%- JSON.stringify(t("nodes.frontLockedTransport")) %>,
+    xrayExtraInbound: <%- JSON.stringify(t("nodes.xrayExtraInbound")) %>,
+    xrayRemoveInboundConfirm: <%- JSON.stringify(t("nodes.xrayRemoveInboundConfirm")) %>
 };
 const i18nConfig = {
     copied: <%- JSON.stringify(t("common.copied")) %>,
@@ -827,101 +672,143 @@ function checkXrayPortConflict() {
     });
 }
 
-// Sections that belong to a serverless node type. switchProto shows exactly one
-// of them and never restores either through the `.virtual-hidden` sweep.
-const SERVERLESS_SECTION_IDS = ['virtualSection', 'cdnSection'];
+// ==================== Panes: type filter and router ====================
 
-// A `required` control inside a hidden section aborts submission browser-side
-// with no visible error, so the attribute only lives on CDN fields while the
-// CDN section is on screen.
-function syncCdnRequired(isCdn) {
-    document.querySelectorAll('#cdnSection [data-cdn-required]').forEach(el => {
-        if (isCdn) el.setAttribute('required', 'required');
-        else el.removeAttribute('required');
+const PROTO_LABEL_IDS = {
+    hysteria: 'protoHysteriaLabel',
+    xray: 'protoXrayLabel',
+    virtual: 'protoVirtualLabel',
+    cdn: 'protoCdnLabel',
+};
+
+function nfCurrentType() {
+    return document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
+}
+
+// `data-types` lists the node types an element belongs to. Everything else —
+// panes, rail tabs, single fields — follows from that one attribute.
+function nfBelongsTo(el, type) {
+    const raw = el.dataset.types;
+    return !raw || raw.split(/\s+/).includes(type);
+}
+
+function nfAvailable(el) {
+    return nfBelongsTo(el, nfCurrentType()) && !el.classList.contains('nf-off');
+}
+
+// One attribute drives every `data-types` element through CSS.
+function applyTypeVisibility(type) {
+    const root = document.getElementById('nfTabbed');
+    if (root) root.dataset.nodeType = type;
+}
+
+// The `port` and `domain` inputs are rendered once and moved between panes:
+// Hysteria shows them among the network settings, Xray next to the main inbound
+// and inside the manual-TLS block. Moving the live node keeps values and
+// listeners intact across protocol switches.
+function moveSharedFields(type) {
+    const pairs = [
+        ['portGroup', type === 'xray' ? 'portSlotXray' : 'portSlotHysteria'],
+        ['domainGroup', type === 'xray' ? 'domainSlotXray' : 'domainSlotHysteria'],
+    ];
+    for (const [fieldId, slotId] of pairs) {
+        const field = document.getElementById(fieldId);
+        const slot = document.getElementById(slotId);
+        if (field && slot && field.parentElement !== slot) slot.appendChild(field);
+    }
+}
+
+// A `required` control in a pane that does not exist for the current type
+// aborts submission browser-side with no visible error. Panes of the current
+// type keep the attribute: the submit handler opens them before validating.
+function syncRequiredByType(type) {
+    document.querySelectorAll('[data-types]').forEach(scope => {
+        const on = nfBelongsTo(scope, type);
+        scope.querySelectorAll('[required], [data-req-off="1"]').forEach(el => {
+            if (on && el.dataset.reqOff === '1') {
+                el.required = true;
+                delete el.dataset.reqOff;
+            } else if (!on && el.required) {
+                el.required = false;
+                el.dataset.reqOff = '1';
+            }
+        });
     });
-    // A custom validity message set on a hidden field blocks submission just as
-    // silently as `required`, so the path check only lives while CDN is picked.
-    const path = document.getElementById('cdnPath');
-    if (!path) return;
-    if (isCdn) syncCdnPathHint();
-    else path.setCustomValidity('');
+}
+
+// Remembers the last pane per type, so switching there and back returns to it.
+const nfPaneMemory = {};
+
+function nfSetPane(requested) {
+    const type = nfCurrentType();
+    const tabs = Array.from(document.querySelectorAll('.nf-tab')).filter(nfAvailable);
+    const wanted = requested || nfPaneMemory[type] || 'main';
+    const target = tabs.some(tab => tab.dataset.pane === wanted)
+        ? wanted
+        : (tabs[0]?.dataset.pane || 'main');
+
+    nfPaneMemory[type] = target;
+    document.querySelectorAll('.nf-pane').forEach(pane => {
+        pane.classList.toggle('is-active', pane.dataset.pane === target && nfAvailable(pane));
+    });
+    document.querySelectorAll('.nf-tab').forEach(tab => {
+        const active = tab.dataset.pane === target;
+        tab.classList.toggle('is-active', active);
+        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    history.replaceState(null, '', `#${type}/${target}`);
+}
+
+// Rail badges are derived from the live form, not from the saved node.
+function refreshRailBadges() {
+    const set = (name, value, on) => {
+        const badge = document.querySelector(`.nf-tab__badge[data-badge="${name}"]`);
+        if (!badge) return;
+        badge.textContent = value == null ? '' : String(value);
+        badge.classList.toggle('is-on', !!on);
+    };
+    const extras = document.querySelectorAll('#extraInboundsContainer .extra-inbound-card').length;
+    const frontOn = !!document.getElementById('frontEnabled')?.checked;
+    const sshOn = !!(document.getElementById('sshPassword')?.value
+        || document.getElementById('sshPrivateKey')?.value
+        || document.getElementById('sshPrivateKeyBadge')?.style.display === '');
+    const sources = document.querySelector('input[name="virtual.selectMode"]:checked')?.value === 'group'
+        ? (document.getElementById('virtualSourceGroup')?.value ? 1 : 0)
+        : document.querySelectorAll('input[name="virtual.sources[]"]:checked').length;
+
+    set('port', document.getElementById('port')?.value || '');
+    set('obfs', '', !!document.getElementById('obfsType')?.value);
+    set('inbounds', extras + 1);
+    set('front', frontOn ? (document.getElementById('frontPublicPort')?.value || 443) : '', frontOn);
+    set('sources', sources || '');
+    set('edges', document.querySelectorAll('#cdnEdgesContainer .cdn-edge-row').length || '');
+    set('ssh', '', sshOn);
 }
 
 function switchProto(proto) {
-    const xraySection = document.getElementById('xraySection');
-    const virtualSection = document.getElementById('virtualSection');
-    const cdnSection = document.getElementById('cdnSection');
-    const cascadeSection = document.getElementById('cascadeRoleSection');
-    const labelHysteria = document.getElementById('protoHysteriaLabel');
-    const labelXray = document.getElementById('protoXrayLabel');
-    const labelVirtual = document.getElementById('protoVirtualLabel');
-    const labelCdn = document.getElementById('protoCdnLabel');
-    const hysteriaOnlyEls = document.querySelectorAll('.hysteria-only');
-    const ipFormGroup = document.getElementById('ipFormGroup');
-    const ipInput = document.getElementById('ip');
+    Object.values(PROTO_LABEL_IDS).forEach(id => document.getElementById(id)?.classList.remove('active'));
+    document.getElementById(PROTO_LABEL_IDS[proto])?.classList.add('active');
 
-    [labelHysteria, labelXray, labelVirtual, labelCdn].forEach(l => l && l.classList.remove('active'));
-
-    if (proto === 'virtual' || proto === 'cdn') {
-        if (xraySection) xraySection.style.display = 'none';
-        if (cascadeSection) cascadeSection.style.display = 'none';
-        if (virtualSection) virtualSection.style.display = proto === 'virtual' ? '' : 'none';
-        if (cdnSection) cdnSection.style.display = proto === 'cdn' ? '' : 'none';
-        if (proto === 'virtual' && labelVirtual) labelVirtual.classList.add('active');
-        if (proto === 'cdn' && labelCdn) labelCdn.classList.add('active');
-        hysteriaOnlyEls.forEach(el => el.style.display = 'none');
-        const activeSectionId = proto === 'virtual' ? 'virtualSection' : 'cdnSection';
-        // Hide everything except the shared fields and selected serverless section.
-        // The inactive serverless section is hidden without the `virtual-hidden`
-        // marker: that class means "restore me when a server-backed type is
-        // picked again", which is exactly what must not happen to it.
-        document.querySelectorAll('.form-section').forEach(sec => {
-            if (sec.id === activeSectionId) return;
-            if (sec.querySelector('.proto-switcher')) return;
-            if (sec.querySelector('input[name="groups"]')) return;
-            if (!SERVERLESS_SECTION_IDS.includes(sec.id)) sec.classList.add('virtual-hidden');
-            sec.style.display = 'none';
-        });
-        // Non-form-section elements that don't belong on virtual nodes
-        // (init-script <details>, ad-hoc cards, etc.). The .non-virtual-only
-        // class is the canonical marker — server-side renders the same
-        // state via inline `display:none`.
-        document.querySelectorAll('.non-virtual-only').forEach(el => {
-            el.classList.add('virtual-hidden');
-            el.style.display = 'none';
-        });
-        if (ipFormGroup) ipFormGroup.style.display = 'none';
-        if (ipInput) ipInput.removeAttribute('required');
-        syncCdnRequired(proto === 'cdn');
-        checkXrayPortConflict();
-        return;
+    applyTypeVisibility(proto);
+    moveSharedFields(proto);
+    syncRequiredByType(proto);
+    // The cascade filter is an Xray-only concern; leaving it on would hide
+    // panes that a Hysteria node needs.
+    if (proto !== 'xray') {
+        document.querySelectorAll('.nf-off').forEach(el => el.classList.remove('nf-off'));
     }
 
-    // Restore everything hidden by 'virtual'.
-    if (virtualSection) virtualSection.style.display = 'none';
-    if (cdnSection) cdnSection.style.display = 'none';
-    syncCdnRequired(false);
-    document.querySelectorAll('.form-section.virtual-hidden, .non-virtual-only.virtual-hidden').forEach(sec => {
-        sec.style.display = '';
-        sec.classList.remove('virtual-hidden');
-    });
-    if (ipFormGroup) ipFormGroup.style.display = '';
-    if (ipInput) ipInput.setAttribute('required', 'required');
+    // Without the IP field two columns look deliberate, three look broken.
+    const identityRow = document.getElementById('identityRow');
+    if (identityRow) {
+        identityRow.className = (proto === 'virtual' || proto === 'cdn') ? 'form-row' : 'form-row-3';
+    }
 
     if (proto === 'xray') {
-        xraySection.style.display = '';
-        if (cascadeSection) cascadeSection.style.display = '';
-        if (labelXray) labelXray.classList.add('active');
-        hysteriaOnlyEls.forEach(el => el.style.display = 'none');
         onCascadeRoleChange();
-        // Domain group is shared (no longer .hysteria-only). Its visibility
-        // depends on the current Xray TLS source — defer to updateXrayTlsSourceUI.
-        updateXrayTlsSourceUI();
-    } else {
-        xraySection.style.display = 'none';
-        if (cascadeSection) cascadeSection.style.display = 'none';
-        if (labelHysteria) labelHysteria.classList.add('active');
-        hysteriaOnlyEls.forEach(el => el.style.display = '');
+        updateXrayTransportUI();
+        updateXraySecurityUI();
+    } else if (proto === 'hysteria') {
         toggleAcmeByDomain();
         toggleObfsPassword();
         toggleMasqueradeType();
@@ -931,13 +818,14 @@ function switchProto(proto) {
         toggleQuicFields();
         toggleResolverFields();
         toggleAclFields();
-        const domainGroup = document.getElementById('domainGroup');
-        if (domainGroup) domainGroup.style.display = '';
-        const domainHintHy = document.getElementById('domainHintHysteria');
-        const domainHintXr = document.getElementById('domainHintXrayManual');
-        if (domainHintHy) domainHintHy.style.display = '';
-        if (domainHintXr) domainHintXr.style.display = 'none';
     }
+    updateXrayTlsSourceUI();
+    // A custom validity message on a field the operator cannot see blocks
+    // submission just as silently as `required`.
+    syncCdnPathHint();
+
+    nfSetPane();
+    refreshRailBadges();
     checkXrayPortConflict();
 }
 
@@ -958,12 +846,18 @@ function onCascadeRoleChange() {
     if (bridgeHint) bridgeHint.style.display = isBridge ? '' : 'none';
     if (portalHint) portalHint.style.display = isPortal ? '' : 'none';
 
-    // Bridge nodes: hide all client-facing settings.
-    // They only need name, IP, SSH, and cascade role.
-    ['xraySection', 'networkSection', 'limitsSection'].forEach(function(id) {
-        var el = document.getElementById(id);
-        if (el) el.style.display = isBridge ? 'none' : '';
+    var chip = document.getElementById('cascadeRoleChip');
+    if (chip) chip.textContent = role;
+
+    // A bridge has no client-facing side: it only needs name, IP, SSH and its
+    // role, so the panes that configure clients are dropped from the rail.
+    ['xr-inbounds', 'xr-front', 'xr-advanced', 'limits'].forEach(function(pane) {
+        document.querySelectorAll('[data-pane="' + pane + '"]').forEach(function(el) {
+            el.classList.toggle('nf-off', isBridge);
+        });
     });
+    // The active pane may have just disappeared.
+    if (!document.querySelector('.nf-pane.is-active')) nfSetPane('main');
 }
 
 // ==================== Xray UI ====================
@@ -1035,10 +929,24 @@ function updateXraySecurityUI() {
         el.style.display = security === 'reality' ? '' : 'none';
     });
     document.getElementById('alpnGroup').style.display = security === 'tls' ? '' : 'none';
+    // The certificate module stays on screen when no inbound needs TLS: dimmed
+    // and with a reason, instead of vanishing without explanation.
+    const needsTls = _anyXrayTlsInboundActive();
     const tlsConfig = document.getElementById('xrayTlsConfig');
-    if (tlsConfig) tlsConfig.style.display = _anyXrayTlsInboundActive() ? '' : 'none';
+    if (tlsConfig) tlsConfig.classList.toggle('is-na', !needsTls);
+    const tlsNotNeeded = document.getElementById('xrayTlsNotNeeded');
+    if (tlsNotNeeded) tlsNotNeeded.style.display = needsTls ? 'none' : '';
     _refreshMainFallbackVisibility();
     updateXrayTlsSourceUI();
+    refreshExtraInboundsEmpty();
+}
+
+// The empty-state note is shown only while no extra inbound exists.
+function refreshExtraInboundsEmpty() {
+    const empty = document.getElementById('extraInboundsEmpty');
+    if (!empty) return;
+    const count = document.querySelectorAll('#extraInboundsContainer .extra-inbound-card').length;
+    empty.style.display = count === 0 ? '' : 'none';
 }
 
 // Picks one of four TLS-source sub-blocks; manual+acme also reveal #domainGroup.
@@ -1046,6 +954,8 @@ function updateXrayTlsSourceUI() {
     const proto = document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
     const checked = document.querySelector('input[name="xray.tlsSource"]:checked');
     const source = checked ? checked.value : 'panel';
+    const chip = document.getElementById('xrayTlsSourceChip');
+    if (chip) chip.textContent = source;
     const panelInfo = document.getElementById('xrayTlsPanelInfo');
     const acmeBlock = document.getElementById('xrayTlsAcmeBlock');
     const manualBlock = document.getElementById('xrayTlsManualBlock');
@@ -1276,6 +1186,7 @@ function updateExtraInboundSummary(el) {
     const port = card.querySelector('input[name="xray_extra_port"]')?.value || '';
     const summary = card.querySelector('.extra-inbound-summary');
     if (summary) summary.textContent = transport.toUpperCase() + ' / ' + security + ' : ' + port;
+    refreshRailBadges();
 }
 
 // ─── Reverse proxy front ─────────────────────────────────────────────────────
@@ -1295,25 +1206,27 @@ function frontSelectedIds() {
     }
 }
 
+// Every inbound is listed; the ones Caddy cannot proxy are shown locked with
+// the transport that rules them out, so the absence is never a mystery.
 function frontCandidates() {
     const candidates = [];
     const mainTransport = document.getElementById('xrayTransport')?.value || 'tcp';
-    if (FRONT_TRANSPORTS.includes(mainTransport)) {
-        candidates.push({
-            id: 'main',
-            label: i18n.frontMainInbound,
-            note: mainTransport.toUpperCase(),
-        });
-    }
+    candidates.push({
+        id: 'main',
+        label: i18n.frontMainInbound,
+        note: mainTransport.toUpperCase(),
+        locked: !FRONT_TRANSPORTS.includes(mainTransport) ? mainTransport : '',
+    });
     document.querySelectorAll('#extraInboundsContainer .extra-inbound-card').forEach((card, index) => {
         const transport = card.querySelector('select[name="xray_extra_transport"]')?.value || 'tcp';
         const id = card.querySelector('input[name="xray_extra_id"]')?.value || '';
-        if (!id || !FRONT_TRANSPORTS.includes(transport)) return;
+        if (!id) return;
         const label = card.querySelector('input[name="xray_extra_label"]')?.value.trim();
         candidates.push({
             id,
             label: label || `#${index + 1}`,
             note: transport.toUpperCase(),
+            locked: !FRONT_TRANSPORTS.includes(transport) ? transport : '',
         });
     });
     return candidates;
@@ -1325,30 +1238,38 @@ function refreshFrontInbounds() {
     const selected = new Set(frontSelectedIds());
     const candidates = frontCandidates();
 
-    if (candidates.length === 0) {
-        container.innerHTML = '<div class="efp-inbound-empty"></div>';
-        container.firstChild.textContent = i18n.frontNoCandidates;
-        return;
+    container.innerHTML = '';
+    if (candidates.every(candidate => candidate.locked)) {
+        const empty = document.createElement('div');
+        empty.className = 'nf-empty';
+        empty.textContent = i18n.frontNoCandidates;
+        container.appendChild(empty);
     }
 
-    container.innerHTML = '';
     for (const candidate of candidates) {
         const label = document.createElement('label');
-        label.className = 'checkbox-tag';
+        label.className = candidate.locked ? 'nf-pick is-locked' : 'nf-pick';
         const input = document.createElement('input');
         input.type = 'checkbox';
         input.name = 'xray.front.inboundIds';
         input.value = candidate.id;
-        input.checked = selected.has(candidate.id);
+        input.checked = !candidate.locked && selected.has(candidate.id);
+        input.disabled = !!candidate.locked;
         const text = document.createElement('span');
-        text.textContent = candidate.label;
-        const note = document.createElement('small');
-        note.className = 'efp-inbound-note';
-        note.textContent = candidate.note;
-        text.appendChild(note);
+        text.className = 'nf-pick__text';
+        const name = document.createElement('span');
+        name.className = 'nf-pick__name';
+        name.textContent = candidate.label;
+        const meta = document.createElement('span');
+        meta.className = 'nf-pick__meta';
+        meta.textContent = candidate.locked
+            ? i18n.frontLockedTransport.replace('{transport}', candidate.note)
+            : candidate.note;
+        text.append(name, meta);
         label.append(input, text);
         container.appendChild(label);
     }
+    refreshRailBadges();
 }
 
 function onFrontToggle() {
@@ -1356,6 +1277,7 @@ function onFrontToggle() {
     const body = document.getElementById('frontBody');
     if (body) body.style.display = enabled ? '' : 'none';
     if (enabled) refreshFrontInbounds();
+    refreshRailBadges();
 }
 
 <% if (node?._id) { %>
@@ -1564,6 +1486,12 @@ function toggleAcmeByDomain() {
     const toggleGroup = document.getElementById('acmeAdvancedToggleGroup');
     if (toggleGroup) toggleGroup.style.display = (isHysteria && domain) ? '' : 'none';
 
+    // Without a domain the module is dimmed and says why, rather than hidden.
+    const acmeModule = document.getElementById('acmeModule');
+    if (acmeModule) acmeModule.classList.toggle('is-na', !domain);
+    const acmeNoDomain = document.getElementById('acmeNoDomainInfo');
+    if (acmeNoDomain) acmeNoDomain.style.display = domain ? 'none' : '';
+
     if (!domain) {
         const cb = document.getElementById('acmeAdvancedEnabled');
         if (cb) cb.checked = false;
@@ -1608,15 +1536,13 @@ function toggleMasqueradeType() {
 }
 
 function toggleSniField() {
-    const proto = document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
     const group = document.getElementById('sniGroup');
+    const info = document.getElementById('sniHasDomainInfo');
     if (!group) return;
-    if (proto === 'xray') {
-        group.style.display = 'none';
-        return;
-    }
+    // Xray never reads this field; for Hysteria a domain already supplies the SNI.
     const hasDomain = !!(document.getElementById('domain')?.value || '').trim();
     group.style.display = hasDomain ? 'none' : '';
+    if (info) info.style.display = hasDomain ? '' : 'none';
 }
 
 function toggleResolverFields() {
@@ -2428,8 +2354,8 @@ function updateCdnConnectionPreview() {
 function syncCdnPathHint() {
     const input = document.getElementById('cdnPath');
     if (!input) return;
-    // Same reason as in syncCdnRequired: never leave a validity message behind
-    // on a field the operator cannot see.
+    // Never leave a validity message behind on a field the operator cannot see:
+    // it aborts the submit as silently as a hidden `required`.
     if (document.querySelector('input[name="type"]:checked')?.value !== 'cdn') {
         input.setCustomValidity('');
         return;
@@ -2499,14 +2425,16 @@ function addCdnEdge(values = {}) {
     enabled.value = edgeId;
     enabled.checked = values.enabled !== false;
     container.appendChild(fragment);
-    syncCdnRequired(document.querySelector('input[name="type"]:checked')?.value === 'cdn');
+    syncRequiredByType(nfCurrentType());
     updateCdnConnectionPreview();
+    refreshRailBadges();
     return true;
 }
 
 function removeCdnEdge(button) {
     button.closest('.cdn-edge-row')?.remove();
     updateCdnConnectionPreview();
+    refreshRailBadges();
 }
 
 async function resolveCdnEdges() {
@@ -2561,10 +2489,62 @@ async function resolveCdnEdges() {
     }
 }
 
+// ==================== Rail, hash and unsaved-changes indicator ====================
+
+(function() {
+    document.querySelectorAll('.nf-tab').forEach(tab => {
+        tab.addEventListener('click', () => nfSetPane(tab.dataset.pane));
+    });
+
+    // A shared link like #xray/xr-front opens straight on that pane.
+    const fromHash = () => {
+        const [type, pane] = decodeURIComponent(location.hash.replace(/^#/, '')).split('/');
+        if (!pane) return null;
+        return type === nfCurrentType() ? pane : null;
+    };
+    window.addEventListener('hashchange', () => {
+        const pane = fromHash();
+        if (pane) nfSetPane(pane);
+    });
+    window.nfInitialPane = fromHash();
+
+    const form = document.getElementById('nodeForm');
+    const dirty = document.getElementById('nodeFormDirty');
+    if (!form || !dirty) return;
+    const onEdit = () => {
+        dirty.style.display = '';
+        refreshRailBadges();
+    };
+    form.addEventListener('input', onEdit);
+    form.addEventListener('change', onEdit);
+    form.addEventListener('submit', () => { dirty.style.display = 'none'; });
+})();
+
+// Native validation cannot report on a control the operator cannot see: the
+// submit is simply aborted. So the pane and every collapsed module around the
+// first invalid control are opened before the browser gets to complain.
+function revealInvalidControl(form) {
+    const invalid = form.querySelector(':invalid');
+    if (!invalid) return true;
+    const pane = invalid.closest('.nf-pane');
+    if (pane) nfSetPane(pane.dataset.pane);
+    for (let el = invalid.closest('details'); el; el = el.parentElement.closest('details')) {
+        el.open = true;
+    }
+    invalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    form.reportValidity();
+    return false;
+}
+
+document.getElementById('nodeForm')?.addEventListener('submit', function(event) {
+    if (!revealInvalidControl(this)) event.preventDefault();
+}, true);
+
 // Init UI on page load
 (function() {
     const proto = document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
     switchProto(proto);
+    if (window.nfInitialPane) nfSetPane(window.nfInitialPane);
     syncCdnDomainDefaults();
     updateCdnInboundOptions();
     updateCdnTlsUi();

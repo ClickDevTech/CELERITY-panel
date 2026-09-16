@@ -1,5 +1,6 @@
 #!/bin/sh
-# Celerity Probe installer (Linux with systemd, macOS with launchd).
+# Celerity Probe installer (Linux with systemd, OpenWRT with procd, macOS with
+# launchd).
 #
 # Usage (the panel generates this line with a single-use token):
 #   curl -fsSL .../celerity-probe-install.sh | sudo PANEL_URL='https://panel' ENROLL_TOKEN='ce_...' sh
@@ -39,20 +40,55 @@ if [ "$(id -u)" != "0" ]; then
     exit 1
 fi
 
+if ! command -v curl >/dev/null 2>&1; then
+    echo "ERROR: curl is required (OpenWRT: opkg update && opkg install curl)" >&2
+    exit 1
+fi
+
 case "$(uname -s)" in
     Linux)  OS="linux" ;;
     Darwin) OS="darwin" ;;
     *) echo "ERROR: unsupported system $(uname -s), use install.ps1 on Windows" >&2; exit 1 ;;
 esac
 
+[ -f /etc/openwrt_release ] && OPENWRT=1 || OPENWRT=0
+
+# OpenWRT reports plain "mips" for both endiannesses. Its own DISTRIB_ARCH
+# names the real one; the ELF header of a native binary is the fallback, since
+# `od` is not in every busybox build.
+mips_variant() {
+    case "$(cat /etc/openwrt_release 2>/dev/null)" in
+        *DISTRIB_ARCH=\'mipsel*) echo "mipsle"; return ;;
+        *DISTRIB_ARCH=\'mips*)   echo "mips"; return ;;
+    esac
+
+    if [ "$(od -An -t u1 -j 5 -N 1 /bin/sh 2>/dev/null | tr -d ' ')" = "1" ]; then
+        echo "mipsle"
+    else
+        echo "mips"
+    fi
+}
+
 case "$(uname -m)" in
     x86_64|amd64)   ARCH="amd64" ;;
     aarch64|arm64)  ARCH="arm64" ;;
+    mipsel|mipsle)  ARCH="mipsle" ;;
+    mips)           ARCH=$(mips_variant) ;;
     *) echo "ERROR: unsupported architecture $(uname -m)" >&2; exit 1 ;;
+esac
+
+# Routers have no FPU, so the core is published as a separate soft-float build.
+case "$ARCH" in
+    mips|mipsle) CORE_ARCH="$ARCH-softfloat" ;;
+    *)           CORE_ARCH="$ARCH" ;;
 esac
 
 if [ "$OS" = "darwin" ]; then
     DATA_DIR="${DATA_DIR:-/usr/local/var/celerity-probe}"
+elif [ "$OPENWRT" = "1" ]; then
+    # /var is a tmpfs symlink on OpenWRT: state kept there, the probe token
+    # included, would not survive the first reboot.
+    DATA_DIR="${DATA_DIR:-/etc/celerity-probe}"
 else
     DATA_DIR="${DATA_DIR:-/var/lib/celerity-probe}"
 fi
@@ -63,12 +99,28 @@ echo "==> Installing celerity-probe ($OS/$ARCH)"
 # would keep reporting with the old credentials while this script rewrites them.
 if [ "$OS" = "darwin" ]; then
     launchctl unload /Library/LaunchDaemons/tech.clickdev.celerity-probe.plist >/dev/null 2>&1 || true
+elif [ -x /etc/init.d/celerity-probe ]; then
+    /etc/init.d/celerity-probe stop >/dev/null 2>&1 || true
 elif command -v systemctl >/dev/null 2>&1; then
     systemctl stop celerity-probe >/dev/null 2>&1 || true
 fi
 
-mkdir -p "$DATA_DIR"
+mkdir -p "$BIN_DIR" "$DATA_DIR"
 chmod 700 "$DATA_DIR"
+
+# The core alone unpacks to ~86 MB, so most routers cannot hold it on internal
+# flash. Say so before downloading instead of filling the overlay and failing
+# halfway through.
+NEEDED_KB=163840
+FREE_KB=$(df -k "$DATA_DIR" 2>/dev/null | tail -n 1 | awk '{print $4}')
+case "$FREE_KB" in
+    ''|*[!0-9]*) FREE_KB="" ;;  # unreadable df output: do not block the install
+esac
+if [ -n "$FREE_KB" ] && [ "$FREE_KB" -lt "$NEEDED_KB" ]; then
+    echo "ERROR: $DATA_DIR needs ~$((NEEDED_KB / 1024)) MB free, found $((FREE_KB / 1024)) MB" >&2
+    echo "       point DATA_DIR at larger storage, e.g. DATA_DIR=/mnt/sda1/celerity-probe" >&2
+    exit 1
+fi
 
 PROBE_URL="$RELEASE_BASE/celerity-probe-$OS-$ARCH"
 echo "==> Downloading $PROBE_URL"
@@ -105,16 +157,21 @@ else
     echo "==> Resolving latest $CORE_REPO release"
     # Versions look like 1.14.0-lx.22, so the pattern cannot assume digits only.
     SB_URL=$(curl -fsSL --max-time 60 "https://api.github.com/repos/$CORE_REPO/releases/latest" \
-        | grep -o "https://[^\"]*/sing-box-[^\"]*-$OS-$ARCH\.tar\.gz" \
+        | grep -o "https://[^\"]*/sing-box-[^\"]*-$OS-$CORE_ARCH\.tar\.gz" \
         | head -n 1)
 
     if [ -z "$SB_URL" ]; then
-        echo "ERROR: could not resolve a core download URL for $OS/$ARCH" >&2
+        echo "ERROR: could not resolve a core download URL for $OS/$CORE_ARCH" >&2
         exit 1
     fi
 
     echo "==> Downloading $SB_URL"
-    TMP_DIR=$(mktemp -d)
+    # Staged next to the target, not in /tmp: that is a RAM-backed tmpfs on
+    # OpenWRT, and the archive plus the unpacked core would not fit there.
+    TMP_DIR=$(mktemp -d "$DATA_DIR/.core.XXXXXX")
+    # Staging is persistent now, so a failed download must not leave tens of
+    # megabytes behind on a router.
+    trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
     SB_FILE=$(basename "$SB_URL")
     curl -fsSL --max-time 300 "$SB_URL" -o "$TMP_DIR/$SB_FILE"
 
@@ -129,7 +186,6 @@ else
                 ACTUAL=$(shasum -a 256 "$TMP_DIR/$SB_FILE" | awk '{print $1}')
             fi
             if [ "$EXPECTED" != "$ACTUAL" ]; then
-                rm -rf "$TMP_DIR"
                 echo "ERROR: core checksum mismatch" >&2
                 exit 1
             fi
@@ -138,7 +194,10 @@ else
     fi
 
     tar -xzf "$TMP_DIR/$SB_FILE" -C "$TMP_DIR"
-    find "$TMP_DIR" -type f -name sing-box -exec cp {} "$CORE_BIN.new" \;
+    rm -f "$TMP_DIR/$SB_FILE"
+    # Moved, not copied: the staging directory is on the target filesystem, so
+    # a rename avoids holding two copies of an 86 MB binary at once.
+    find "$TMP_DIR" -type f -name sing-box -exec mv {} "$CORE_BIN.new" \;
     rm -rf "$TMP_DIR"
 
     if [ ! -s "$CORE_BIN.new" ]; then
@@ -187,6 +246,33 @@ EOF
     launchctl unload "$PLIST" >/dev/null 2>&1 || true
     launchctl load -w "$PLIST"
     echo "==> Done. Follow the logs with: tail -f $DATA_DIR/probe.log"
+    exit 0
+fi
+
+# OpenWRT runs procd, has no systemd, and its busybox account tools do not take
+# the flags used below, so the probe runs as root there like every other daemon.
+if [ "$OPENWRT" = "1" ]; then
+    cat > /etc/init.d/celerity-probe <<EOF
+#!/bin/sh /etc/rc.common
+
+START=95
+STOP=10
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance
+    procd_set_param command $BIN_DIR/celerity-probe -dir $DATA_DIR
+    procd_set_param respawn
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+}
+EOF
+    chmod 755 /etc/init.d/celerity-probe
+    /etc/init.d/celerity-probe enable
+    /etc/init.d/celerity-probe restart
+
+    echo "==> Done. Follow the logs with: logread -f -e celerity-probe"
     exit 0
 fi
 

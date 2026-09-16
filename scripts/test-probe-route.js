@@ -12,7 +12,8 @@
  *   - a claimed batch id that does not match the body is refused,
  *   - a redelivered batch is acknowledged without being processed again,
  *   - a body past the cap is cut off with 413 instead of being buffered,
- *   - a batch the service rejects is answered with its own status and counted.
+ *   - a batch the service rejects is answered with its own status and counted,
+ *   - one noisy probe is throttled without starving its NAT neighbours.
  */
 
 const assert = require('assert');
@@ -64,9 +65,8 @@ async function withRoute(state, run) {
 
     const Probe = {
         async findByToken(token) {
-            return token === state.validToken
-                ? { _id: 'probe-1', name: 'Moscow', egressIp: '' }
-                : null;
+            if (!state.tokens.has(token)) return null;
+            return { _id: state.tokens.get(token), name: 'Moscow', egressIp: '' };
         },
         async updateOne() { return { acknowledged: true }; },
     };
@@ -156,6 +156,8 @@ async function withRoute(state, run) {
     const state = {
         enabled: true,
         validToken: 'cp_valid',
+        // Two enrolled probes, as they would look behind one NAT address.
+        tokens: new Map([['cp_valid', 'probe-1'], ['cp_neighbour', 'probe-2']]),
         processed: new Set(),
         processedBatches: 0,
         stats: [],
@@ -243,6 +245,30 @@ async function withRoute(state, run) {
             body: payload,
         });
         assert.strictEqual(disabledIngest.status, 403, 'ingest is closed while the feature is off');
+    });
+
+    // ── Rate limits ──────────────────────────────────────────────────────
+    //
+    // Probes share NAT addresses, so bucketing the whole surface by IP let one
+    // looping probe take the subscription away from every other probe on that
+    // line. A fresh router means fresh limiter state.
+    state.enabled = true;
+
+    await withRoute(state, async (port) => {
+        let throttledAt = null;
+        for (let i = 0; i < 61 && throttledAt === null; i++) {
+            const res = await request(port, 'GET', '/api/probe/profile', { token: state.validToken });
+            if (res.status === 429) throttledAt = i;
+        }
+        assert.strictEqual(throttledAt, 60, 'a looping probe is throttled on its 61st call in the window');
+
+        const neighbour = await request(port, 'GET', '/api/probe/profile', { token: 'cp_neighbour' });
+        assert.strictEqual(neighbour.status, 200, 'the neighbour on the same address keeps its own budget');
+
+        // Without a token there is nothing to bucket by, so those hits share
+        // the address — they must still be refused for the right reason.
+        const anonymous = await request(port, 'GET', '/api/probe/profile');
+        assert.strictEqual(anonymous.status, 401, 'an unauthenticated hit is answered by the route, not the limiter');
     });
 
     console.log('test-probe-route: OK');

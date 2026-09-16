@@ -71,7 +71,7 @@ $env:PANEL_URL='https://panel.example.com'; $env:ENROLL_TOKEN='<token>'
 irm https://github.com/ClickDevTech/CELERITY-panel/releases/latest/download/celerity-probe-install.ps1 | iex
 ```
 
-The installer downloads the probe and a core, enrolls once, and registers a service (systemd, launchd or a Windows service). The enrollment token is passed through the environment, never on the command line, because the process table is readable by other local users.
+The installer downloads the probe and a core, enrolls once, and registers a service (systemd, procd, launchd or a Windows service). The enrollment token is passed through the environment, never on the command line, because the process table is readable by other local users.
 
 The core is [sing-box-lx](https://github.com/Leadaxe/sing-box-lx) — the same build the Click Connect apps use. It is upstream sing-box plus the transports the panel can publish; upstream refuses an entire configuration that contains an XHTTP node, so a probe on upstream would go blind on every node at once. An install that finds an upstream core in place replaces it, and the probe writes a warning to its log if the core it starts lacks `with_xhttp` while the fleet has XHTTP nodes. Set `CORE_REPO` before running the installer to pull the core from somewhere else.
 
@@ -79,8 +79,20 @@ The core is [sing-box-lx](https://github.com/Leadaxe/sing-box-lx) — the same b
 | Platform | Service                                                             | Data directory                  |
 | -------- | ------------------------------------------------------------------- | ------------------------------- |
 | Linux    | systemd, runs as the `celerity-probe` account                       | `/var/lib/celerity-probe`       |
+| OpenWRT  | procd, runs as root                                                 | `/etc/celerity-probe`           |
 | macOS    | launchd                                                             | `/usr/local/var/celerity-probe` |
 | Windows  | Windows service, directory ACL limited to SYSTEM and Administrators | `%ProgramData%\celerity-probe`  |
+
+On a router the installer needs `curl` (`opkg update && opkg install curl`) and picks the soft-float MIPS build, reading the endianness from `DISTRIB_ARCH` because OpenWRT reports both as `mips`. The data directory sits in `/etc` there: `/var` is a tmpfs symlink, so the probe token would be gone after a reboot. Follow the logs with `logread -f -e celerity-probe`.
+
+**Storage.** The core unpacks to about 86 MB, so roughly 160 MB has to be free where the data directory lives — more than internal flash on a typical 16/32 MB router. Point the probe at external storage and the installer will use it for staging too:
+
+```sh
+curl -fsSL .../celerity-probe-install.sh \
+  | sudo PANEL_URL='https://panel' ENROLL_TOKEN='ce_...' DATA_DIR=/mnt/sda1/celerity-probe sh
+```
+
+The installer checks free space before downloading anything and stops with the required figure rather than filling the overlay halfway through.
 
 
 `PANEL_URL` must use HTTPS. The probe token authenticates every request and the reports describe your whole fleet, so plain HTTP is refused unless the panel is on loopback or you set `PROBE_ALLOW_INSECURE=1` for a lab setup.

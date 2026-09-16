@@ -17,6 +17,8 @@
     --accent: #6366f1;
     --accent-hover: #818cf8;
     --accent-glow: rgba(99, 102, 241, 0.3);
+    /* Channels of --accent, for rgba() at arbitrary alpha */
+    --accent-rgb: 99, 102, 241;
     --accent-gradient-end: #7c3aed;
     --accent-hover-gradient-end: #8b5cf6;
 
@@ -1592,7 +1594,9 @@ html {
     min-width: 0;
 }
 
-.form-group label:not(.checkbox-label) {
+/* The field caption. Component labels (a card, a chip, a segment) opt out:
+   this rule would flatten their own layout. */
+.form-group label:not(.checkbox-label):not(.nf-pick):not(.nf-choice):not(.nf-tag):not(.nf-seg label):not(.proto-option):not(.role-card) {
     display: block;
     margin-bottom: 8px;
     font-size: 14px;
@@ -3507,7 +3511,7 @@ p {
     transform: none; /* Remove transform for better UX */
 }
 
-.form-group label:not(.checkbox-label) {
+.form-group label:not(.checkbox-label):not(.nf-pick):not(.nf-choice):not(.nf-tag):not(.nf-seg label):not(.proto-option):not(.role-card) {
     color: var(--text-primary);
 }
 
@@ -4477,275 +4481,6 @@ body {
     flex: 1 1 auto;
 }
 
-/* ─── Xray TLS Source picker (panel/manual/self-signed) ───────────────────── */
-
-.xray-tls-config {
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-sm);
-    padding: 16px;
-    background: var(--bg-elevated, transparent);
-}
-
-.xray-tls-config > .block-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: 600;
-    margin: 0 0 6px;
-    color: var(--text);
-    font-size: 14px;
-}
-
-.xray-tls-config > .hint {
-    display: block;
-    color: var(--text-muted);
-    font-size: 12px;
-    margin: 0 0 14px;
-    line-height: 1.5;
-}
-
-/* Override the global .radio-group (horizontal flex). Cards stacked vertically
-   on narrow screens, three columns on wide layouts. */
-.xray-tls-config .radio-group {
-    display: grid !important;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 10px;
-    margin: 0 0 14px;
-    flex-wrap: nowrap;
-}
-
-.xray-tls-config .radio-row {
-    position: relative;
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 12px 14px;
-    padding-right: 16px;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-xs);
-    cursor: pointer;
-    transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
-    background: transparent;
-    margin: 0;
-}
-
-.xray-tls-config .radio-row .badge {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    padding: 2px 8px;
-    font-size: 9px;
-    line-height: 1.4;
-    border-radius: 999px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.xray-tls-config .radio-row:hover {
-    background: var(--bg-hover, rgba(127, 127, 127, 0.05));
-    border-color: var(--border);
-}
-
-.xray-tls-config .radio-row input[type="radio"] {
-    margin: 3px 0 0;
-    flex-shrink: 0;
-    accent-color: var(--accent);
-}
-
-.xray-tls-config .radio-row:has(input[type="radio"]:checked) {
-    border-color: var(--accent);
-    background: rgba(var(--accent-rgb, 79, 156, 249), 0.08);
-    box-shadow: 0 0 0 1px var(--accent) inset;
-}
-
-.xray-tls-config .radio-label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 1 1 auto;
-    min-width: 0;
-    line-height: 1.4;
-}
-
-.xray-tls-config .radio-label strong {
-    display: block;
-    color: var(--text);
-    font-size: 13px;
-    font-weight: 600;
-    padding-right: 90px;
-}
-
-.xray-tls-config .radio-hint {
-    display: block;
-    color: var(--text-muted);
-    font-size: 11.5px;
-    line-height: 1.5;
-}
-
-/* Xray fingerprint: single/random mode selector + pool checkboxes */
-.fp-mode-group .radio-group {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 10px;
-    margin: 0 0 6px;
-    flex-wrap: nowrap;
-}
-
-.fp-mode-group .radio-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 12px 14px;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-xs);
-    cursor: pointer;
-    transition: background 120ms ease, border-color 120ms ease;
-    margin: 0;
-}
-
-.fp-mode-group .radio-row:hover {
-    border-color: var(--text-muted);
-}
-
-.fp-mode-group .radio-label {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.fp-mode-group .radio-hint {
-    display: block;
-    color: var(--text-muted);
-    font-size: 11.5px;
-    line-height: 1.5;
-}
-
-.fp-checkbox-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.fp-checkbox {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 11px;
-    border: 1px solid var(--border-light);
-    border-radius: 999px;
-    cursor: pointer;
-    font-size: 12.5px;
-    line-height: 1;
-    user-select: none;
-    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
-}
-
-.fp-checkbox:hover {
-    border-color: var(--accent);
-}
-
-.fp-checkbox:has(input:checked) {
-    border-color: var(--accent);
-    background: rgba(99, 102, 241, 0.14);
-    color: var(--accent-hover);
-}
-
-.fp-checkbox input {
-    margin: 0;
-    cursor: pointer;
-    flex-shrink: 0;
-    accent-color: var(--accent);
-}
-
-.fp-checkbox input:disabled {
-    cursor: default;
-}
-
-.xray-tls-config .info-card {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    padding: 12px 14px;
-    margin: 0 0 10px;
-    background: rgba(127, 127, 127, 0.05);
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-xs);
-    font-size: 13px;
-    color: var(--text-muted);
-    line-height: 1.5;
-}
-
-.xray-tls-config .info-card > i {
-    color: var(--accent);
-    margin-top: 2px;
-    flex-shrink: 0;
-    font-size: 16px;
-}
-
-.xray-tls-config .info-card > div {
-    flex: 1;
-    min-width: 0;
-}
-
-.xray-tls-config .info-card > div > div {
-    color: var(--text);
-    margin-bottom: 4px;
-}
-
-.xray-tls-config .info-card > div > small {
-    display: block;
-    color: var(--text-muted);
-    font-size: 12px;
-}
-
-.xray-tls-config .info-card-warning {
-    background: rgba(217, 154, 39, 0.07);
-    border-color: rgba(217, 154, 39, 0.4);
-}
-
-.xray-tls-config .info-card-warning > i {
-    color: #d99a27;
-}
-
-.xray-tls-config .info-card-warning > div > strong {
-    display: block;
-    color: #d99a27;
-    margin-bottom: 4px;
-}
-
-.xray-tls-config .info-card code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    background: rgba(127, 127, 127, 0.12);
-    padding: 1px 6px;
-    border-radius: 3px;
-    font-size: 12px;
-    color: var(--text);
-}
-
-.xray-tls-config .tls-source-manual .form-group {
-    margin: 0 0 12px;
-}
-
-.xray-tls-config .tls-source-manual .form-group:last-child {
-    margin-bottom: 0;
-}
-
-.xray-tls-config .tls-source-manual label {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--text);
-}
-
-.xray-tls-config .tls-source-manual small {
-    display: block;
-    color: var(--text-muted);
-    font-size: 11.5px;
-    margin-top: 4px;
-    line-height: 1.5;
-}
-
 .pem-textarea {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 12px;
@@ -4802,6 +4537,10 @@ body {
 .probe-dot-online { background: var(--success); box-shadow: 0 0 8px var(--success-bg); }
 .probe-dot-offline { background: var(--danger); }
 .probe-dot-pending { background: var(--text-muted); }
+.probe-dot-blocked { background: var(--warning); }
+
+.probe-meta-warn { color: var(--warning); }
+.probe-meta-warn i { margin-right: 4px; }
 
 .probe-facts { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
 .probe-facts i { margin-right: 4px; }
@@ -5428,4 +5167,788 @@ body {
     .add-proxy-row { flex-direction: column; }
     .ob-form-row { flex-direction: column; align-items: stretch; }
     .ob-form-row .form-group.ob-fixed { flex: 1 1 auto; }
+}
+/* ══════════════════════════════════════════════════════════════════════════
+   Node form (nf-*) — component layer shared by every node type.
+   Built on the tokens above; replaces the per-feature blocks that used to be
+   copy-pasted into the form partials (.efp-*, .extra-inbounds-*,
+   .node-advanced-*, two independent .radio-row implementations).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Tabbed shell ───────────────────────────────────────────────────────── */
+
+.nf-tabbed {
+    display: grid;
+    grid-template-columns: 216px minmax(0, 1fr);
+}
+
+.nf-rail {
+    border-right: 1px solid var(--border);
+    padding: 18px 14px 18px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.nf-tab {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font: 500 13.5px/1.2 'Inter', sans-serif;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+}
+
+.nf-tab:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.nf-tab.is-active {
+    background: var(--accent-glow);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.nf-tab__ico {
+    font-size: 17px;
+    flex-shrink: 0;
+    width: 19px;
+    text-align: center;
+}
+
+.nf-tab__label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nf-tab__badge {
+    flex-shrink: 0;
+    font: 600 10.5px/1 'JetBrains Mono', monospace;
+    padding: 4px 6px;
+    border-radius: var(--radius-xs);
+    background: var(--bg-elevated);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+
+.nf-tab__badge:empty {
+    display: none;
+}
+
+.nf-tab__badge.is-on {
+    background: var(--accent-glow);
+    border-color: rgba(var(--accent-rgb), 0.4);
+    color: var(--accent-hover);
+}
+
+/* A badge with no number still carries one bit: the section is switched on. */
+.nf-tab__badge.is-on:empty {
+    display: block;
+    width: 7px;
+    height: 7px;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--accent);
+    border-color: transparent;
+}
+
+.nf-tab__badge.is-error {
+    background: var(--danger-bg);
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #fca5a5;
+}
+
+.nf-rail__sep {
+    height: 1px;
+    background: var(--border);
+    margin: 9px 12px;
+}
+
+.nf-panes {
+    padding: 18px 0 0 24px;
+    min-width: 0;
+}
+
+.nf-pane {
+    display: none;
+}
+
+.nf-pane.is-active {
+    display: block;
+    animation: nfPaneIn 0.18s ease-out both;
+}
+
+/* Node type filter. `data-types` lists the types an element belongs to and the
+   type itself lives on the container, so the right panes, tabs and fields are
+   already correct in the server response — the switcher only rewrites one
+   attribute. Kept out of inline styles so per-field `display` logic is free. */
+.nf-tabbed[data-node-type="hysteria"] [data-types]:not([data-types~="hysteria"]),
+.nf-tabbed[data-node-type="xray"] [data-types]:not([data-types~="xray"]),
+.nf-tabbed[data-node-type="virtual"] [data-types]:not([data-types~="virtual"]),
+.nf-tabbed[data-node-type="cdn"] [data-types]:not([data-types~="cdn"]) {
+    display: none;
+}
+
+/* Cascade role filter: a bridge has no client-facing panes. */
+.nf-off {
+    display: none !important;
+}
+
+@keyframes nfPaneIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to   { opacity: 1; transform: none; }
+}
+
+.nf-pane__head {
+    margin-bottom: 18px;
+}
+
+.nf-pane__head h3 {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 5px;
+}
+
+.nf-pane__head p {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.5;
+    max-width: 68ch;
+}
+
+/* ─── Section inside a pane ──────────────────────────────────────────────── */
+
+.nf-section {
+    padding: 22px 0 0;
+    border-top: 1px solid var(--border);
+    margin-top: 22px;
+}
+
+.nf-section:first-child {
+    padding-top: 0;
+    border-top: 0;
+    margin-top: 0;
+}
+
+.nf-section > h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 4px;
+}
+
+.nf-section__hint {
+    display: block;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+    margin-bottom: 16px;
+}
+
+/* ─── Module: one collapsible block with its state in the header ─────────── */
+
+.nf-module {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-tertiary);
+    overflow: hidden;
+    transition: border-color var(--transition);
+}
+
+.nf-module + .nf-module {
+    margin-top: 10px;
+}
+
+.nf-module:hover {
+    border-color: var(--border-light);
+}
+
+.nf-module.is-on {
+    border-color: rgba(var(--accent-rgb), 0.42);
+}
+
+.nf-module.is-error {
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Prerequisite not met. Dimmed but still visible: hiding the block leaves no
+   trace of the setting and no explanation of why it is unavailable. */
+.nf-module.is-na {
+    background: transparent;
+    border-style: dashed;
+}
+
+.nf-module.is-na .nf-module__title,
+.nf-module.is-na .nf-module__ico {
+    color: var(--text-muted);
+}
+
+.nf-module.is-na .nf-module__ico {
+    background: var(--bg-primary);
+}
+
+.nf-module__head {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 13px 15px;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+.nf-module__head::-webkit-details-marker {
+    display: none;
+}
+
+.nf-module__ico {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    font-size: 17px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    transition: background var(--transition), color var(--transition);
+}
+
+.nf-module.is-on .nf-module__ico {
+    background: var(--accent-glow);
+    color: var(--accent-hover);
+}
+
+.nf-module.is-error .nf-module__ico {
+    background: var(--danger-bg);
+    color: var(--danger);
+}
+
+.nf-module__text {
+    flex: 1;
+    min-width: 0;
+}
+
+.nf-module__title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.nf-module__sub {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 3px;
+    line-height: 1.45;
+}
+
+.nf-module__chev {
+    flex-shrink: 0;
+    font-size: 16px;
+    color: var(--text-muted);
+    transition: transform 0.2s ease;
+}
+
+.nf-module[open] > .nf-module__head .nf-module__chev {
+    transform: rotate(180deg);
+}
+
+.nf-module__body {
+    padding: 17px 15px 18px;
+    border-top: 1px solid var(--border);
+}
+
+.nf-module__body > .form-group:last-child,
+.nf-module__body > .form-row:last-child {
+    margin-bottom: 0;
+}
+
+/* Destructive action in a header: muted until hovered. */
+.nf-module__del {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-xs);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 15px;
+    cursor: pointer;
+    transition: color var(--transition), background var(--transition), border-color var(--transition);
+}
+
+.nf-module__del:hover {
+    color: var(--danger);
+    background: var(--danger-bg);
+    border-color: rgba(239, 68, 68, 0.35);
+}
+
+/* Collapsed state: short facts instead of "open it and look". */
+.nf-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 7px;
+}
+
+.nf-chip {
+    font: 500 11px/1 'JetBrains Mono', monospace;
+    color: var(--text-secondary);
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 5px 7px;
+    white-space: nowrap;
+}
+
+.nf-chip i {
+    font-size: 12px;
+    margin-right: 3px;
+    vertical-align: -1px;
+    color: var(--text-muted);
+}
+
+.nf-module[open] > .nf-module__head .nf-chips {
+    display: none;
+}
+
+/* ─── Field group inside a module ────────────────────────────────────────── */
+
+.nf-group {
+    padding-top: 15px;
+    margin-top: 15px;
+    border-top: 1px dashed var(--border);
+}
+
+.nf-group:first-child {
+    padding-top: 0;
+    margin-top: 0;
+    border-top: 0;
+}
+
+.nf-group__title {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 12px;
+}
+
+/* Label for a composite control that must not sit in .form-group: the
+   `.form-group label:not(.checkbox-label) { display:block }` rule outranks
+   .proto-option and breaks the card layout. */
+.nf-standalone-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.nf-standalone-field {
+    margin-bottom: 20px;
+}
+
+/* ─── Choice card (radio) ────────────────────────────────────────────────── */
+
+.nf-choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+    gap: 10px;
+}
+
+.nf-choice {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    cursor: pointer;
+    margin: 0;
+    transition: background var(--transition), border-color var(--transition);
+}
+
+.nf-choice:hover {
+    background: var(--bg-hover);
+    border-color: var(--border);
+}
+
+.nf-choice input {
+    flex-shrink: 0;
+    margin: 3px 0 0;
+    accent-color: var(--accent);
+}
+
+.nf-choice:has(input:checked) {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+}
+
+.nf-choice__text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.4;
+}
+
+.nf-choice__name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.nf-choice__hint {
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.nf-choice > .badge {
+    position: absolute;
+    top: 9px;
+    right: 9px;
+    padding: 2px 8px;
+    font-size: 9px;
+    line-height: 1.4;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.nf-choice:has(> .badge) .nf-choice__name {
+    padding-right: 86px;
+}
+
+/* ─── Multi-select cards (front inbounds) ────────────────────────────────── */
+
+.nf-picks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+    gap: 8px;
+}
+
+.nf-pick {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 13px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    cursor: pointer;
+    margin: 0;
+    transition: border-color var(--transition), background var(--transition);
+}
+
+.nf-pick:hover {
+    border-color: var(--border-light);
+}
+
+.nf-pick input {
+    flex-shrink: 0;
+    margin: 2px 0 0;
+    accent-color: var(--accent);
+}
+
+.nf-pick:has(input:checked) {
+    border-color: rgba(var(--accent-rgb), 0.55);
+    background: rgba(var(--accent-rgb), 0.1);
+}
+
+.nf-pick__text {
+    min-width: 0;
+}
+
+.nf-pick__name {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.nf-pick__meta {
+    display: block;
+    font: 500 11px/1.4 'JetBrains Mono', monospace;
+    color: var(--text-muted);
+    margin-top: 3px;
+}
+
+.nf-pick.is-locked {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ─── Chips (multi-select tags) ──────────────────────────────────────────── */
+
+.nf-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.nf-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    margin: 0;
+    border: 1px solid var(--border-light);
+    border-radius: 999px;
+    font-size: 12.5px;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.nf-tag:hover {
+    border-color: var(--accent);
+}
+
+.nf-tag input {
+    margin: 0;
+    flex-shrink: 0;
+    accent-color: var(--accent);
+}
+
+.nf-tag:has(input:checked) {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.14);
+    color: var(--accent-hover);
+}
+
+.nf-tag:has(input:disabled) {
+    cursor: default;
+    opacity: 0.6;
+}
+
+/* ─── Segmented control (two or three exclusive options) ─────────────────── */
+
+.nf-seg {
+    display: inline-flex;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+}
+
+.nf-seg label {
+    padding: 7px 14px;
+    margin: 0;
+    border-radius: var(--radius-xs);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+}
+
+.nf-seg input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.nf-seg label:has(input:checked) {
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+}
+
+/* ─── Info block ─────────────────────────────────────────────────────────── */
+
+.nf-info {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    background: rgba(127, 127, 127, 0.05);
+    border: 1px solid var(--border);
+}
+
+.nf-info + .nf-info,
+.nf-info + .form-group,
+.nf-info + .form-row {
+    margin-top: 12px;
+}
+
+.nf-info > i {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--accent-hover);
+}
+
+.nf-info strong {
+    display: block;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.nf-info small {
+    display: block;
+    margin-top: 3px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.nf-info code {
+    font: 500 12px/1 'JetBrains Mono', monospace;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 3px 5px;
+    color: var(--text-primary);
+}
+
+.nf-info.is-warning {
+    background: var(--warning-bg);
+    border-color: rgba(234, 179, 8, 0.35);
+}
+
+.nf-info.is-warning > i {
+    color: var(--warning);
+}
+
+/* ─── Small parts ────────────────────────────────────────────────────────── */
+
+.nf-req {
+    color: var(--danger);
+    margin-left: 3px;
+    font-weight: 700;
+}
+
+.nf-opt {
+    font: 500 10.5px/1 'Inter', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xs);
+    padding: 3px 5px;
+    margin-left: 7px;
+    vertical-align: 1px;
+}
+
+.nf-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+}
+
+.nf-empty {
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 10px 0;
+}
+
+.nf-log {
+    margin-top: 12px;
+    max-height: 240px;
+    overflow: auto;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.45);
+    color: #d4d4d8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font: 12px/1.55 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+}
+
+/* ─── Sticky save bar ────────────────────────────────────────────────────── */
+
+/* Pulled out to the edges of .card-body (24px padding) so the bar spans the
+   whole card and sticks to its bottom. */
+.nf-savebar {
+    position: sticky;
+    bottom: -24px;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin: 26px -24px -24px;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border);
+    background: rgba(17, 17, 19, 0.9); /* --bg-secondary at 90% */
+    backdrop-filter: blur(14px) saturate(150%);
+    -webkit-backdrop-filter: blur(14px) saturate(150%);
+}
+
+.nf-savebar__state {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-right: auto;
+}
+
+.nf-savebar .checkbox-label {
+    margin: 0;
+}
+
+.nf-dirty-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--warning);
+    box-shadow: 0 0 0 3px var(--warning-bg);
+    flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+    .nf-tabbed {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .nf-rail {
+        flex-direction: row;
+        overflow-x: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+        padding: 0 0 14px;
+        margin-bottom: 4px;
+    }
+    .nf-tab {
+        width: auto;
+        white-space: nowrap;
+    }
+    .nf-rail__sep {
+        display: none;
+    }
+    .nf-panes {
+        padding: 14px 0 0;
+    }
 }

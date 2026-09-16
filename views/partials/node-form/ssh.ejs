@@ -1,56 +1,56 @@
-            <%# ========== 8. SSH Access (hidden for virtual nodes — no remote host) ========== %>
-            <div class="form-section non-virtual-only" id="sshSection" style="<%= (node?.type === 'virtual' || node?.type === 'cdn') ? 'display:none' : '' %>">
-                <h3><%= t('nodes.sshSettings') %></h3>
-                <small class="section-hint"><%= t('nodes.sshSettingsHint') %></small>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="sshPort"><%= t('nodes.sshPort') %></label>
-                        <input type="number" id="sshPort" name="ssh.port" value="<%= node?.ssh?.port || 22 %>">
-                    </div>
-                    <div class="form-group">
-                        <label for="sshUsername"><%= t('nodes.sshUsername') %></label>
-                        <input type="text" id="sshUsername" name="ssh.username" value="<%= node?.ssh?.username || 'root' %>">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label for="sshPassword"><%= t('nodes.sshPassword') %> <%= node?.ssh?.password ? t('nodes.sshPasswordSet') : '' %></label>
-                    <input type="password" id="sshPassword" name="ssh.password"
-                           placeholder="<%= node?.ssh?.password ? t('nodes.sshPasswordKeep') : t('nodes.sshPasswordPlaceholder') %>">
-                    <small class="hint"><%= t('nodes.sshPasswordEncrypted') %></small>
-                </div>
-                <div class="form-group">
-                    <label for="sshPrivateKey">
-                        <%= t('nodes.sshPrivateKey') %>
-                        <% if (node?.ssh?.privateKey) { %>
-                            <span class="badge badge-success" id="sshPrivateKeyBadge"><%= t('nodes.sshPrivateKeySet') %></span>
-                        <% } else { %>
-                            <span class="badge badge-success" id="sshPrivateKeyBadge" style="display:none"><%= t('nodes.sshPrivateKeySet') %></span>
-                        <% } %>
-                    </label>
-                    <textarea id="sshPrivateKey" name="ssh.privateKey" rows="5"
-                              placeholder="<%= t('nodes.sshPrivateKeyHint') %>"
-                              style="font-family: monospace; font-size: 12px; resize: vertical;"></textarea>
-                    <input type="hidden" name="ssh.clearPrivateKey" id="clearPrivateKeyInput" value="0">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
-                        <label class="btn btn-sm btn-secondary" for="sshPrivateKeyFile" style="cursor:pointer; margin:0;">
-                            <%= t('nodes.sshPrivateKeyUpload') %>
-                            <input type="file" id="sshPrivateKeyFile" accept=".pem,.key,*" style="display:none">
-                        </label>
-                        <% if (node?.ssh?.privateKey) { %>
-                        <button type="button" id="clearPrivateKeyBtn" class="btn btn-sm btn-danger">
-                            <%= t('nodes.sshPrivateKeyClear') %>
-                        </button>
-                        <% } %>
-                        <small class="hint" style="margin:0"><%= t('nodes.sshPrivateKeyEncrypted') %></small>
-                    </div>
-                </div>
-                <% if (node?._id) { %>
-                <div class="form-group" id="generateSshKeyGroup">
-                    <small class="hint" style="display: block; margin-bottom: 8px;"><%= t('nodes.generateSshKeyHint') %></small>
-                    <button type="button" id="generateSshKeyBtn" class="btn btn-secondary">
-                        <%= t('nodes.generateSshKey') %>
-                    </button>
-                    <span id="generateSshKeyStatus" style="margin-left: 10px; font-size: 13px;"></span>
-                </div>
-                <% } %>
-            </div>
+<%# Group inside the access pane: how the panel logs into the server. %>
+<div class="nf-group" id="sshSection">
+    <div class="nf-group__title"><%= t('nodes.sshSettings') %></div>
+    <small class="nf-section__hint"><%= t('nodes.sshSettingsHint') %></small>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="sshPort"><%= t('nodes.sshPort') %></label>
+            <input type="number" id="sshPort" name="ssh.port" value="<%= node?.ssh?.port || 22 %>">
+        </div>
+        <div class="form-group">
+            <label for="sshUsername"><%= t('nodes.sshUsername') %></label>
+            <input type="text" id="sshUsername" name="ssh.username" value="<%= node?.ssh?.username || 'root' %>">
+        </div>
+    </div>
+    <div class="form-group">
+        <label for="sshPassword"><%= t('nodes.sshPassword') %> <%= node?.ssh?.password ? t('nodes.sshPasswordSet') : '' %></label>
+        <input type="password" id="sshPassword" name="ssh.password"
+               placeholder="<%= node?.ssh?.password ? t('nodes.sshPasswordKeep') : t('nodes.sshPasswordPlaceholder') %>">
+        <small class="hint"><%= t('nodes.sshPasswordEncrypted') %></small>
+    </div>
+    <div class="form-group">
+        <label for="sshPrivateKey">
+            <%= t('nodes.sshPrivateKey') %>
+            <% if (node?.ssh?.privateKey) { %>
+                <span class="badge badge-success" id="sshPrivateKeyBadge"><%= t('nodes.sshPrivateKeySet') %></span>
+            <% } else { %>
+                <span class="badge badge-success" id="sshPrivateKeyBadge" style="display:none"><%= t('nodes.sshPrivateKeySet') %></span>
+            <% } %>
+        </label>
+        <textarea id="sshPrivateKey" name="ssh.privateKey" rows="5"
+                  placeholder="<%= t('nodes.sshPrivateKeyHint') %>"
+                  style="font-family: monospace; font-size: 12px; resize: vertical;"></textarea>
+        <input type="hidden" name="ssh.clearPrivateKey" id="clearPrivateKeyInput" value="0">
+        <div class="nf-actions" style="margin-top:6px;">
+            <label class="btn btn-sm btn-secondary" for="sshPrivateKeyFile" style="cursor:pointer; margin:0;">
+                <%= t('nodes.sshPrivateKeyUpload') %>
+                <input type="file" id="sshPrivateKeyFile" accept=".pem,.key,*" style="display:none">
+            </label>
+            <% if (node?.ssh?.privateKey) { %>
+            <button type="button" id="clearPrivateKeyBtn" class="btn btn-sm btn-danger">
+                <%= t('nodes.sshPrivateKeyClear') %>
+            </button>
+            <% } %>
+            <small class="hint" style="margin:0"><%= t('nodes.sshPrivateKeyEncrypted') %></small>
+        </div>
+    </div>
+    <% if (node?._id) { %>
+    <div class="form-group" id="generateSshKeyGroup">
+        <small class="hint" style="display: block; margin-bottom: 8px;"><%= t('nodes.generateSshKeyHint') %></small>
+        <button type="button" id="generateSshKeyBtn" class="btn btn-secondary">
+            <%= t('nodes.generateSshKey') %>
+        </button>
+        <span id="generateSshKeyStatus" style="margin-left: 10px; font-size: 13px;"></span>
+    </div>
+    <% } %>
+</div>

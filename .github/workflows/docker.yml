@@ -49,6 +49,11 @@ jobs:
             CGO_ENABLED=0 GOOS=windows GOARCH="$arch" \
               go build -ldflags="-s -w" -o "celerity-probe-windows-$arch.exe" .
           done
+          # Routers (OpenWRT) have no FPU, so MIPS has to be soft-float.
+          for arch in mips mipsle; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" GOMIPS=softfloat \
+              go build -ldflags="-s -w" -o "celerity-probe-linux-$arch" .
+          done
           cp install.sh celerity-probe-install.sh
           cp install.ps1 celerity-probe-install.ps1
 
@@ -67,6 +72,8 @@ jobs:
           path: |
             probe/celerity-probe-linux-amd64
             probe/celerity-probe-linux-arm64
+            probe/celerity-probe-linux-mips
+            probe/celerity-probe-linux-mipsle
             probe/celerity-probe-darwin-amd64
             probe/celerity-probe-darwin-arm64
             probe/celerity-probe-windows-amd64.exe
@@ -99,6 +106,8 @@ jobs:
             |------|----------|
             | `celerity-probe-linux-amd64` | Linux x86_64 |
             | `celerity-probe-linux-arm64` | Linux ARM64 |
+            | `celerity-probe-linux-mipsle` | OpenWRT MIPS little-endian (ramips, mt7621) |
+            | `celerity-probe-linux-mips` | OpenWRT MIPS big-endian (ath79) |
             | `celerity-probe-darwin-amd64` | macOS Intel |
             | `celerity-probe-darwin-arm64` | macOS Apple Silicon |
             | `celerity-probe-windows-amd64.exe` | Windows x86_64 |
@@ -110,6 +119,8 @@ jobs:
             cc-agent/cc-agent-linux-arm64
             probe/celerity-probe-linux-amd64
             probe/celerity-probe-linux-arm64
+            probe/celerity-probe-linux-mips
+            probe/celerity-probe-linux-mipsle
             probe/celerity-probe-darwin-amd64
             probe/celerity-probe-darwin-arm64
             probe/celerity-probe-windows-amd64.exe

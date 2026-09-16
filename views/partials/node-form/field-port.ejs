@@ -1,0 +1,13 @@
+<%# The single `port` input. Hysteria shows it among the network ports, Xray
+    next to the main inbound, so the block is moved between two slots by
+    moveSharedFields() instead of being rendered twice. %>
+<div class="form-group" id="portGroup">
+    <label for="port"><%= t('nodes.port') %></label>
+    <input type="number" id="port" name="port" value="<%= node?.port || 443 %>"
+           placeholder="443" oninput="checkXrayPortConflict()">
+    <div id="xrayPortConflictWarn" class="alert alert-error" style="display:none;margin-top:8px;">
+        <i class="ti ti-alert-triangle"></i>
+        <strong><%= t('nodes.portConflictTitle') %>:</strong>
+        <%= t('nodes.portConflictDesc') %>
+    </div>
+</div>

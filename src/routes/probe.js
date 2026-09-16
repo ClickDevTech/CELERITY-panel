@@ -16,6 +16,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
 const logger = require('../utils/logger');
@@ -83,6 +84,38 @@ function getBearer(req) {
     return m ? m[1].trim() : '';
 }
 
+// A fleet of probes usually shares one NAT address, so a single per-IP bucket
+// over the whole surface starved every probe at once. Authenticated calls are
+// bucketed per token; the IP limit stays only as a net against a runaway host.
+const limiter = (max, keyGenerator) => rateLimit({
+    windowMs: 60 * 1000,
+    max,
+    keyGenerator,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+        logger.warn(`[Probes] Rate limit: ${req.ip}`);
+        res.status(429).json({ error: 'too many probe requests' });
+    },
+});
+
+const byIp = (req) => req.ip;
+
+// Hashed: a live credential must not reach the limiter store.
+const byToken = (req) => {
+    const token = getBearer(req);
+    if (!token) return `ip:${req.ip}`;
+    return `tk:${crypto.createHash('sha256').update(token).digest('hex')}`;
+};
+
+// A healthy probe stays well under one request per minute, so these only bite
+// on a loop. Enrollment is once per probe, so its cap also slows guessing.
+const guardLimiter = limiter(600, byIp);
+const enrollLimiter = limiter(10, byIp);
+const tokenLimiter = limiter(60, byToken);
+
+router.use(guardLimiter);
+
 /**
  * Resolve the calling probe, or answer 401/403 directly.
  * Returns null when the response has already been sent.
@@ -109,7 +142,7 @@ async function authenticate(req, res) {
  * POST /enroll — one-time exchange of the enrollment token.
  * Uses a local JSON parser because the router is mounted before express.json().
  */
-router.post('/enroll', express.json({ limit: '8kb' }), async (req, res) => {
+router.post('/enroll', enrollLimiter, express.json({ limit: '8kb' }), async (req, res) => {
     try {
         if (!(await probesEnabled())) {
             return res.status(403).json({ error: 'probes disabled' });
@@ -146,7 +179,7 @@ router.post('/enroll', express.json({ limit: '8kb' }), async (req, res) => {
 /**
  * GET /profile — what to check, how often, and where to send results.
  */
-router.get('/profile', async (req, res) => {
+router.get('/profile', tokenLimiter, async (req, res) => {
     try {
         const probe = await authenticate(req, res);
         if (!probe) return undefined;
@@ -174,7 +207,7 @@ router.get('/profile', async (req, res) => {
 /**
  * POST /ingest — gzipped NDJSON rollup windows.
  */
-router.post('/ingest', async (req, res) => {
+router.post('/ingest', tokenLimiter, async (req, res) => {
     try {
         const probe = await authenticate(req, res);
         if (!probe) return undefined;

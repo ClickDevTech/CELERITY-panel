@@ -1,478 +1,539 @@
-            <%# ========== 12. Xray VLESS Settings ========== %>
-            <div class="form-section" id="xraySection" style="<%= (node?.type || 'hysteria') !== 'xray' ? 'display:none' : '' %>">
-                <h3><img src="/img/xray.svg" alt="Xray" style="width:18px;height:18px;vertical-align:middle;margin-right:8px;"><%= t('nodes.xraySettings') %></h3>
+<%# Panes: xr-inbounds (main + extra inbounds), xr-front (included) and
+    xr-advanced (TLS source, core parameters, outbounds). %>
+<%
+    const xrIsXray = node?.type === 'xray';
+    const xrTlsSource = node?.xray?.tlsSource || 'panel';
+    const xrPanelDomain = (typeof panelDomain === 'string' ? panelDomain : '') || '';
+    const xrHasManualKey = !!(node?.xray && (node.xray.manualKeySet === true || node.xray.manualKey));
+    const xrAnyTls = node?.xray?.security === 'tls' || (node?.xray?.extraInbounds || []).some(i => i && i.security === 'tls');
+    const xrExtras = node?.xray?.extraInbounds || [];
+    const xrFallbackVisible = (node?.xray?.transport === 'tcp' || !node?.xray?.transport) && node?.xray?.security === 'tls';
+%>
+<div class="nf-pane" data-pane="xr-inbounds" data-types="xray">
+    <div class="nf-pane__head">
+        <h3><%= t('nodes.paneInbounds') %></h3>
+        <p><%= t('nodes.paneInboundsHint') %></p>
+    </div>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="xrayTransport"><%= t('nodes.xrayTransport') %></label>
-                        <select id="xrayTransport" name="xray.transport" onchange="updateXrayTransportUI()">
-                            <option value="tcp" <%= node?.xray?.transport === 'tcp' || !node?.xray?.transport ? 'selected' : '' %>>TCP</option>
-                            <option value="ws" <%= node?.xray?.transport === 'ws' ? 'selected' : '' %>>WebSocket</option>
-                            <option value="grpc" <%= node?.xray?.transport === 'grpc' ? 'selected' : '' %>>gRPC</option>
-                            <option value="xhttp" <%= node?.xray?.transport === 'xhttp' ? 'selected' : '' %>>XHTTP (SplitHTTP)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="xraySecurity"><%= t('nodes.xraySecurity') %></label>
-                        <select id="xraySecurity" name="xray.security" onchange="updateXraySecurityUI()">
-                            <option value="reality" <%= node?.xray?.security === 'reality' || !node?.xray?.security ? 'selected' : '' %>><%= t('nodes.xraySecurityReality') %></option>
-                            <option value="tls" <%= node?.xray?.security === 'tls' ? 'selected' : '' %>><%= t('nodes.xraySecurityTls') %></option>
-                            <option value="none" <%= node?.xray?.security === 'none' ? 'selected' : '' %>><%= t('nodes.xraySecurityNone') %></option>
-                        </select>
-                    </div>
+    <div class="nf-group">
+        <div class="nf-group__title"><%= t('nodes.groupMainInbound') %></div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="xrayTransport"><%= t('nodes.xrayTransport') %></label>
+                <select id="xrayTransport" name="xray.transport" onchange="updateXrayTransportUI()">
+                    <option value="tcp" <%= node?.xray?.transport === 'tcp' || !node?.xray?.transport ? 'selected' : '' %>>TCP</option>
+                    <option value="ws" <%= node?.xray?.transport === 'ws' ? 'selected' : '' %>>WebSocket</option>
+                    <option value="grpc" <%= node?.xray?.transport === 'grpc' ? 'selected' : '' %>>gRPC</option>
+                    <option value="xhttp" <%= node?.xray?.transport === 'xhttp' ? 'selected' : '' %>>XHTTP (SplitHTTP)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="xraySecurity"><%= t('nodes.xraySecurity') %></label>
+                <select id="xraySecurity" name="xray.security" onchange="updateXraySecurityUI()">
+                    <option value="reality" <%= node?.xray?.security === 'reality' || !node?.xray?.security ? 'selected' : '' %>><%= t('nodes.xraySecurityReality') %></option>
+                    <option value="tls" <%= node?.xray?.security === 'tls' ? 'selected' : '' %>><%= t('nodes.xraySecurityTls') %></option>
+                    <option value="none" <%= node?.xray?.security === 'none' ? 'selected' : '' %>><%= t('nodes.xraySecurityNone') %></option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div id="portSlotXray">
+                <% if (xrIsXray) { %><%- include('field-port') %><% } %>
+            </div>
+            <div class="form-group" id="alpnGroup" style="<%= node?.xray?.security === 'tls' ? '' : 'display:none' %>">
+                <label for="xrayAlpn"><%= t('nodes.xrayAlpn') %></label>
+                <input type="text" id="xrayAlpn" name="xray.alpn"
+                       value="<%= (node?.xray?.alpn || []).join(', ') %>"
+                       placeholder="h2, http/1.1">
+                <small><%= t('nodes.xrayAlpnHint') %></small>
+            </div>
+        </div>
+
+        <%# Reality-specific fields %>
+        <div id="realityFields" data-reality-only style="<%= node?.xray?.security === 'tls' || node?.xray?.security === 'none' ? 'display:none' : '' %>">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="xrayRealityDest"><%= t('nodes.xrayRealityDest') %></label>
+                    <input type="text" id="xrayRealityDest" name="xray.realityDest"
+                           value="<%= node?.xray?.realityDest || 'www.google.com:443' %>"
+                           placeholder="www.google.com:443">
+                    <small><%= t('nodes.xrayRealityDestHint') %></small>
                 </div>
-
-                <%- include('fingerprint-picker', {
-                    fieldPrefix: 'xray',
-                    idPrefix: 'xrayFingerprint',
-                    fingerprint: node?.xray?.fingerprint || 'chrome',
-                    fingerprintPool: node?.xray?.fingerprintPool || [],
-                    t,
-                }) %>
-
-                <div class="form-row">
-                    <div class="form-group" id="alpnGroup" style="<%= node?.xray?.security === 'tls' ? '' : 'display:none' %>">
-                        <label for="xrayAlpn"><%= t('nodes.xrayAlpn') %></label>
-                        <input type="text" id="xrayAlpn" name="xray.alpn"
-                               value="<%= (node?.xray?.alpn || []).join(', ') %>"
-                               placeholder="h2, http/1.1">
-                        <small><%= t('nodes.xrayAlpnHint') %></small>
-                    </div>
-                </div>
-
-                <%# TLS Source (only when security==='tls'): panel | acme | manual | self-signed %>
-                <% var _tlsSource = node?.xray?.tlsSource || 'panel'; %>
-                <% var _panelDomain = (typeof panelDomain === 'string' ? panelDomain : '') || ''; %>
-                <% var _hasManualKey = !!(node?.xray && (node.xray.manualKeySet === true || node.xray.manualKey)); %>
-                <% var _anyTls = node?.xray?.security === 'tls' || (node?.xray?.extraInbounds || []).some(function(i){ return i && i.security === 'tls'; }); %>
-                <div class="form-group xray-tls-config" id="xrayTlsConfig" style="<%= _anyTls ? '' : 'display:none' %>">
-                    <label class="block-label"><i class="ti ti-certificate"></i> <%= t('nodes.xrayTlsSourceLabel') %></label>
-                    <small class="hint" style="display:block;margin-bottom:8px;"><%= t('nodes.xrayTlsSourceScopeHint') %></small>
-                    <div class="radio-group" role="radiogroup" aria-label="<%= t('nodes.xrayTlsSourceLabel') %>">
-                        <label class="radio-row">
-                            <input type="radio" name="xray.tlsSource" value="panel" <%= _tlsSource === 'panel' ? 'checked' : '' %> onchange="updateXrayTlsSourceUI()">
-                            <span class="badge badge-success"><%= t('nodes.xrayTlsRecommended') %></span>
-                            <span class="radio-label">
-                                <strong><%= t('nodes.xrayTlsSourcePanel') %></strong>
-                                <small class="radio-hint"><%= t('nodes.xrayTlsSourcePanelHint') %></small>
-                            </span>
-                        </label>
-                        <label class="radio-row">
-                            <input type="radio" name="xray.tlsSource" value="acme" <%= _tlsSource === 'acme' ? 'checked' : '' %> onchange="updateXrayTlsSourceUI()">
-                            <span class="radio-label">
-                                <strong><%= t('nodes.xrayTlsSourceAcme') %></strong>
-                                <small class="radio-hint"><%= t('nodes.xrayTlsSourceAcmeHint') %></small>
-                            </span>
-                        </label>
-                        <label class="radio-row">
-                            <input type="radio" name="xray.tlsSource" value="manual" <%= _tlsSource === 'manual' ? 'checked' : '' %> onchange="updateXrayTlsSourceUI()">
-                            <span class="radio-label">
-                                <strong><%= t('nodes.xrayTlsSourceManual') %></strong>
-                                <small class="radio-hint"><%= t('nodes.xrayTlsSourceManualHint') %></small>
-                            </span>
-                        </label>
-                        <label class="radio-row">
-                            <input type="radio" name="xray.tlsSource" value="self-signed" <%= _tlsSource === 'self-signed' ? 'checked' : '' %> onchange="updateXrayTlsSourceUI()">
-                            <span class="badge badge-warning"><%= t('nodes.xrayTlsTesting') %></span>
-                            <span class="radio-label">
-                                <strong><%= t('nodes.xrayTlsSourceSelfSigned') %></strong>
-                                <small class="radio-hint"><%= t('nodes.xrayTlsSourceSelfSignedHint') %></small>
-                            </span>
-                        </label>
-                    </div>
-
-                    <%# Panel-domain info block %>
-                    <div class="tls-source-panel" id="xrayTlsPanelInfo" style="<%= _tlsSource === 'panel' ? '' : 'display:none' %>">
-                        <div class="info-card">
-                            <i class="ti ti-info-circle"></i>
-                            <div>
-                                <div><strong><%= t('nodes.xrayTlsEffectiveSni') %>:</strong> <code><%= _panelDomain || t('nodes.xrayTlsPanelDomainUnset') %></code></div>
-                                <small><%= t('nodes.xrayTlsPanelInfoLine') %></small>
-                            </div>
-                        </div>
-                    </div>
-
-                    <%# ACME (acme.sh on node) block %>
-                    <div class="tls-source-acme" id="xrayTlsAcmeBlock" style="<%= _tlsSource === 'acme' ? '' : 'display:none' %>">
-                        <div class="info-card">
-                            <i class="ti ti-bulb"></i>
-                            <div>
-                                <small><%= t('nodes.xrayTlsAcmeInfoLine') %></small>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="xrayAcmeEmail"><%= t('nodes.xrayTlsAcmeEmailLabel') %></label>
-                            <%# type=text: Chrome validates type=email even when hidden, blocking submit on mode switch.
-                                readonly-until-focus: Chrome otherwise autofills the operator's Google
-                                account into any field whose name contains "email". %>
-                            <input type="text" id="xrayAcmeEmail" name="xray.acmeEmail"
-                                   value="<%= node?.xray?.acmeEmail || '' %>"
-                                   placeholder="admin@example.com"
-                                   maxlength="254" autocomplete="off" spellcheck="false"
-                                   inputmode="email" readonly
-                                   onfocus="this.removeAttribute('readonly')">
-                            <small><%= t('nodes.xrayTlsAcmeEmailHint') %></small>
-                        </div>
-                    </div>
-
-                    <%# Manual PEM block %>
-                    <div class="tls-source-manual" id="xrayTlsManualBlock" style="<%= _tlsSource === 'manual' ? '' : 'display:none' %>">
-                        <div class="info-card">
-                            <i class="ti ti-bulb"></i>
-                            <div>
-                                <small><%= t('nodes.xrayTlsManualDomainHint') %></small>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="xrayManualCert"><%= t('nodes.xrayManualCertLabel') %></label>
-                            <textarea id="xrayManualCert" name="xray.manualCert" rows="6" class="code-textarea pem-textarea"
-                                      placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                                      autocomplete="off" spellcheck="false"
-                                      aria-describedby="xrayManualCertStatus"
-                                      onblur="validateXrayPemField(this, 'cert')"
-                                      oninput="validateXrayPemField(this, 'cert')"><%= node?.xray?.manualCert || '' %></textarea>
-                            <small id="xrayManualCertStatus" class="pem-status" aria-live="polite"></small>
-                            <small><%= t('nodes.xrayManualCertHint') %></small>
-                        </div>
-                        <div class="form-group">
-                            <label for="xrayManualKey"><%= t('nodes.xrayManualKeyLabel') %></label>
-                            <textarea id="xrayManualKey" name="xray.manualKey" rows="6" class="code-textarea pem-textarea"
-                                      placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
-                                      autocomplete="off" spellcheck="false"
-                                      aria-describedby="xrayManualKeyStatus"
-                                      data-has-stored-key="<%= _hasManualKey ? '1' : '0' %>"
-                                      onfocus="onXrayManualKeyFocus(this)"
-                                      onblur="validateXrayPemField(this, 'key')"
-                                      oninput="validateXrayPemField(this, 'key')"><%= _hasManualKey ? '***SET***' : '' %></textarea>
-                            <small id="xrayManualKeyStatus" class="pem-status" aria-live="polite"></small>
-                            <small><%= _hasManualKey ? t('nodes.xrayManualKeyMaskedHint') : t('nodes.xrayManualKeyHint') %></small>
-                        </div>
-                    </div>
-
-                    <%# Self-signed warning block %>
-                    <div class="tls-source-selfsigned" id="xrayTlsSelfSignedInfo" style="<%= _tlsSource === 'self-signed' ? '' : 'display:none' %>">
-                        <div class="info-card info-card-warning">
-                            <i class="ti ti-alert-triangle"></i>
-                            <div>
-                                <strong><%= t('nodes.xrayTlsSelfSignedWarning') %></strong>
-                                <small><%= t('nodes.xrayTlsSelfSignedHint') %></small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <%# Flow — TCP only %>
-                <div class="form-group" id="xrayFlowGroup" style="<%= node?.xray?.transport && node.xray.transport !== 'tcp' ? 'display:none' : '' %>">
-                    <label for="xrayFlow"><%= t('nodes.xrayFlow') %></label>
-                    <input type="text" id="xrayFlow" name="xray.flow" value="<%= node?.xray?.flow || 'xtls-rprx-vision' %>" placeholder="xtls-rprx-vision">
-                    <small><%= t('nodes.xrayFlowHint') %></small>
-                </div>
-
-                <%# VLESS fallbacks[].dest — TCP+TLS only %>
-                <% var _fallbackVisible = (node?.xray?.transport === 'tcp' || !node?.xray?.transport) && node?.xray?.security === 'tls'; %>
-                <div class="form-group" id="xrayFallbackGroup" style="<%= _fallbackVisible ? '' : 'display:none' %>">
-                    <label for="xrayFallbackDest"><%= t('nodes.xrayFallbackDestLabel') %></label>
-                    <input type="text" id="xrayFallbackDest" name="xray.fallbackDest"
-                           value="<%= node?.xray?.fallbackDest || '' %>"
-                           placeholder="<%= t('nodes.xrayFallbackDestPlaceholder') %>"
-                           maxlength="253" autocomplete="off" spellcheck="false">
-                    <small><%= t('nodes.xrayFallbackDestHint') %></small>
-                </div>
-
-                <%# Reality-specific fields %>
-                <div id="realityFields" data-reality-only style="<%= node?.xray?.security === 'tls' || node?.xray?.security === 'none' ? 'display:none' : '' %>">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="xrayRealityDest"><%= t('nodes.xrayRealityDest') %></label>
-                            <input type="text" id="xrayRealityDest" name="xray.realityDest"
-                                   value="<%= node?.xray?.realityDest || 'www.google.com:443' %>"
-                                   placeholder="www.google.com:443">
-                            <small><%= t('nodes.xrayRealityDestHint') %></small>
-                        </div>
-                        <div class="form-group">
-                            <label for="xrayRealitySni"><%= t('nodes.xrayRealitySni') %></label>
-                            <div class="input-with-button">
-                                <input type="text" id="xrayRealitySni" name="xray.realitySni"
-                                       value="<%= (node?.xray?.realitySni || ['www.google.com']).join(', ') %>"
-                                       placeholder="www.google.com">
-                                <button type="button" class="btn btn-sm" id="sniScanOpenBtn"
-                                        onclick="openSniScanner()"
-                                        title="<%= t('nodes.sniScanTitle') %>">
-                                    <i class="ti ti-radar"></i> <%= t('nodes.sniScan') %>
-                                </button>
-                            </div>
-                            <small><%= t('nodes.xrayRealitySniHint') %></small>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="xrayRealityPrivKey"><%= t('nodes.xrayPrivateKey') %></label>
-                            <div class="input-with-button">
-                                <input type="text" id="xrayRealityPrivKey" name="xray.realityPrivateKey"
-                                       value="<%= node?.xray?.realityPrivateKey || (locals.defaultRealityKeys && locals.defaultRealityKeys.privateKey) || '' %>"
-                                       placeholder="<%= t('nodes.xrayAutoGenerated') %>">
-                                <button type="button" class="btn btn-sm" onclick="generateXrayKeys(this)" title="<%= t('nodes.xrayGenerateKeys') %>"><i class="ti ti-refresh"></i></button>
-                            </div>
-                            <% if (!node) { %><small><%= t('nodes.xrayAutoGeneratedSetupHint') %></small><% } %>
-                        </div>
-                        <div class="form-group">
-                            <label for="xrayRealityPubKey"><%= t('nodes.xrayPublicKey') %></label>
-                            <input type="text" id="xrayRealityPubKey" name="xray.realityPublicKey"
-                                   value="<%= node?.xray?.realityPublicKey || (locals.defaultRealityKeys && locals.defaultRealityKeys.publicKey) || '' %>"
-                                   placeholder="<%= t('nodes.xrayAutoGenerated') %>">
-                        </div>
-                    </div>
-                </div>
-
-                <%# SNI Scanner modal (Reality only) %>
-                <div id="sniScanModal" class="sni-modal-overlay" style="display:none" role="dialog" aria-modal="true">
-                    <div class="sni-modal-card">
-                        <div class="sni-modal-header">
-                            <h3><i class="ti ti-radar"></i> <%= t('nodes.sniScanTitle') %></h3>
-                            <button type="button" class="sni-modal-close" onclick="closeSniScanner()"><i class="ti ti-x"></i></button>
-                        </div>
-                        <div class="sni-modal-body">
-                            <p class="sni-modal-hint"><%= t('nodes.sniScanHint') %></p>
-                            <div class="sni-params">
-                                <div class="form-group" style="margin:0">
-                                    <label for="sniScanIp"><%= t('nodes.ipAddress') %></label>
-                                    <input type="text" id="sniScanIp" placeholder="185.100.200.1" autocomplete="off">
-                                </div>
-                                <div class="form-group" style="margin:0">
-                                    <label for="sniScanPort"><%= t('nodes.sniScanPortLabel') %></label>
-                                    <input type="number" id="sniScanPort" value="443" min="1" max="65535">
-                                </div>
-                            </div>
-                            <div class="sni-params-row2">
-                                <div class="form-group" style="margin:0">
-                                    <label for="sniScanThreads"><%= t('nodes.sniScanThreads') %></label>
-                                    <input type="number" id="sniScanThreads" value="50" min="1" max="200">
-                                </div>
-                                <div class="form-group" style="margin:0">
-                                    <label for="sniScanTimeout"><%= t('nodes.sniScanTimeout') %></label>
-                                    <input type="number" id="sniScanTimeout" value="5" min="2" max="30">
-                                </div>
-                                <div class="sni-scan-controls" style="margin:0; align-self:flex-end">
-                                    <button type="button" class="btn btn-primary" id="sniScanStartBtn" onclick="startSniScan()">
-                                        <i class="ti ti-radar"></i> <%= t('nodes.sniScanStart') %>
-                                    </button>
-                                    <button type="button" class="btn" id="sniScanStopBtn" onclick="stopSniScan()" style="display:none">
-                                        <i class="ti ti-player-stop"></i> <%= t('nodes.sniScanStop') %>
-                                    </button>
-                                </div>
-                            </div>
-                            <div id="sniScanProgressWrap" style="display:none; margin-bottom:4px">
-                                <div class="sni-progress-bar"><div id="sniScanProgressFill" class="sni-progress-fill" style="width:0%"></div></div>
-                                <span id="sniScanStatus" class="sni-scan-status"></span>
-                            </div>
-                            <div id="sniScanResults" style="display:none">
-                                <div class="sni-results-header">
-                                    <span class="sni-results-title"><%= t('nodes.sniScanResults') %></span>
-                                    <span id="sniScanCount" class="sni-results-count"></span>
-                                </div>
-                                <div class="sni-table-wrap">
-                                    <table class="sni-table">
-                                        <thead>
-                                            <tr>
-                                                <th><%= t('nodes.sniScanPing') %></th>
-                                                <th><%= t('nodes.sniScanDomain') %></th>
-                                                <th><%= t('nodes.sniScanIp') %></th>
-                                                <th><%= t('nodes.sniScanIssuer') %></th>
-                                                <th></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="sniScanTableBody"></tbody>
-                                    </table>
-                                </div>
-                            </div>
-                            <div id="sniScanEmpty" style="display:none" class="sni-empty"><%= t('nodes.sniScanNoResults') %></div>
-                        </div>
-                    </div>
-                </div>
-
-                <%# WebSocket-specific fields %>
-                <div id="wsFields" style="<%= node?.xray?.transport === 'ws' ? '' : 'display:none' %>">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="xrayWsPath"><%= t('nodes.xrayWsPath') %></label>
-                            <input type="text" id="xrayWsPath" name="xray.wsPath"
-                                   value="<%= node?.xray?.wsPath || '/' %>" placeholder="/">
-                        </div>
-                        <div class="form-group">
-                            <label for="xrayWsHost"><%= t('nodes.xrayWsHost') %></label>
-                            <input type="text" id="xrayWsHost" name="xray.wsHost"
-                                   value="<%= node?.xray?.wsHost || '' %>" placeholder="cdn.example.com">
-                            <small><%= t('nodes.xrayWsHostHint') %></small>
-                        </div>
-                    </div>
-                </div>
-
-                <%# gRPC-specific fields %>
-                <div id="grpcFields" style="<%= node?.xray?.transport === 'grpc' ? '' : 'display:none' %>">
-                    <div class="form-group">
-                        <label for="xrayGrpcService"><%= t('nodes.xrayGrpcService') %></label>
-                        <input type="text" id="xrayGrpcService" name="xray.grpcServiceName"
-                               value="<%= node?.xray?.grpcServiceName || 'grpc' %>" placeholder="grpc">
-                    </div>
-                </div>
-
-                <%# XHTTP (SplitHTTP) specific fields %>
-                <div id="xhttpFields" style="<%= node?.xray?.transport === 'xhttp' ? '' : 'display:none' %>">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="xrayXhttpPath"><%= t('nodes.xrayXhttpPath') %></label>
-                            <input type="text" id="xrayXhttpPath" name="xray.xhttpPath"
-                                   value="<%= node?.xray?.xhttpPath || '/' %>" placeholder="/">
-                        </div>
-                        <div class="form-group">
-                            <label for="xrayXhttpHost"><%= t('nodes.xrayXhttpHost') %></label>
-                            <input type="text" id="xrayXhttpHost" name="xray.xhttpHost"
-                                   value="<%= node?.xray?.xhttpHost || '' %>" placeholder="cdn.example.com">
-                            <small><%= t('nodes.xrayXhttpHostHint') %></small>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="xrayXhttpMode"><%= t('nodes.xrayXhttpMode') %></label>
-                        <select id="xrayXhttpMode" name="xray.xhttpMode">
-                            <option value="auto" <%= node?.xray?.xhttpMode === 'auto' || !node?.xray?.xhttpMode ? 'selected' : '' %>>Auto</option>
-                            <option value="packet-up" <%= node?.xray?.xhttpMode === 'packet-up' ? 'selected' : '' %>>Packet Up</option>
-                            <option value="stream-up" <%= node?.xray?.xhttpMode === 'stream-up' ? 'selected' : '' %>>Stream Up</option>
-                            <option value="stream-one" <%= node?.xray?.xhttpMode === 'stream-one' ? 'selected' : '' %>>Stream One</option>
-                        </select>
-                        <small><%= t('nodes.xrayXhttpModeHint') %></small>
-                    </div>
-
-                    <div class="form-section" style="background:transparent;border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:4px;">
-                        <h3 style="font-size:14px;margin-top:0;">
-                            <i class="ti ti-adjustments"></i> <%= t('nodes.xrayXhttpTuning') %>
-                            <a class="docs-hint-link" href="https://github.com/XTLS/Xray-core/discussions/4113" target="_blank" rel="noopener noreferrer" title="XHTTP docs">ⓘ</a>
-                        </h3>
-                        <small class="section-hint"><%= t('nodes.xrayXhttpTuningHint') %></small>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="xrayXhttpXPaddingBytes"><%= t('nodes.xrayXhttpPadding') %></label>
-                                <input type="text" id="xrayXhttpXPaddingBytes" name="xray.xhttpXPaddingBytes"
-                                       value="<%= node?.xray?.xhttpXPaddingBytes || '' %>" placeholder="100-1000">
-                                <small><%= t('nodes.xrayXhttpPaddingHint') %></small>
-                            </div>
-                            <div class="form-group">
-                                <label for="xrayXhttpScMaxEachPostBytes"><%= t('nodes.xrayXhttpMaxPost') %></label>
-                                <input type="text" id="xrayXhttpScMaxEachPostBytes" name="xray.xhttpScMaxEachPostBytes"
-                                       value="<%= node?.xray?.xhttpScMaxEachPostBytes || '' %>" placeholder="1000000">
-                                <small><%= t('nodes.xrayXhttpMaxPostHint') %></small>
-                            </div>
-                        </div>
-
-                        <div class="form-row-3">
-                            <div class="form-group">
-                                <label for="xrayXhttpXmuxMaxConcurrency"><%= t('nodes.xrayXhttpXmuxConcurrency') %></label>
-                                <input type="text" id="xrayXhttpXmuxMaxConcurrency" name="xray.xhttpXmuxMaxConcurrency"
-                                       value="<%= node?.xray?.xhttpXmuxMaxConcurrency || '' %>" placeholder="16-32">
-                            </div>
-                            <div class="form-group">
-                                <label for="xrayXhttpXmuxHMaxRequestTimes"><%= t('nodes.xrayXhttpXmuxRequests') %></label>
-                                <input type="text" id="xrayXhttpXmuxHMaxRequestTimes" name="xray.xhttpXmuxHMaxRequestTimes"
-                                       value="<%= node?.xray?.xhttpXmuxHMaxRequestTimes || '' %>" placeholder="600-900">
-                            </div>
-                            <div class="form-group">
-                                <label for="xrayXhttpXmuxHMaxReusableSecs"><%= t('nodes.xrayXhttpXmuxReusableSecs') %></label>
-                                <input type="text" id="xrayXhttpXmuxHMaxReusableSecs" name="xray.xhttpXmuxHMaxReusableSecs"
-                                       value="<%= node?.xray?.xhttpXmuxHMaxReusableSecs || '' %>" placeholder="1800-3000">
-                            </div>
-                        </div>
-                        <small class="section-hint"><%= t('nodes.xrayXhttpXmuxHint') %></small>
-
-                        <div class="form-group" style="margin-top:8px;">
-                            <label class="checkbox-tag" style="display:inline-flex;align-items:center;gap:8px;">
-                                <input type="checkbox" name="xray.xhttpNoGrpcHeader"
-                                       <%= node?.xray?.xhttpNoGrpcHeader ? 'checked' : '' %>>
-                                <span><%= t('nodes.xrayXhttpNoGrpcHeader') %></span>
-                            </label>
-                            <small style="display:block;margin-top:4px;"><%= t('nodes.xrayXhttpNoGrpcHeaderHint') %></small>
-                        </div>
-                        <%- include('xray-xhttp-advanced', {
-                            xhttp: node?.xray || {},
-                            fieldPrefix: 'xray.',
-                            idPrefix: 'xrayXhttpAdvanced',
-                            checkboxValue: '',
-                            t,
-                        }) %>
-                    </div>
-                </div>
-
-                <%# ========== Additional VLESS inbounds ========== %>
-                <div class="extra-inbounds-section">
-                    <div class="extra-inbounds-header">
-                        <div>
-                            <div class="extra-inbounds-title"><i class="ti ti-plugger-connected"></i> <%= t('nodes.xrayExtraInboundsTitle') %></div>
-                            <small class="extra-inbounds-hint"><%= t('nodes.xrayExtraInboundsHint') %></small>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-secondary" id="addExtraInboundBtn" onclick="addExtraInbound()">
-                            <i class="ti ti-plus"></i> <%= t('nodes.xrayAddInbound') %>
+                <div class="form-group">
+                    <label for="xrayRealitySni"><%= t('nodes.xrayRealitySni') %></label>
+                    <div class="input-with-button">
+                        <input type="text" id="xrayRealitySni" name="xray.realitySni"
+                               value="<%= (node?.xray?.realitySni || ['www.google.com']).join(', ') %>"
+                               placeholder="www.google.com">
+                        <button type="button" class="btn btn-sm" id="sniScanOpenBtn"
+                                onclick="openSniScanner()"
+                                title="<%= t('nodes.sniScanTitle') %>">
+                            <i class="ti ti-radar"></i> <%= t('nodes.sniScan') %>
                         </button>
                     </div>
-
-                    <div id="extraInboundsContainer">
-                        <% (node?.xray?.extraInbounds || []).forEach(function(extra, idx) { %>
-                            <%- include('xray-extra-inbound', { extra: extra, idx: idx, t: t }) %>
-                        <% }); %>
-                    </div>
-
-                    <%# Hidden template cloned client-side by addExtraInbound() %>
-                    <template id="extraInboundTemplate">
-                        <%- include('xray-extra-inbound', { extra: {}, idx: 0, t: t }) %>
-                    </template>
+                    <small><%= t('nodes.xrayRealitySniHint') %></small>
                 </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="xrayRealityPrivKey"><%= t('nodes.xrayPrivateKey') %></label>
+                    <div class="input-with-button">
+                        <input type="text" id="xrayRealityPrivKey" name="xray.realityPrivateKey"
+                               value="<%= node?.xray?.realityPrivateKey || (locals.defaultRealityKeys && locals.defaultRealityKeys.privateKey) || '' %>"
+                               placeholder="<%= t('nodes.xrayAutoGenerated') %>">
+                        <button type="button" class="btn btn-sm" onclick="generateXrayKeys(this)" title="<%= t('nodes.xrayGenerateKeys') %>"><i class="ti ti-refresh"></i></button>
+                    </div>
+                    <% if (!node) { %><small><%= t('nodes.xrayAutoGeneratedSetupHint') %></small><% } %>
+                </div>
+                <div class="form-group">
+                    <label for="xrayRealityPubKey"><%= t('nodes.xrayPublicKey') %></label>
+                    <input type="text" id="xrayRealityPubKey" name="xray.realityPublicKey"
+                           value="<%= node?.xray?.realityPublicKey || (locals.defaultRealityKeys && locals.defaultRealityKeys.publicKey) || '' %>"
+                           placeholder="<%= t('nodes.xrayAutoGenerated') %>">
+                </div>
+            </div>
+        </div>
 
-                <%# ========== Reverse proxy front ========== %>
-                <%- include('front', { node: node, t: t }) %>
+        <%# Flow — TCP only %>
+        <div class="form-group" id="xrayFlowGroup" style="<%= node?.xray?.transport && node.xray.transport !== 'tcp' ? 'display:none' : '' %>;max-width:320px;">
+            <label for="xrayFlow"><%= t('nodes.xrayFlow') %></label>
+            <input type="text" id="xrayFlow" name="xray.flow" value="<%= node?.xray?.flow || 'xtls-rprx-vision' %>" placeholder="xtls-rprx-vision">
+            <small><%= t('nodes.xrayFlowHint') %></small>
+        </div>
 
-                <%# ========== Advanced (collapsible) ========== %>
-                <details class="node-advanced-details" id="xrayAdvancedDetails">
-                    <summary class="node-advanced-summary">
-                        <span><i class="ti ti-adjustments-horizontal"></i> <%= t('nodes.advancedSettings') %></span>
-                        <i class="ti ti-chevron-down node-advanced-chevron"></i>
-                    </summary>
+        <%# VLESS fallbacks[].dest — TCP+TLS only %>
+        <div class="form-group" id="xrayFallbackGroup" style="<%= xrFallbackVisible ? '' : 'display:none' %>">
+            <label for="xrayFallbackDest"><%= t('nodes.xrayFallbackDestLabel') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+            <input type="text" id="xrayFallbackDest" name="xray.fallbackDest"
+                   value="<%= node?.xray?.fallbackDest || '' %>"
+                   placeholder="<%= t('nodes.xrayFallbackDestPlaceholder') %>"
+                   maxlength="253" autocomplete="off" spellcheck="false">
+            <small><%= t('nodes.xrayFallbackDestHint') %></small>
+        </div>
 
-                    <div class="form-section">
-                        <div data-reality-only style="<%= node?.xray?.security === 'tls' || node?.xray?.security === 'none' ? 'display:none' : '' %>">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="xrayRealityShortIds"><%= t('nodes.xrayShortIds') %></label>
-                                    <input type="text" id="xrayRealityShortIds" name="xray.realityShortIds"
-                                           value="<%= (node?.xray?.realityShortIds || ['']).join(', ') %>"
-                                           placeholder=", 0123456789abcdef">
-                                    <small><%= t('nodes.xrayShortIdsHint') %></small>
-                                </div>
-                                <div class="form-group">
-                                    <label for="xrayRealitySpiderX"><%= t('nodes.xraySpiderX') %></label>
-                                    <input type="text" id="xrayRealitySpiderX" name="xray.realitySpiderX"
-                                           value="<%= node?.xray?.realitySpiderX || '' %>"
-                                           placeholder="/r/programming/">
-                                    <small><%= t('nodes.xraySpiderXHint') %></small>
-                                </div>
-                            </div>
-                        </div>
+        <%# WebSocket-specific fields %>
+        <div id="wsFields" style="<%= node?.xray?.transport === 'ws' ? '' : 'display:none' %>">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="xrayWsPath"><%= t('nodes.xrayWsPath') %></label>
+                    <input type="text" id="xrayWsPath" name="xray.wsPath"
+                           value="<%= node?.xray?.wsPath || '/' %>" placeholder="/">
+                </div>
+                <div class="form-group">
+                    <label for="xrayWsHost"><%= t('nodes.xrayWsHost') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                    <input type="text" id="xrayWsHost" name="xray.wsHost"
+                           value="<%= node?.xray?.wsHost || '' %>" placeholder="cdn.example.com">
+                    <small><%= t('nodes.xrayWsHostHint') %></small>
+                </div>
+            </div>
+        </div>
 
+        <%# gRPC-specific fields %>
+        <div id="grpcFields" style="<%= node?.xray?.transport === 'grpc' ? '' : 'display:none' %>">
+            <div class="form-group" style="max-width:320px;">
+                <label for="xrayGrpcService"><%= t('nodes.xrayGrpcService') %></label>
+                <input type="text" id="xrayGrpcService" name="xray.grpcServiceName"
+                       value="<%= node?.xray?.grpcServiceName || 'grpc' %>" placeholder="grpc">
+            </div>
+        </div>
+
+        <%# XHTTP (SplitHTTP) specific fields %>
+        <div id="xhttpFields" style="<%= node?.xray?.transport === 'xhttp' ? '' : 'display:none' %>">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="xrayXhttpPath"><%= t('nodes.xrayXhttpPath') %></label>
+                    <input type="text" id="xrayXhttpPath" name="xray.xhttpPath"
+                           value="<%= node?.xray?.xhttpPath || '/' %>" placeholder="/">
+                </div>
+                <div class="form-group">
+                    <label for="xrayXhttpHost"><%= t('nodes.xrayXhttpHost') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                    <input type="text" id="xrayXhttpHost" name="xray.xhttpHost"
+                           value="<%= node?.xray?.xhttpHost || '' %>" placeholder="cdn.example.com">
+                    <small><%= t('nodes.xrayXhttpHostHint') %></small>
+                </div>
+            </div>
+            <div class="form-group" style="max-width:260px;">
+                <label for="xrayXhttpMode"><%= t('nodes.xrayXhttpMode') %></label>
+                <select id="xrayXhttpMode" name="xray.xhttpMode">
+                    <option value="auto" <%= node?.xray?.xhttpMode === 'auto' || !node?.xray?.xhttpMode ? 'selected' : '' %>>Auto</option>
+                    <option value="packet-up" <%= node?.xray?.xhttpMode === 'packet-up' ? 'selected' : '' %>>Packet Up</option>
+                    <option value="stream-up" <%= node?.xray?.xhttpMode === 'stream-up' ? 'selected' : '' %>>Stream Up</option>
+                    <option value="stream-one" <%= node?.xray?.xhttpMode === 'stream-one' ? 'selected' : '' %>>Stream One</option>
+                </select>
+                <small><%= t('nodes.xrayXhttpModeHint') %></small>
+            </div>
+
+            <details class="nf-module" id="xrayXhttpTuning">
+                <summary class="nf-module__head">
+                    <span class="nf-module__ico"><i class="ti ti-adjustments"></i></span>
+                    <span class="nf-module__text">
+                        <span class="nf-module__title"><%= t('nodes.xrayXhttpTuning') %></span>
+                        <span class="nf-module__sub"><a class="docs-hint-link" href="https://github.com/XTLS/Xray-core/discussions/4113" target="_blank" rel="noopener noreferrer" title="XHTTP docs">ⓘ</a><%= t('nodes.xrayXhttpTuningHint') %></span>
+                    </span>
+                    <i class="ti ti-chevron-down nf-module__chev"></i>
+                </summary>
+                <div class="nf-module__body">
+                    <div class="form-row">
                         <div class="form-group">
-                            <label for="xrayListen"><%= t('nodes.xrayListen') %></label>
-                            <input type="text" id="xrayListen" name="xray.listen"
-                                   value="<%= node?.xray?.listen || '0.0.0.0' %>"
-                                   maxlength="45" spellcheck="false" placeholder="0.0.0.0">
-                            <small><%= t('nodes.xrayListenHint') %></small>
+                            <label for="xrayXhttpXPaddingBytes"><%= t('nodes.xrayXhttpPadding') %></label>
+                            <input type="text" id="xrayXhttpXPaddingBytes" name="xray.xhttpXPaddingBytes"
+                                   value="<%= node?.xray?.xhttpXPaddingBytes || '' %>" placeholder="100-1000">
+                            <small><%= t('nodes.xrayXhttpPaddingHint') %></small>
                         </div>
-
                         <div class="form-group">
-                            <label for="xrayApiPort"><%= t('nodes.xrayApiPort') %></label>
-                            <input type="number" id="xrayApiPort" name="xray.apiPort"
-                                   value="<%= node?.xray?.apiPort || 61000 %>" placeholder="61000">
-                            <small><%= t('nodes.xrayApiPortHint') %></small>
+                            <label for="xrayXhttpScMaxEachPostBytes"><%= t('nodes.xrayXhttpMaxPost') %></label>
+                            <input type="text" id="xrayXhttpScMaxEachPostBytes" name="xray.xhttpScMaxEachPostBytes"
+                                   value="<%= node?.xray?.xhttpScMaxEachPostBytes || '' %>" placeholder="1000000">
+                            <small><%= t('nodes.xrayXhttpMaxPostHint') %></small>
                         </div>
                     </div>
 
-                    <% if (!node?._id) { %>
-                    <%- include('xray-outbounds') %>
-                    <% } %>
-                </details>
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label for="xrayXhttpXmuxMaxConcurrency"><%= t('nodes.xrayXhttpXmuxConcurrency') %></label>
+                            <input type="text" id="xrayXhttpXmuxMaxConcurrency" name="xray.xhttpXmuxMaxConcurrency"
+                                   value="<%= node?.xray?.xhttpXmuxMaxConcurrency || '' %>" placeholder="16-32">
+                        </div>
+                        <div class="form-group">
+                            <label for="xrayXhttpXmuxHMaxRequestTimes"><%= t('nodes.xrayXhttpXmuxRequests') %></label>
+                            <input type="text" id="xrayXhttpXmuxHMaxRequestTimes" name="xray.xhttpXmuxHMaxRequestTimes"
+                                   value="<%= node?.xray?.xhttpXmuxHMaxRequestTimes || '' %>" placeholder="600-900">
+                        </div>
+                        <div class="form-group">
+                            <label for="xrayXhttpXmuxHMaxReusableSecs"><%= t('nodes.xrayXhttpXmuxReusableSecs') %></label>
+                            <input type="text" id="xrayXhttpXmuxHMaxReusableSecs" name="xray.xhttpXmuxHMaxReusableSecs"
+                                   value="<%= node?.xray?.xhttpXmuxHMaxReusableSecs || '' %>" placeholder="1800-3000">
+                        </div>
+                    </div>
+                    <small class="nf-section__hint"><%= t('nodes.xrayXhttpXmuxHint') %></small>
+
+                    <div class="form-group">
+                        <label class="nf-tag">
+                            <input type="checkbox" name="xray.xhttpNoGrpcHeader"
+                                   <%= node?.xray?.xhttpNoGrpcHeader ? 'checked' : '' %>>
+                            <span><%= t('nodes.xrayXhttpNoGrpcHeader') %></span>
+                        </label>
+                        <small style="display:block;margin-top:6px;"><%= t('nodes.xrayXhttpNoGrpcHeaderHint') %></small>
+                    </div>
+
+                    <%- include('xray-xhttp-advanced', {
+                        xhttp: node?.xray || {},
+                        fieldPrefix: 'xray.',
+                        idPrefix: 'xrayXhttpAdvanced',
+                        checkboxValue: '',
+                        t,
+                    }) %>
+                </div>
+            </details>
+        </div>
+
+        <%- include('fingerprint-picker', {
+            fieldPrefix: 'xray',
+            idPrefix: 'xrayFingerprint',
+            fingerprint: node?.xray?.fingerprint || 'chrome',
+            fingerprintPool: node?.xray?.fingerprintPool || [],
+            t,
+        }) %>
+    </div>
+
+    <div class="nf-group">
+        <div class="nf-group__title"><%= t('nodes.xrayExtraInboundsTitle') %><%= xrExtras.length ? ` · ${xrExtras.length}` : '' %></div>
+        <small class="nf-section__hint"><%= t('nodes.xrayExtraInboundsHint') %></small>
+
+        <div class="nf-info" id="extraInboundsEmpty" style="<%= xrExtras.length ? 'display:none' : '' %>">
+            <i class="ti ti-plugger-connected"></i>
+            <div>
+                <strong><%= t('nodes.naNoExtras') %></strong>
+                <small><%= t('nodes.naNoExtrasHint') %></small>
             </div>
+        </div>
+
+        <div id="extraInboundsContainer">
+            <% xrExtras.forEach(function(extra, idx) { %>
+                <%- include('xray-extra-inbound', { extra: extra, idx: idx, t: t }) %>
+            <% }); %>
+        </div>
+
+        <%# Hidden template cloned client-side by addExtraInbound() %>
+        <template id="extraInboundTemplate">
+            <%- include('xray-extra-inbound', { extra: {}, idx: 0, t: t }) %>
+        </template>
+
+        <div class="nf-actions">
+            <button type="button" class="btn btn-sm btn-secondary" id="addExtraInboundBtn" onclick="addExtraInbound()">
+                <i class="ti ti-plus"></i> <%= t('nodes.xrayAddInbound') %>
+            </button>
+        </div>
+    </div>
+
+    <%# SNI Scanner modal (Reality only) %>
+    <div id="sniScanModal" class="sni-modal-overlay" style="display:none" role="dialog" aria-modal="true">
+        <div class="sni-modal-card">
+            <div class="sni-modal-header">
+                <h3><i class="ti ti-radar"></i> <%= t('nodes.sniScanTitle') %></h3>
+                <button type="button" class="sni-modal-close" onclick="closeSniScanner()"><i class="ti ti-x"></i></button>
+            </div>
+            <div class="sni-modal-body">
+                <p class="sni-modal-hint"><%= t('nodes.sniScanHint') %></p>
+                <div class="sni-params">
+                    <div class="form-group" style="margin:0">
+                        <label for="sniScanIp"><%= t('nodes.ipAddress') %></label>
+                        <input type="text" id="sniScanIp" placeholder="185.100.200.1" autocomplete="off">
+                    </div>
+                    <div class="form-group" style="margin:0">
+                        <label for="sniScanPort"><%= t('nodes.sniScanPortLabel') %></label>
+                        <input type="number" id="sniScanPort" value="443" min="1" max="65535">
+                    </div>
+                </div>
+                <div class="sni-params-row2">
+                    <div class="form-group" style="margin:0">
+                        <label for="sniScanThreads"><%= t('nodes.sniScanThreads') %></label>
+                        <input type="number" id="sniScanThreads" value="50" min="1" max="200">
+                    </div>
+                    <div class="form-group" style="margin:0">
+                        <label for="sniScanTimeout"><%= t('nodes.sniScanTimeout') %></label>
+                        <input type="number" id="sniScanTimeout" value="5" min="2" max="30">
+                    </div>
+                    <div class="sni-scan-controls" style="margin:0; align-self:flex-end">
+                        <button type="button" class="btn btn-primary" id="sniScanStartBtn" onclick="startSniScan()">
+                            <i class="ti ti-radar"></i> <%= t('nodes.sniScanStart') %>
+                        </button>
+                        <button type="button" class="btn" id="sniScanStopBtn" onclick="stopSniScan()" style="display:none">
+                            <i class="ti ti-player-stop"></i> <%= t('nodes.sniScanStop') %>
+                        </button>
+                    </div>
+                </div>
+                <div id="sniScanProgressWrap" style="display:none; margin-bottom:4px">
+                    <div class="sni-progress-bar"><div id="sniScanProgressFill" class="sni-progress-fill" style="width:0%"></div></div>
+                    <span id="sniScanStatus" class="sni-scan-status"></span>
+                </div>
+                <div id="sniScanResults" style="display:none">
+                    <div class="sni-results-header">
+                        <span class="sni-results-title"><%= t('nodes.sniScanResults') %></span>
+                        <span id="sniScanCount" class="sni-results-count"></span>
+                    </div>
+                    <div class="sni-table-wrap">
+                        <table class="sni-table">
+                            <thead>
+                                <tr>
+                                    <th><%= t('nodes.sniScanPing') %></th>
+                                    <th><%= t('nodes.sniScanDomain') %></th>
+                                    <th><%= t('nodes.sniScanIp') %></th>
+                                    <th><%= t('nodes.sniScanIssuer') %></th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="sniScanTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="sniScanEmpty" style="display:none" class="sni-empty"><%= t('nodes.sniScanNoResults') %></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<%- include('front', { node: node, t: t }) %>
+
+<div class="nf-pane" data-pane="xr-advanced" data-types="xray">
+    <div class="nf-pane__head">
+        <h3><%= t('nodes.paneAdvanced') %></h3>
+        <p><%= t('nodes.paneAdvancedHint') %></p>
+    </div>
+
+    <%# TLS source: panel | acme | manual | self-signed. Kept visible with an
+        explanation when no inbound uses TLS, instead of disappearing. %>
+    <details class="nf-module <%= xrAnyTls ? '' : 'is-na' %>" id="xrayTlsConfig">
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-certificate"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.xrayTlsSourceLabel') %></span>
+                <span class="nf-module__sub"><%= t('nodes.xrayTlsSourceScopeHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-certificate"></i><span id="xrayTlsSourceChip"><%= xrTlsSource %></span></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <div class="nf-info" id="xrayTlsNotNeeded" style="<%= xrAnyTls ? 'display:none' : '' %>;margin-bottom:14px;">
+                <i class="ti ti-info-circle"></i>
+                <div>
+                    <strong><%= t('nodes.naTlsNotNeeded') %></strong>
+                    <small><%= t('nodes.naTlsNotNeededHint') %></small>
+                </div>
+            </div>
+
+            <div class="nf-choices" role="radiogroup" aria-label="<%= t('nodes.xrayTlsSourceLabel') %>">
+                <label class="nf-choice">
+                    <input type="radio" name="xray.tlsSource" value="panel" <%= xrTlsSource === 'panel' ? 'checked' : '' %> onchange="updateXrayTlsSourceUI()">
+                    <span class="badge badge-success"><%= t('nodes.xrayTlsRecommended') %></span>
+                    <span class="nf-choice__text">
+                        <span class="nf-choice__name"><%= t('nodes.xrayTlsSourcePanel') %></span>
+                        <span class="nf-choice__hint"><%= t('nodes.xrayTlsSourcePanelHint') %></span>
+                    </span>
+                </label>
+                <label class="nf-choice">
+                    <input type="radio" name="xray.tlsSource" value="acme" <%= xrTlsSource === 'acme' ? 'checked' : '' %> onchange="updateXrayTlsSourceUI()">
+                    <span class="nf-choice__text">
+                        <span class="nf-choice__name"><%= t('nodes.xrayTlsSourceAcme') %></span>
+                        <span class="nf-choice__hint"><%= t('nodes.xrayTlsSourceAcmeHint') %></span>
+                    </span>
+                </label>
+                <label class="nf-choice">
+                    <input type="radio" name="xray.tlsSource" value="manual" <%= xrTlsSource === 'manual' ? 'checked' : '' %> onchange="updateXrayTlsSourceUI()">
+                    <span class="nf-choice__text">
+                        <span class="nf-choice__name"><%= t('nodes.xrayTlsSourceManual') %></span>
+                        <span class="nf-choice__hint"><%= t('nodes.xrayTlsSourceManualHint') %></span>
+                    </span>
+                </label>
+                <label class="nf-choice">
+                    <input type="radio" name="xray.tlsSource" value="self-signed" <%= xrTlsSource === 'self-signed' ? 'checked' : '' %> onchange="updateXrayTlsSourceUI()">
+                    <span class="badge badge-warning"><%= t('nodes.xrayTlsTesting') %></span>
+                    <span class="nf-choice__text">
+                        <span class="nf-choice__name"><%= t('nodes.xrayTlsSourceSelfSigned') %></span>
+                        <span class="nf-choice__hint"><%= t('nodes.xrayTlsSourceSelfSignedHint') %></span>
+                    </span>
+                </label>
+            </div>
+
+            <%# Panel-domain info block %>
+            <div class="nf-group" id="xrayTlsPanelInfo" style="<%= xrTlsSource === 'panel' ? '' : 'display:none' %>">
+                <div class="nf-info">
+                    <i class="ti ti-info-circle"></i>
+                    <div>
+                        <strong><%= t('nodes.xrayTlsEffectiveSni') %>: <code><%= xrPanelDomain || t('nodes.xrayTlsPanelDomainUnset') %></code></strong>
+                        <small><%= t('nodes.xrayTlsPanelInfoLine') %></small>
+                    </div>
+                </div>
+            </div>
+
+            <%# ACME (acme.sh on node) block %>
+            <div class="nf-group" id="xrayTlsAcmeBlock" style="<%= xrTlsSource === 'acme' ? '' : 'display:none' %>">
+                <div class="nf-info">
+                    <i class="ti ti-bulb"></i>
+                    <div>
+                        <small><%= t('nodes.xrayTlsAcmeInfoLine') %></small>
+                    </div>
+                </div>
+                <div class="form-group" style="max-width:340px;">
+                    <label for="xrayAcmeEmail"><%= t('nodes.xrayTlsAcmeEmailLabel') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                    <%# type=text: Chrome validates type=email even when hidden, blocking submit on mode switch.
+                        readonly-until-focus: Chrome otherwise autofills the operator's Google
+                        account into any field whose name contains "email". %>
+                    <input type="text" id="xrayAcmeEmail" name="xray.acmeEmail"
+                           value="<%= node?.xray?.acmeEmail || '' %>"
+                           placeholder="admin@example.com"
+                           maxlength="254" autocomplete="off" spellcheck="false"
+                           inputmode="email" readonly
+                           onfocus="this.removeAttribute('readonly')">
+                    <small><%= t('nodes.xrayTlsAcmeEmailHint') %></small>
+                </div>
+            </div>
+
+            <%# Manual PEM block — owns the shared Domain field %>
+            <div class="nf-group tls-source-manual" id="xrayTlsManualBlock" style="<%= xrTlsSource === 'manual' ? '' : 'display:none' %>">
+                <div class="nf-info">
+                    <i class="ti ti-bulb"></i>
+                    <div>
+                        <small><%= t('nodes.xrayTlsManualDomainHint') %></small>
+                    </div>
+                </div>
+                <div id="domainSlotXray">
+                    <% if (xrIsXray) { %><%- include('field-domain') %><% } %>
+                </div>
+                <div class="form-group">
+                    <label for="xrayManualCert"><%= t('nodes.xrayManualCertLabel') %></label>
+                    <textarea id="xrayManualCert" name="xray.manualCert" rows="6" class="code-textarea pem-textarea"
+                              placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                              autocomplete="off" spellcheck="false"
+                              aria-describedby="xrayManualCertStatus"
+                              onblur="validateXrayPemField(this, 'cert')"
+                              oninput="validateXrayPemField(this, 'cert')"><%= node?.xray?.manualCert || '' %></textarea>
+                    <small id="xrayManualCertStatus" class="pem-status" aria-live="polite"></small>
+                    <small><%= t('nodes.xrayManualCertHint') %></small>
+                </div>
+                <div class="form-group">
+                    <label for="xrayManualKey"><%= t('nodes.xrayManualKeyLabel') %></label>
+                    <textarea id="xrayManualKey" name="xray.manualKey" rows="6" class="code-textarea pem-textarea"
+                              placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
+                              autocomplete="off" spellcheck="false"
+                              aria-describedby="xrayManualKeyStatus"
+                              data-has-stored-key="<%= xrHasManualKey ? '1' : '0' %>"
+                              onfocus="onXrayManualKeyFocus(this)"
+                              onblur="validateXrayPemField(this, 'key')"
+                              oninput="validateXrayPemField(this, 'key')"><%= xrHasManualKey ? '***SET***' : '' %></textarea>
+                    <small id="xrayManualKeyStatus" class="pem-status" aria-live="polite"></small>
+                    <small><%= xrHasManualKey ? t('nodes.xrayManualKeyMaskedHint') : t('nodes.xrayManualKeyHint') %></small>
+                </div>
+            </div>
+
+            <%# Self-signed warning block %>
+            <div class="nf-group" id="xrayTlsSelfSignedInfo" style="<%= xrTlsSource === 'self-signed' ? '' : 'display:none' %>">
+                <div class="nf-info is-warning">
+                    <i class="ti ti-alert-triangle"></i>
+                    <div>
+                        <strong><%= t('nodes.xrayTlsSelfSignedWarning') %></strong>
+                        <small><%= t('nodes.xrayTlsSelfSignedHint') %></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </details>
+
+    <details class="nf-module" id="xrayCoreSection">
+        <summary class="nf-module__head">
+            <span class="nf-module__ico"><i class="ti ti-settings-2"></i></span>
+            <span class="nf-module__text">
+                <span class="nf-module__title"><%= t('nodes.groupCoreParams') %></span>
+                <span class="nf-module__sub"><%= t('nodes.xrayListenHint') %></span>
+                <span class="nf-chips">
+                    <span class="nf-chip"><i class="ti ti-plug"></i><%= node?.xray?.listen || '0.0.0.0' %></span>
+                </span>
+            </span>
+            <i class="ti ti-chevron-down nf-module__chev"></i>
+        </summary>
+        <div class="nf-module__body">
+            <div data-reality-only style="<%= node?.xray?.security === 'tls' || node?.xray?.security === 'none' ? 'display:none' : '' %>">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="xrayRealityShortIds"><%= t('nodes.xrayShortIds') %></label>
+                        <input type="text" id="xrayRealityShortIds" name="xray.realityShortIds"
+                               value="<%= (node?.xray?.realityShortIds || ['']).join(', ') %>"
+                               placeholder=", 0123456789abcdef">
+                        <small><%= t('nodes.xrayShortIdsHint') %></small>
+                    </div>
+                    <div class="form-group">
+                        <label for="xrayRealitySpiderX"><%= t('nodes.xraySpiderX') %></label>
+                        <input type="text" id="xrayRealitySpiderX" name="xray.realitySpiderX"
+                               value="<%= node?.xray?.realitySpiderX || '' %>"
+                               placeholder="/r/programming/">
+                        <small><%= t('nodes.xraySpiderXHint') %></small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group" style="max-width:280px;">
+                <label for="xrayListen"><%= t('nodes.xrayListen') %></label>
+                <input type="text" id="xrayListen" name="xray.listen"
+                       value="<%= node?.xray?.listen || '0.0.0.0' %>"
+                       maxlength="45" spellcheck="false" placeholder="0.0.0.0">
+                <small><%= t('nodes.xrayListenHint') %></small>
+            </div>
+        </div>
+    </details>
+
+    <% if (!node?._id) { %>
+        <%- include('xray-outbounds') %>
+    <% } else { %>
+        <div class="nf-info" style="margin-top:10px;">
+            <i class="ti ti-arrow-ramp-right"></i>
+            <div>
+                <strong><%= t('nodes.naOutboundsSaved') %></strong>
+                <small><%= t('nodes.naOutboundsSavedHint') %></small>
+            </div>
+        </div>
+    <% } %>
+</div>

@@ -1,19 +1,25 @@
-<%# ========== Init Script (hidden for virtual nodes — no remote host) ========== %>
-<details class="node-advanced-details non-virtual-only" id="initScriptDetails" <%= node?.initScript ? 'open' : '' %> style="<%= (node?.type === 'virtual' || node?.type === 'cdn') ? 'display:none' : '' %>">
-    <summary class="node-advanced-summary">
-        <span><i class="ti ti-terminal"></i> <%= t('nodes.initScript') %></span>
-        <i class="ti ti-chevron-down node-advanced-chevron"></i>
+<%# Module inside the access pane: runs once on the server during setup. %>
+<details class="nf-module <%= node?.initScript ? 'is-on' : '' %>" id="initScriptDetails" <%= node?.initScript ? 'open' : '' %>>
+    <summary class="nf-module__head">
+        <span class="nf-module__ico"><i class="ti ti-terminal"></i></span>
+        <span class="nf-module__text">
+            <span class="nf-module__title"><%= t('nodes.initScript') %></span>
+            <span class="nf-module__sub"><%= t('nodes.initScriptHint') %></span>
+            <span class="nf-chips">
+                <span class="nf-chip"><i class="ti ti-terminal"></i><%= node?.initScript ? t('common.enabled') : t('nodes.off') %></span>
+            </span>
+        </span>
+        <i class="ti ti-chevron-down nf-module__chev"></i>
     </summary>
-    <div class="form-section" style="border-radius:0;margin:0;border-top:1px solid var(--border);">
-        <small class="section-hint"><%= t('nodes.initScriptHint') %></small>
-        <div class="form-group" style="margin-top:10px;">
-            <% if (lastInitScript && !node?.initScript) { %>
-            <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
-                <button type="button" class="btn btn-sm btn-secondary" onclick="useLastInitScript()" id="btnUseLastScript">
-                    <i class="ti ti-history"></i> <%= t('nodes.initScriptUseLast') %>
-                </button>
-            </div>
-            <% } %>
+    <div class="nf-module__body">
+        <% if (lastInitScript && !node?.initScript) { %>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="useLastInitScript()" id="btnUseLastScript">
+                <i class="ti ti-history"></i> <%= t('nodes.initScriptUseLast') %>
+            </button>
+        </div>
+        <% } %>
+        <div class="form-group">
             <textarea
                 id="initScript"
                 name="initScript"

@@ -89,20 +89,8 @@ app.use(cors({
 
 // External diagnostic probes are mounted here for the same reason: the ingest
 // handler reads a raw gzipped body and authenticates with a probe-scoped Bearer
-// token rather than a session. Probes report on a light cadence (a batch every
-// ~15 minutes each), so the limit only has to stop a runaway client.
-{
-    const rateLimitLib = require('express-rate-limit');
-    const probeLimiter = rateLimitLib({
-        windowMs: 60 * 1000,
-        max: 120,
-        standardHeaders: true,
-        legacyHeaders: false,
-        message: { error: 'too many probe requests' },
-    });
-    const probeRoutes = require('./src/routes/probe');
-    app.use('/api/probe', probeLimiter, probeRoutes);
-}
+// token rather than a session. Rate limits live on the routes themselves.
+app.use('/api/probe', require('./src/routes/probe'));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

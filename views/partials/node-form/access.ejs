@@ -1,0 +1,43 @@
+<%# Pane: access — SSH, init script and the stats endpoint of each core. %>
+<div class="nf-pane" data-pane="access" data-types="hysteria xray">
+    <div class="nf-pane__head">
+        <h3><%= t('nodes.paneAccess') %></h3>
+        <p><%= t('nodes.paneAccessHint') %></p>
+    </div>
+
+    <%- include('ssh') %>
+
+    <div class="nf-group" id="hysteriaStatsSection" data-types="hysteria">
+        <div class="nf-group__title"><%= t('nodes.sectionStatsApi') %></div>
+        <small class="nf-section__hint"><%- renderDocsIcon('stats') %><%= t('nodes.sectionStatsHint') %></small>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="statsPort"><%= t('nodes.statsPort') %></label>
+                <input type="number" id="statsPort" name="statsPort" value="<%= node?.statsPort || 9999 %>">
+            </div>
+            <div class="form-group">
+                <label for="statsSecret"><%= t('nodes.statsSecret') %></label>
+                <div class="input-with-button">
+                    <input type="text" id="statsSecret" name="statsSecret" value="<%= node?.statsSecret || '' %>"
+                           placeholder="<%= node ? 'secret123' : 'Auto-generated if empty' %>">
+                    <button type="button" class="btn btn-sm" onclick="generateSecret()" title="Generate random secret"><i class="ti ti-dice"></i></button>
+                </div>
+                <% if (!node) { %><small><%= t('nodes.statsSecretAutoHint') %></small><% } %>
+            </div>
+        </div>
+    </div>
+
+    <div class="nf-group" data-types="xray">
+        <div class="nf-group__title"><%= t('nodes.sectionStatsApi') %></div>
+        <div class="form-group" style="max-width:240px;">
+            <label for="xrayApiPort"><%= t('nodes.xrayApiPort') %></label>
+            <input type="number" id="xrayApiPort" name="xray.apiPort"
+                   value="<%= node?.xray?.apiPort || 61000 %>" placeholder="61000">
+            <small><%= t('nodes.xrayApiPortHint') %></small>
+        </div>
+    </div>
+
+    <div class="nf-group">
+        <%- include('init-script') %>
+    </div>
+</div>

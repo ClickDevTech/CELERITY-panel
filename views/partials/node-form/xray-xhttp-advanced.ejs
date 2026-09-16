@@ -3,12 +3,15 @@
     const p = fieldPrefix;
     const idp = idPrefix;
 %>
-<details class="node-advanced-details" style="margin-top:10px;">
-    <summary class="node-advanced-summary">
-        <span><i class="ti ti-adjustments-horizontal"></i> <%= t('nodes.xrayXhttpAdvanced') %></span>
-        <i class="ti ti-chevron-down node-advanced-chevron"></i>
+<details class="nf-module" style="margin-top:12px;">
+    <summary class="nf-module__head">
+        <span class="nf-module__ico"><i class="ti ti-adjustments-horizontal"></i></span>
+        <span class="nf-module__text">
+            <span class="nf-module__title"><%= t('nodes.xrayXhttpAdvanced') %></span>
+        </span>
+        <i class="ti ti-chevron-down nf-module__chev"></i>
     </summary>
-    <div class="form-section" style="border-radius:0;margin:0;border-top:1px solid var(--border);">
+    <div class="nf-module__body">
         <div class="form-row-3">
             <div class="form-group">
                 <label for="<%= idp %>Method"><%= t('nodes.xrayXhttpUploadMethod') %></label>
@@ -90,7 +93,7 @@
                 <input name="<%= p %>xhttpSessionIDLength" value="<%= xa.xhttpSessionIDLength || '' %>" maxlength="21" placeholder="16-32">
             </div>
         </div>
-        <label class="checkbox-label" style="margin-bottom:12px;">
+        <label class="nf-tag" style="margin-bottom:14px;">
             <input type="checkbox" name="<%= p %>xhttpXPaddingObfsMode"
                    <% if (checkboxValue) { %>value="<%= checkboxValue %>"<% } %>
                    <%= xa.xhttpXPaddingObfsMode ? 'checked' : '' %>>

@@ -7,31 +7,32 @@
         ? 'iOS'
         : (value === 'qq' ? 'QQ' : (value === '360' ? '360' : value.charAt(0).toUpperCase() + value.slice(1)));
 %>
-<div class="form-group fp-mode-group <%= typeof extraClass === 'string' ? extraClass : '' %>" id="<%= idPrefix %>Picker" data-fingerprint-picker>
-    <label class="block-label"><i class="ti ti-fingerprint"></i> <%= t('nodes.xrayFingerprint') %></label>
-    <small class="hint" style="display:block;margin-bottom:8px;"><%= t('nodes.xrayFingerprintHint') %></small>
-    <div class="radio-group" role="radiogroup" aria-label="<%= t('nodes.xrayFingerprint') %>">
-        <label class="radio-row">
+<div class="nf-group <%= typeof extraClass === 'string' ? extraClass : '' %>" id="<%= idPrefix %>Picker" data-fingerprint-picker>
+    <div class="nf-group__title"><i class="ti ti-fingerprint"></i> <%= t('nodes.xrayFingerprint') %></div>
+    <small class="nf-section__hint"><%= t('nodes.xrayFingerprintHint') %></small>
+
+    <div class="nf-choices" role="radiogroup" aria-label="<%= t('nodes.xrayFingerprint') %>">
+        <label class="nf-choice">
             <input type="radio" name="<%= fieldPrefix %>FingerprintMode" value="single"
                    <%= fpMode === 'single' ? 'checked' : '' %>
                    onchange="updateFingerprintPickerUI(this.closest('[data-fingerprint-picker]'))">
-            <span class="radio-label">
-                <strong><%= t('nodes.xrayFingerprintModeSingle') %></strong>
-                <small class="radio-hint"><%= t('nodes.xrayFingerprintModeSingleHint') %></small>
+            <span class="nf-choice__text">
+                <span class="nf-choice__name"><%= t('nodes.xrayFingerprintModeSingle') %></span>
+                <span class="nf-choice__hint"><%= t('nodes.xrayFingerprintModeSingleHint') %></span>
             </span>
         </label>
-        <label class="radio-row">
+        <label class="nf-choice">
             <input type="radio" name="<%= fieldPrefix %>FingerprintMode" value="pool"
                    <%= fpMode === 'pool' ? 'checked' : '' %>
                    onchange="updateFingerprintPickerUI(this.closest('[data-fingerprint-picker]'))">
-            <span class="radio-label">
-                <strong><%= t('nodes.xrayFingerprintModePool') %></strong>
-                <small class="radio-hint"><%= t('nodes.xrayFingerprintModePoolHint') %></small>
+            <span class="nf-choice__text">
+                <span class="nf-choice__name"><%= t('nodes.xrayFingerprintModePool') %></span>
+                <span class="nf-choice__hint"><%= t('nodes.xrayFingerprintModePoolHint') %></span>
             </span>
         </label>
     </div>
 
-    <div data-fingerprint-single style="margin-top:8px;<%= fpMode === 'single' ? '' : 'display:none' %>">
+    <div class="form-group" data-fingerprint-single style="margin:10px 0 0;max-width:240px;<%= fpMode === 'single' ? '' : 'display:none' %>">
         <select id="<%= idPrefix %>" name="<%= fieldPrefix %>.fingerprint" onchange="onFingerprintPickerValueChange(this)">
             <% fpValues.forEach(function(value) { %>
                 <option value="<%= value %>" <%= fpValue === value ? 'selected' : '' %>><%= fpLabel(value) %></option>
@@ -39,11 +40,11 @@
         </select>
     </div>
 
-    <div data-fingerprint-pool style="margin-top:8px;<%= fpMode === 'pool' ? '' : 'display:none' %>">
+    <div data-fingerprint-pool style="margin-top:10px;<%= fpMode === 'pool' ? '' : 'display:none' %>">
         <input type="hidden" name="<%= fieldPrefix %>.fingerprintPool" value="">
-        <div class="fp-checkbox-grid">
+        <div class="nf-tags">
             <% fpValues.forEach(function(value) { %>
-                <label class="fp-checkbox">
+                <label class="nf-tag">
                     <input type="checkbox" data-fingerprint-pool-value
                            name="<%= fieldPrefix %>.fingerprintPool" value="<%= value %>"
                            <%= fpPool.includes(value) ? 'checked' : '' %>

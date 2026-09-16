@@ -112,76 +112,39 @@ Object.assign(locals, {
         <form id="nodeForm" method="POST" action="/panel/nodes<%= node?._id ? '/' + node._id : '' %>" class="form">
             <input type="hidden" name="useTlsFiles" value="<%= node?.useTlsFiles ? '1' : '0' %>">
 
-            <%- include('partials/node-form/basic') %>
+            <%# Every pane stays in the DOM: hidden fields are still submitted and
+                the server parses them unconditionally. %>
+            <div class="nf-tabbed" id="nfTabbed" data-node-type="<%= node?.type || 'hysteria' %>">
+                <%- include('partials/node-form/rail') %>
 
-            <%- include('partials/node-form/virtual') %>
+                <div class="nf-panes">
+                    <%- include('partials/node-form/basic') %>
 
-            <%- include('partials/node-form/cdn') %>
+                    <%- include('partials/node-form/network') %>
 
-            <%- include('partials/node-form/network') %>
+                    <%- include('partials/node-form/hysteria') %>
 
-            <%- include('partials/node-form/hysteria') %>
+                    <%- include('partials/node-form/xray') %>
 
-            <%- include('partials/node-form/xray') %>
+                    <%- include('partials/node-form/virtual') %>
 
-            <%- include('partials/node-form/ssh') %>
+                    <%- include('partials/node-form/cdn') %>
 
-            <%- include('partials/node-form/init-script') %>
+                    <%- include('partials/node-form/access') %>
 
-            <%# ========== 9. Limits & Priority ========== %>
-            <div class="form-section" id="limitsSection">
-                <h3><%= t('nodes.sectionLimits') %></h3>
-                <div class="form-row">
-                    <div class="form-group" id="maxOnlineGroup">
-                        <label for="maxOnlineUsers"><%= t('nodes.maxOnlineUsers') %></label>
-                        <input type="number" id="maxOnlineUsers" name="maxOnlineUsers"
-                               value="<%= node?.maxOnlineUsers || 0 %>" placeholder="0" min="0">
-                        <small><%= t('nodes.maxOnlineHint') %></small>
-                    </div>
-                    <div class="form-group">
-                        <label for="rankingCoefficient"><%= t('nodes.rankingCoefficient') %></label>
-                        <input type="number" id="rankingCoefficient" name="rankingCoefficient"
-                               value="<%= node?.rankingCoefficient || 1 %>" placeholder="1" min="0" step="0.1">
-                        <small><%= t('nodes.rankingHint') %></small>
-                    </div>
+                    <%- include('partials/node-form/limits') %>
                 </div>
             </div>
 
-            <%# ========== 10. Hysteria: Custom Config (hysteria only) ========== %>
-            <div class="form-section hysteria-only" id="hysteriaConfigSection" style="<%= (node?.type === 'xray' || node?.type === 'virtual' || node?.type === 'cdn') ? 'display:none' : '' %>">
-                <h3><%= t('nodes.hysteriaConfig') %></h3>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="useCustomConfig" id="useCustomConfig"
-                               <%= node?.useCustomConfig ? 'checked' : '' %>
-                               onchange="toggleCustomConfig()">
-                        <span class="checkbox-text"><%= t('nodes.useCustomConfig') %></span>
-                    </label>
-                    <small><%= t('nodes.customConfigHint') %></small>
-                </div>
-                <div id="customConfigSection" style="<%= node?.useCustomConfig ? '' : 'display:none' %>">
-                    <div class="form-group">
-                        <label for="customConfig"><%= t('nodes.customConfigLabel') %></label>
-                        <textarea id="customConfig" name="customConfig" rows="20"
-                                  class="code-textarea" placeholder="listen: :443&#10;&#10;acme:&#10;  domains:&#10;    - example.com..."><%= node?.customConfig || '' %></textarea>
-                        <small><%= t('nodes.customConfigFormat') %></small>
-                    </div>
-                    <div style="display:flex;gap:8px;margin-top:4px;">
-                        <button type="button" class="btn btn-sm" onclick="generateConfig()"><i class="ti ti-wand"></i> <%= t('nodes.generateConfig') %></button>
-                        <button type="button" class="btn btn-sm" onclick="loadCurrentConfig()"><i class="ti ti-cloud-download"></i> <%= t('nodes.loadCurrentConfig') %></button>
-                    </div>
-                </div>
-            </div>
-
-            <%# ========== Active + Submit ========== %>
-            <div class="form-group" style="margin-top:24px;">
+            <div class="nf-savebar">
+                <span class="nf-savebar__state" id="nodeFormDirty" style="display:none;">
+                    <span class="nf-dirty-dot"></span>
+                    <%= t('nodes.unsavedChanges') %>
+                </span>
                 <label class="checkbox-label">
                     <input type="checkbox" name="active" <%= node?.active !== false ? 'checked' : '' %>>
                     <span class="checkbox-text"><%= t('nodes.nodeActive') %></span>
                 </label>
-            </div>
-
-            <div class="form-actions">
                 <button type="submit" class="btn btn-primary">
                     <i class="ti <%= node?._id ? 'ti-device-floppy' : 'ti-plus' %>"></i>
                     <%= node?._id ? t('nodes.saveNode') : t('nodes.createNode') %>

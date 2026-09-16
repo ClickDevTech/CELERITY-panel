@@ -8,6 +8,7 @@
  *   - Xray extra inbounds keep their stable id while the primary one is 'main',
  *   - virtual nodes are exposed as a group plus the list of their leaves,
  *   - disabled checklist resources are not handed to probes,
+ *   - switching throughput measurement off reaches the probe and stops it,
  *   - the subscription URL asks for the sing-box format.
  */
 
@@ -188,7 +189,34 @@ async function withStubs(run) {
         // The probe divides this period by the fleet size to pace itself, so it
         // has to travel with the plan rather than being hardcoded there.
         assert.strictEqual(manifest.speedTest.intervalSec, 5400, 'the measuring period reaches the probe');
+
+        // Throughput is the one check that spends node traffic the operator
+        // pays for, so the switch has to reach the probe on its next poll
+        // rather than at the next restart.
+        assert.strictEqual(manifest.speedTest.enabled, true, 'the toggle travels with the plan');
+
+        SETTINGS.probes.speedTest.enabled = false;
+        const off = await manifestService.buildManifest(
+            { _id: 'probe-1', name: 'Moscow' },
+            'sub-token-123'
+        );
+        assert.strictEqual(off.speedTest.enabled, false, 'switching it off is handed to the probe');
+        SETTINGS.probes.speedTest.enabled = true;
     });
+
+    // Shipping the flag is only worth anything while the probe still obeys it.
+    const probeSource = fs.readFileSync(
+        path.join(__dirname, '..', 'probe', 'main.go'),
+        'utf8'
+    );
+    assert.ok(
+        /func speedStep[\s\S]{0,200}if !rt\.manifest\.SpeedTest\.Enabled\s*\{\s*return 0/.test(probeSource),
+        'a disabled throughput measurement schedules no ticks'
+    );
+    assert.ok(
+        /func runSpeedPass[\s\S]{0,200}if !settings\.Enabled\s*\{\s*return/.test(probeSource),
+        'and is refused at the pass as well'
+    );
 
     // The manifest is only trustworthy while the subscription actually exports
     // the helpers it predicts tags with.

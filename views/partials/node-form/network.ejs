@@ -1,50 +1,62 @@
-            <%# ========== 4. Network ========== %>
-            <div class="form-section" id="networkSection">
-                <h3><%= t('nodes.sectionNetwork') %></h3>
+<%# Pane: hy-network — ports, domain, ACME, SNI. %>
+<% const netIsXray = node?.type === 'xray'; %>
+<div class="nf-pane" data-pane="hy-network" data-types="hysteria">
+    <div class="nf-pane__head">
+        <h3><%= t('nodes.paneNetwork') %></h3>
+        <p><%= t('nodes.paneNetworkHint') %></p>
+    </div>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="port"><%= t('nodes.port') %></label>
-                        <input type="number" id="port" name="port" value="<%= node?.port || 443 %>"
-                               placeholder="443" oninput="checkXrayPortConflict()">
+    <div class="nf-group">
+        <div class="nf-group__title"><%= t('nodes.groupPorts') %></div>
+        <div class="form-row">
+            <div id="portSlotHysteria">
+                <% if (!netIsXray) { %><%- include('field-port') %><% } %>
+            </div>
+            <div class="form-group" id="portRangeGroup">
+                <label for="portRange"><%= t('nodes.portRange') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                <input type="text" id="portRange" name="portRange" value="<%= node?.portRange || '20000-50000' %>"
+                       placeholder="20000-50000">
+                <small><%= t('nodes.portRangeHint') %></small>
+            </div>
+        </div>
+        <div class="form-group" id="hopIntervalGroup" style="max-width:320px;">
+            <label for="hopInterval"><%= t('nodes.hopInterval') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+            <input type="text" id="hopInterval" name="hopInterval" value="<%= node?.hopInterval || '' %>" placeholder="30s">
+            <small><%- renderDocsIcon('portHopping') %><%= t('nodes.hopIntervalHint') %></small>
+        </div>
+    </div>
+
+    <div class="nf-group">
+        <div class="nf-group__title"><%= t('nodes.groupDomainCert') %></div>
+        <div id="domainSlotHysteria">
+            <% if (!netIsXray) { %><%- include('field-domain') %><% } %>
+        </div>
+
+        <details class="nf-module <%= node?.domain ? '' : 'is-na' %>" id="acmeModule" <%= acmeAdvancedEnabled ? 'open' : '' %>>
+            <summary class="nf-module__head">
+                <span class="nf-module__ico"><i class="ti ti-certificate"></i></span>
+                <span class="nf-module__text">
+                    <span class="nf-module__title"><%= t('nodes.sectionAcmeAdvanced') %></span>
+                    <span class="nf-module__sub"><%- renderDocsIcon('acme') %><%= t('nodes.sectionAcmeAdvancedHint') %></span>
+                    <span class="nf-chips">
+                        <span class="nf-chip"><i class="ti ti-building-bank"></i><%= (node?.acme?.ca || 'letsencrypt') === 'zerossl' ? 'ZeroSSL' : "Let's Encrypt" %></span>
+                        <span class="nf-chip"><i class="ti ti-shield-check"></i><%= node?.acme?.type || t('nodes.acmeTypeAuto') %></span>
+                    </span>
+                </span>
+                <i class="ti ti-chevron-down nf-module__chev"></i>
+            </summary>
+            <div class="nf-module__body">
+                <%# The block is dimmed instead of hidden: an operator who does not
+                    know ACME needs a domain gets told, not left with a blank spot. %>
+                <div class="nf-info" id="acmeNoDomainInfo" style="<%= node?.domain ? 'display:none' : '' %>;margin-bottom:14px;">
+                    <i class="ti ti-info-circle"></i>
+                    <div>
+                        <strong><%= t('nodes.naAcmeNoDomain') %></strong>
+                        <small><%= t('nodes.naAcmeNoDomainHint') %></small>
                     </div>
-                    <div class="form-group hysteria-only" id="portRangeGroup" style="<%= node?.type === 'xray' ? 'display:none' : '' %>">
-                        <label for="portRange"><%= t('nodes.portRange') %></label>
-                        <input type="text" id="portRange" name="portRange" value="<%= node?.portRange || '20000-50000' %>"
-                               placeholder="20000-50000">
-                        <small><%= t('nodes.portRangeHint') %></small>
-                    </div>
                 </div>
 
-                <div class="form-group hysteria-only" id="hopIntervalGroup" style="<%= node?.type === 'xray' ? 'display:none' : '' %>">
-                    <label for="hopInterval"><%= t('nodes.hopInterval') %></label>
-                    <input type="text" id="hopInterval" name="hopInterval" value="<%= node?.hopInterval || '' %>" placeholder="30s">
-                    <small><%- renderDocsIcon('portHopping') %><%= t('nodes.hopIntervalHint') %></small>
-                </div>
-
-                <div id="xrayPortConflictWarn" class="alert alert-error" style="display:none;">
-                    <i class="ti ti-alert-triangle"></i>
-                    <strong><%= t('nodes.portConflictTitle') %>:</strong>
-                    <%= t('nodes.portConflictDesc') %>
-                </div>
-
-                <%# Domain field is shared between Hysteria (always shown, drives ACME)
-                    and Xray with tlsSource==='manual' (used as serverName/SNI for the
-                    operator-supplied certificate). It stays hidden for Xray nodes
-                    using panel/self-signed strategies. %>
-                <% var _xrayAnyTls = node?.type === 'xray' && (node?.xray?.security === 'tls' || (node?.xray?.extraInbounds || []).some(function(i){ return i && i.security === 'tls'; })); %>
-                <% var _xrayManualTls = (_xrayAnyTls && node?.xray?.tlsSource === 'manual'); %>
-                <div class="form-group" id="domainGroup" style="<%= (node?.type === 'xray' && !_xrayManualTls) ? 'display:none' : '' %>">
-                    <label for="domain"><%= t('nodes.domain') %></label>
-                    <input type="text" id="domain" name="domain" value="<%= node?.domain || '' %>"
-                           placeholder="de.example.com" oninput="toggleAcmeByDomain()">
-                    <small id="domainHintHysteria" style="<%= node?.type === 'xray' ? 'display:none' : '' %>"><%= t('nodes.domainHintHysteria') %></small>
-                    <small id="domainHintXrayManual" style="<%= _xrayManualTls ? '' : 'display:none' %>"><%= t('nodes.domainHintXrayManual') %></small>
-                </div>
-
-                <div class="form-group hysteria-only" id="acmeAdvancedToggleGroup" style="<%= node?.type === 'xray' || !node?.domain ? 'display:none' : '' %>">
-                    <div class="section-subtitle"><%= t('nodes.sectionAcmeAdvanced') %> (<%= t('nodes.optionalSuffix') %>)</div>
-                    <small class="section-hint"><%- renderDocsIcon('acme') %><%= t('nodes.sectionAcmeAdvancedHint') %></small>
+                <div id="acmeAdvancedToggleGroup" style="<%= node?.domain ? '' : 'display:none' %>">
                     <div class="form-row">
                         <div class="form-group">
                             <label for="acmeEmail"><%= t('nodes.acmeEmail') %></label>
@@ -64,7 +76,7 @@
                     </label>
                 </div>
 
-                <div class="hysteria-only optional-fields-wrap" id="acmeAdvancedFieldsWrap" style="<%= node?.type === 'xray' || !node?.domain || !acmeAdvancedEnabled ? 'display:none' : '' %>">
+                <div class="optional-fields-wrap" id="acmeAdvancedFieldsWrap" style="<%= !node?.domain || !acmeAdvancedEnabled ? 'display:none' : '' %>">
                     <div class="form-row">
                         <div class="form-group">
                             <label for="acmeListenHost"><%= t('nodes.acmeListenHost') %></label>
@@ -93,12 +105,10 @@
                     </div>
 
                     <div id="acmeDnsFields" style="<%= node?.acme?.type === 'dns' ? '' : 'display:none' %>">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="acmeDnsName"><%= t('nodes.acmeDnsName') %></label>
-                                <input type="text" id="acmeDnsName" name="acme.dns.name" value="<%= node?.acme?.dnsName || '' %>" placeholder="cloudflare">
-                                <small><%- renderDocsIcon('acmeDnsConfig') %><%= t('nodes.acmeDnsProviderHint') %></small>
-                            </div>
+                        <div class="form-group" style="max-width:320px;">
+                            <label for="acmeDnsName"><%= t('nodes.acmeDnsName') %></label>
+                            <input type="text" id="acmeDnsName" name="acme.dns.name" value="<%= node?.acme?.dnsName || '' %>" placeholder="cloudflare">
+                            <small><%- renderDocsIcon('acmeDnsConfig') %><%= t('nodes.acmeDnsProviderHint') %></small>
                         </div>
                         <div class="form-group">
                             <label for="acmeDnsConfig"><%= t('nodes.acmeDnsConfig') %></label>
@@ -107,11 +117,24 @@
                         </div>
                     </div>
                 </div>
-
-                <div class="form-group hysteria-only" id="sniGroup" style="<%= sniVisibleInitially ? '' : 'display:none' %>">
-                    <label for="sni">SNI</label>
-                    <input type="text" id="sni" name="sni" value="<%= node?.sni || '' %>"
-                           placeholder="bing.com">
-                    <small><%= t('nodes.sniHintHysteria') %></small>
-                </div>
             </div>
+        </details>
+    </div>
+
+    <div class="nf-group">
+        <div class="nf-group__title">SNI</div>
+        <div class="form-group" id="sniGroup" style="<%= sniVisibleInitially ? '' : 'display:none' %>;max-width:360px;">
+            <label for="sni">SNI <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+            <input type="text" id="sni" name="sni" value="<%= node?.sni || '' %>"
+                   placeholder="bing.com">
+            <small><%= t('nodes.sniHintHysteria') %></small>
+        </div>
+        <div class="nf-info is-warning" id="sniHasDomainInfo" style="<%= sniDomainActive ? '' : 'display:none' %>">
+            <i class="ti ti-alert-triangle"></i>
+            <div>
+                <strong><%= t('nodes.naSniHasDomain') %></strong>
+                <small><%= t('nodes.naSniHasDomainHint') %></small>
+            </div>
+        </div>
+    </div>
+</div>

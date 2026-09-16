@@ -9,6 +9,7 @@ const Probe = require('../../models/probeModel');
 const HyNode = require('../../models/hyNodeModel');
 const ProbeResult = require('../../models/probeResultModel');
 const ProbeTargetResult = require('../../models/probeTargetResultModel');
+const enrollService = require('../../services/probes/enrollService');
 const { getSettings } = require('../../utils/helpers');
 
 const queryProbesSchema = z.object({
@@ -36,6 +37,7 @@ const TOOL_DESCRIPTION = [
     'Target results are separate: a blocked resource usually means a geo-block or a blacklisted exit address.',
     '',
     'Views: probes (vantage points), nodes (latest verdict per inbound), targets (checklist per node).',
+    'A probe with blocked=true reports nothing because it spent its traffic cap, not because its host is down.',
 ].join(' ');
 
 /**
@@ -59,24 +61,36 @@ async function queryProbes(args) {
     const reportSec = settings.probes.reportIntervalSec || 900;
 
     if (parsed.view === 'probes') {
-        const probes = await Probe.listProbes();
+        const [probes, traffic] = await Promise.all([
+            Probe.listProbes(),
+            enrollService.probeTrafficStates(),
+        ]);
+
         return {
             enabled: true,
-            probes: probes.map((p) => ({
-                id: String(p._id),
-                name: p.name,
-                enrolled: !!p.enrolledAt,
-                live: !!p.lastSeenAt && Date.now() - new Date(p.lastSeenAt).getTime() < reportSec * 3 * 1000,
-                country: p.country || '',
-                asn: p.asn || '',
-                egressIp: p.egressIp || '',
-                version: p.version || '',
-                os: p.os || '',
-                arch: p.arch || '',
-                lastSeenAt: p.lastSeenAt,
-                trafficUsedBytes: p.trafficUsedBytes || 0,
-                sameHostNodeIds: p.sameHostNodeIds || [],
-            })),
+            probes: probes.map((p) => {
+                const state = traffic.get(String(p._id));
+                return {
+                    id: String(p._id),
+                    name: p.name,
+                    enrolled: !!p.enrolledAt,
+                    live: !!p.lastSeenAt && Date.now() - new Date(p.lastSeenAt).getTime() < reportSec * 3 * 1000,
+                    country: p.country || '',
+                    asn: p.asn || '',
+                    egressIp: p.egressIp || '',
+                    version: p.version || '',
+                    os: p.os || '',
+                    arch: p.arch || '',
+                    lastSeenAt: p.lastSeenAt,
+                    trafficUsedBytes: state ? state.usedBytes : (p.trafficUsedBytes || 0),
+                    trafficLimitBytes: state?.limitBytes || 0,
+                    // A stopped probe is silent because the panel refuses its
+                    // subscription, which "live: false" alone does not explain.
+                    blocked: !!state?.blocked,
+                    exhausted: !!state?.exhausted,
+                    sameHostNodeIds: p.sameHostNodeIds || [],
+                };
+            }),
         };
     }
 

@@ -1,4 +1,5 @@
-<%# ========== Reverse proxy front (Caddy on the public port) ========== %>
+<%# Pane: xr-front — Caddy on the public port, decoy site on / and the
+    selected inbounds proxied by path. %>
 <%
     const front = node?.xray?.front || {};
     const frontIds = Array.isArray(front.inboundIds) ? front.inboundIds.map(String) : [];
@@ -7,65 +8,67 @@
         ? 'success'
         : (frontStatus === 'error' ? 'danger' : (frontStatus === 'pending' ? 'warning' : 'secondary'));
 %>
-<div class="efp-section" id="frontSection"
+<div class="nf-pane" data-pane="xr-front" data-types="xray" id="frontSection"
      data-inbound-ids="<%= JSON.stringify(frontIds) %>"
      data-node-id="<%= node?._id || '' %>">
+    <div class="nf-pane__head">
+        <h3>
+            <%= t('nodes.frontTitle') %>
+            <% if (node?._id) { %>
+                <span class="badge badge-<%= frontStatusBadge %>" id="frontStatusBadge"><%= t(`nodes.frontStatus_${frontStatus}`) %></span>
+            <% } %>
+        </h3>
+        <p><%= t('nodes.frontHint') %></p>
+    </div>
+
     <input type="hidden" name="xray.front.present" value="1">
 
-    <div class="efp-header">
-        <div>
-            <div class="efp-title">
-                <i class="ti ti-shield-lock"></i> <%= t('nodes.frontTitle') %>
-                <% if (node?._id) { %>
-                    <span class="badge badge-<%= frontStatusBadge %>" id="frontStatusBadge"><%= t(`nodes.frontStatus_${frontStatus}`) %></span>
-                <% } %>
-            </div>
-            <small class="efp-hint"><%= t('nodes.frontHint') %></small>
-        </div>
-        <label class="checkbox-label efp-toggle">
+    <div class="nf-standalone-field">
+        <label class="checkbox-label">
             <input type="checkbox" id="frontEnabled" name="xray.front.enabled"
                    <%= front.enabled ? 'checked' : '' %> onchange="onFrontToggle()">
-            <span><%= t('common.enabled') %></span>
+            <span class="checkbox-text"><%= t('common.enabled') %></span>
         </label>
     </div>
 
-    <div class="efp-body" id="frontBody" style="<%= front.enabled ? '' : 'display:none;' %>">
-        <div class="ssh-warning" role="alert">
-            <i class="ti ti-info-circle ssh-warning-icon"></i>
+    <div id="frontBody" style="<%= front.enabled ? '' : 'display:none;' %>">
+        <div class="nf-info is-warning" role="alert">
+            <i class="ti ti-info-circle"></i>
             <div>
                 <strong><%= t('nodes.frontDisclaimerTitle') %></strong>
-                <div style="margin-top:4px;font-weight:400;font-size:12.5px;">
-                    <%= t('nodes.frontDisclaimerMessage') %>
-                </div>
+                <small><%= t('nodes.frontDisclaimerMessage') %></small>
             </div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" style="margin-top:16px;">
             <label for="frontPublicPort"><%= t('nodes.frontPublicPort') %></label>
             <input type="number" id="frontPublicPort" name="xray.front.publicPort"
-                   value="<%= front.publicPort || 443 %>" min="1" max="65535" placeholder="443">
+                   value="<%= front.publicPort || 443 %>" min="1" max="65535" placeholder="443"
+                   style="max-width:200px;">
             <small><%= t('nodes.frontPublicPortHint') %></small>
         </div>
 
         <div class="form-group">
             <label><%= t('nodes.frontInbounds') %></label>
-            <div class="efp-inbounds" id="frontInbounds"></div>
+            <div class="nf-picks" id="frontInbounds"></div>
             <small><%= t('nodes.frontInboundsHint') %></small>
         </div>
 
         <div class="form-group">
             <label><%= t('nodes.frontSite') %></label>
-            <div class="efp-site">
-                <label class="checkbox-tag">
-                    <input type="radio" name="xray.front.siteMode" value="nginx"
-                           <%= front.siteMode !== 'custom' ? 'checked' : '' %>>
-                    <span><%= t('nodes.frontSiteNginx') %></span>
-                </label>
-                <label class="checkbox-tag">
-                    <input type="radio" name="xray.front.siteMode" value="custom"
-                           <%= front.siteMode === 'custom' ? 'checked' : '' %>>
-                    <span><%= t('nodes.frontSiteCustom') %></span>
-                </label>
+            <div class="nf-actions" style="margin-top:0;">
+                <div class="nf-seg">
+                    <label>
+                        <input type="radio" name="xray.front.siteMode" value="nginx"
+                               <%= front.siteMode !== 'custom' ? 'checked' : '' %>>
+                        <span><%= t('nodes.frontSiteNginx') %></span>
+                    </label>
+                    <label>
+                        <input type="radio" name="xray.front.siteMode" value="custom"
+                               <%= front.siteMode === 'custom' ? 'checked' : '' %>>
+                        <span><%= t('nodes.frontSiteCustom') %></span>
+                    </label>
+                </div>
                 <% if (node?._id) { %>
                     <input type="file" id="frontSiteFile" accept=".html,.htm,text/html" hidden
                            onchange="uploadFrontSite(this)">
@@ -73,7 +76,7 @@
                             onclick="document.getElementById('frontSiteFile').click()">
                         <i class="ti ti-upload"></i> <%= t('nodes.frontSiteUpload') %>
                     </button>
-                    <span class="efp-site-state" id="frontSiteState">
+                    <span class="hint" id="frontSiteState">
                         <%= front.siteHtmlBytes ? t('nodes.frontSiteStored').replace('{bytes}', front.siteHtmlBytes) : '' %>
                     </span>
                     <% if (front.siteHtmlBytes) { %>
@@ -87,7 +90,7 @@
         </div>
 
         <% if (node?._id) { %>
-        <div class="efp-actions">
+        <div class="nf-actions">
             <button type="button" class="btn btn-primary" id="frontApplyBtn" onclick="applyFront()">
                 <i class="ti ti-rocket"></i> <%= t('nodes.frontApply') %>
             </button>
@@ -96,7 +99,7 @@
         <% if (front.lastError) { %>
             <div class="alert alert-danger mt-2" id="frontLastError"><%= front.lastError %></div>
         <% } %>
-        <pre class="efp-log" id="frontLog" style="display:none;"></pre>
+        <pre class="nf-log" id="frontLog" style="display:none;"></pre>
         <% } %>
     </div>
 </div>
