@@ -22,6 +22,7 @@ const {
     checkCdnDependents,
 } = require('../utils/cdnConfig');
 const { validateXrayXhttp } = require('../utils/xhttpOptions');
+const { applyFrontPatch } = require('../services/edgeFront/frontConfig');
 
 function hasSshCredentials(node) {
     return !!(node?.ssh?.password || node?.ssh?.privateKey);
@@ -289,11 +290,15 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
         if (!isServerlessNode(nodeType) && !ip) {
             return res.status(400).json({ error: 'ip is required for hysteria and xray nodes' });
         }
+        // The front takes over the public port, so the stored one can differ.
+        const frontNode = { port: parseInt(port, 10) || 443, domain, ip };
         if (nodeType === 'xray' && xray) {
             const listenError = normalizeXrayListens(xray);
             if (listenError) return res.status(400).json({ error: listenError });
             const xhttpError = validateXrayXhttp(xray);
             if (xhttpError) return res.status(400).json({ error: xhttpError });
+            const frontError = applyFrontPatch(xray, frontNode, null);
+            if (frontError) return res.status(400).json({ error: frontError });
         }
 
         // Validate virtual-specific fields up-front (pre('validate') hook is
@@ -354,7 +359,7 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
             type: nodeType,
             domain: isServerlessNode(nodeType) ? '' : (domain || ''),
             sni: isServerlessNode(nodeType) ? '' : (sni || ''),
-            port: port || 443,
+            port: frontNode.port,
             portRange: portRange || '20000-50000',
             statsPort: statsPort || 9999,
             statsSecret,
@@ -460,7 +465,11 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         // findByIdAndUpdate bypasses pre('validate') hooks even with runValidators,
         // so enforce type-specific invariants explicitly here. We need the existing
         // doc to know the resulting type when only one of {type,virtual} is sent.
-        const existing = await HyNode.findById(req.params.id).select('type ip virtual cdn xray name flag active groups').lean();
+        // +siteHtml: the front subdocument is written whole, so the decoy page
+        // has to be carried over instead of being dropped by the $set.
+        const existing = await HyNode.findById(req.params.id)
+            .select('type ip domain port virtual cdn xray name flag active groups +xray.front.siteHtml')
+            .lean();
         if (!existing) {
             return res.status(404).json({ error: 'Node not found' });
         }
@@ -479,6 +488,9 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         if (xrayPatch) {
             delete updates.xray;
             for (const [key, value] of Object.entries(xrayPatch)) {
+                // front is owned by the xray branch below: it merges the
+                // provisioning state and the decoy page the caller cannot send.
+                if (key === 'front') continue;
                 updates[`xray.${key}`] = value;
             }
         }
@@ -521,6 +533,20 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         } else if (nextType === 'xray') {
             const xhttpError = validateXrayXhttp(nextXray);
             if (xhttpError) return res.status(400).json({ error: xhttpError });
+            if (xrayPatch?.front) {
+                const frontNode = {
+                    port: updates.port !== undefined ? parseInt(updates.port, 10) : existing.port,
+                    domain: updates.domain !== undefined ? updates.domain : existing.domain,
+                    ip: nextIp,
+                };
+                const frontError = applyFrontPatch(nextXray, frontNode, existing.xray?.front);
+                if (frontError) return res.status(400).json({ error: frontError });
+                // Only what the layout rewrites, so a partial body keeps the rest.
+                updates.port = frontNode.port;
+                for (const key of ['front', 'listen', 'security', 'extraInbounds']) {
+                    if (nextXray[key] !== undefined) updates[`xray.${key}`] = nextXray[key];
+                }
+            }
         }
 
         // Only an Xray node can be a CDN origin, and only a type, inbound or

@@ -17,6 +17,7 @@ const nodeSetup = require('./nodeSetup');
 const HyNode = require('../models/hyNodeModel');
 const logger = require('../utils/logger');
 const { invalidateNodesCache } = require('../utils/helpers');
+const { shellQuote } = require('../utils/shell');
 
 const RELEASES_URL = 'https://api.github.com/repos/XTLS/Xray-core/releases?per_page=100';
 const RELEASE_DOWNLOAD_PREFIX = 'https://github.com/XTLS/Xray-core/releases/download/';
@@ -234,10 +235,6 @@ function selectReleaseAsset(release, architecture) {
         archiveUrl: archive.url,
         digestUrl: digest.url,
     };
-}
-
-function shellQuote(value) {
-    return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
 }
 
 function buildUpdateScript({ release, asset, requestId }) {

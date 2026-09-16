@@ -27,6 +27,7 @@ const webhookService = require('../services/webhookService');
 const { isServerlessNode } = require('../utils/nodeTypes');
 const { isValidXhttpRange, isAllZeroRange } = require('../utils/xhttpOptions');
 const { distributeFingerprints, pickFingerprint } = require('../utils/fingerprints');
+const { isInboundFronted, frontClientAlpn } = require('../utils/xrayFront');
 
 // ==================== HELPERS ====================
 
@@ -575,7 +576,28 @@ function getXrayPublishedInbounds(node) {
             xhttpSeqKey: i.xhttpSeqKey,
         }));
 
-    return [main, ...extras];
+    return [main, ...extras].map(inbound => _applyFrontPublication(node, inbound));
+}
+
+/**
+ * Publish the front's port and TLS instead of the inbound's loopback port and
+ * security='none'. The address is unchanged: the front is on the same host.
+ */
+function _applyFrontPublication(node, inbound) {
+    const front = node.xray?.front;
+    if (!isInboundFronted(node.xray, inbound.extraId)) return inbound;
+    const published = {
+        ...inbound,
+        port: front.publicPort || 443,
+        security: 'tls',
+        alpn: frontClientAlpn(inbound.transport),
+    };
+    // Caddy selects its site block by Host, and gRPC carries it in :authority,
+    // which defaults to the dial address — not the name the front answers on.
+    if (inbound.transport === 'grpc') {
+        published.grpcAuthority = _resolveXrayTlsClientHints(node).host;
+    }
+    return published;
 }
 
 /**

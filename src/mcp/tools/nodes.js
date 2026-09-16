@@ -27,6 +27,7 @@ const {
     XHTTP_SESSION_TABLE_VALUES,
     validateXrayXhttp,
 } = require('../../utils/xhttpOptions');
+const { applyFrontPatch } = require('../../services/edgeFront/frontConfig');
 
 async function invalidateNodesCache() {
     await cache.invalidateNodes();
@@ -121,6 +122,17 @@ const xrayExtraInboundZ = z.object({
     inboundTag: z.string(),
 });
 
+// Caddy on the node's public port. The listed inbounds move to loopback with
+// TLS terminated by the front, so only ws/grpc/xhttp qualify. ALPN is not a
+// knob: the front advertises h2 and http/1.1 and each transport negotiates
+// what it needs. The decoy page is uploaded through the panel, not here.
+const xrayFrontZ = z.object({
+    enabled: z.boolean().optional(),
+    publicPort: z.number().int().min(1).max(65535).optional().describe('Port clients connect to; Caddy listens here instead of the inbounds (default 443)'),
+    siteMode: z.enum(['nginx', 'custom']).optional().describe('Decoy site on /: built-in nginx welcome page, or HTML uploaded via the panel'),
+    inboundIds: z.array(z.string()).optional().describe('"main" for the main inbound, otherwise extraInbounds[].id'),
+});
+
 const xrayConfigZ = z.object({
     ...xrayInboundCommonZ,
     tlsSource: z.enum(['panel', 'acme', 'manual', 'self-signed']).optional(),
@@ -133,6 +145,7 @@ const xrayConfigZ = z.object({
     agentToken: z.string().optional(),
     agentTls: z.boolean().optional(),
     extraInbounds: z.array(xrayExtraInboundZ).optional(),
+    front: xrayFrontZ.optional(),
 });
 
 const manageNodeSchema = z.object({
@@ -412,6 +425,13 @@ async function manageNode(args, emit) {
                 if (nodeType === 'xray') {
                     const xhttpError = validateXrayXhttp(data.xray);
                     if (xhttpError) return { error: xhttpError, code: 400 };
+                    if (data.xray?.front) {
+                        // The front takes over data.port.
+                        const frontNode = { port: data.port || 443, domain: data.domain, ip: data.ip };
+                        const frontError = applyFrontPatch(data.xray, frontNode, null);
+                        if (frontError) return { error: frontError, code: 400 };
+                        data.port = frontNode.port;
+                    }
                 }
                 const existing = await HyNode.findOne({ ip: data.ip, type: nodeType });
                 if (existing) return { error: `A ${nodeType} node with this IP already exists`, code: 409 };
@@ -533,13 +553,20 @@ async function manageNode(args, emit) {
             // realityPublicKey, manualKey) are preserved instead of wiped by a full $set.
             if (data.xray && typeof data.xray === 'object') {
                 for (const [k, v] of Object.entries(data.xray)) {
+                    // front is owned by the xray branch below: it merges the
+                    // provisioning state and the decoy page a caller cannot send.
+                    if (k === 'front') continue;
                     updates[`xray.${k}`] = v;
                 }
             }
 
             // findByIdAndUpdate skips pre('validate') hooks, so re-implement
             // type-aware invariants here. Mirror the behaviour of routes/nodes.js PUT.
-            const existing = await HyNode.findById(id).select('type ip virtual cdn xray name flag active groups').lean();
+            // +siteHtml: the front subdocument is written whole, so the decoy
+            // page has to be carried over instead of being dropped by the $set.
+            const existing = await HyNode.findById(id)
+                .select('type ip domain port virtual cdn xray name flag active groups +xray.front.siteHtml')
+                .lean();
             if (!existing) return { error: `Node '${id}' not found`, code: 404 };
 
             // Renames only — pre-existing duplicates stay editable (see panel route).
@@ -591,8 +618,23 @@ async function manageNode(args, emit) {
             } else if (!nextIp) {
                 return { error: `Node type ${nextType} requires ip`, code: 400 };
             } else if (nextType === 'xray') {
-                const xhttpError = validateXrayXhttp({ ...(existing.xray || {}), ...(data.xray || {}) });
+                const nextXray = { ...(existing.xray || {}), ...(data.xray || {}) };
+                const xhttpError = validateXrayXhttp(nextXray);
                 if (xhttpError) return { error: xhttpError, code: 400 };
+                if (data.xray?.front) {
+                    const frontNode = {
+                        port: updates.port !== undefined ? updates.port : existing.port,
+                        domain: updates.domain !== undefined ? updates.domain : existing.domain,
+                        ip: nextIp,
+                    };
+                    const frontError = applyFrontPatch(nextXray, frontNode, existing.xray?.front);
+                    if (frontError) return { error: frontError, code: 400 };
+                    // Write back only what the layout can rewrite.
+                    updates.port = frontNode.port;
+                    for (const key of ['front', 'listen', 'security', 'extraInbounds']) {
+                        if (nextXray[key] !== undefined) updates[`xray.${key}`] = nextXray[key];
+                    }
+                }
             }
 
             // Only an Xray node can be a CDN origin, and only a type, inbound or

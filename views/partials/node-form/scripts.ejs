@@ -315,6 +315,77 @@
     font-weight: 600;
 }
 
+/* ── Reverse proxy front ── */
+.efp-section {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px dashed var(--border);
+}
+.efp-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+.efp-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.efp-hint {
+    color: var(--text-muted);
+    font-size: 12px;
+    display: block;
+    margin-top: 4px;
+}
+.efp-toggle { flex-shrink: 0; }
+.efp-body { margin-top: 16px; }
+.efp-site {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.efp-inbounds {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 8px;
+}
+.efp-inbound-empty {
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 10px 0;
+}
+.efp-inbound-note {
+    display: block;
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 2px;
+}
+.efp-site-state { color: var(--text-muted); font-size: 12px; }
+.efp-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+}
+.efp-log {
+    margin-top: 12px;
+    max-height: 240px;
+    overflow: auto;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.45);
+    color: #d4d4d8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font: 12px/1.55 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+}
+
 /* ── CDN edge addresses ── */
 .cdn-connection-card {
     margin: 4px 0 18px;
@@ -681,7 +752,13 @@ const i18n = {
     cdnConnectionReady: <%- JSON.stringify(t("nodes.cdnConnectionReady")) %>,
     cdnMihomoExcluded: <%- JSON.stringify(t("nodes.cdnMihomoExcluded")) %>,
     cdnSaveFailed: <%- JSON.stringify(t("nodes.cdnSaveFailed")) %>,
-    cdnSaving: <%- JSON.stringify(t("nodes.cdnSaving")) %>
+    cdnSaving: <%- JSON.stringify(t("nodes.cdnSaving")) %>,
+    frontMainInbound: <%- JSON.stringify(t("nodes.frontMainInbound")) %>,
+    frontNoCandidates: <%- JSON.stringify(t("nodes.frontNoCandidates")) %>,
+    frontSaveFirst: <%- JSON.stringify(t("nodes.frontSaveFirst")) %>,
+    frontApplying: <%- JSON.stringify(t("nodes.frontApplying")) %>,
+    frontApplied: <%- JSON.stringify(t("nodes.frontApplied")) %>,
+    frontSiteStored: <%- JSON.stringify(t("nodes.frontSiteStored")) %>
 };
 const i18nConfig = {
     copied: <%- JSON.stringify(t("common.copied")) %>,
@@ -908,6 +985,7 @@ function updateXrayTransportUI() {
     const flowGroup = document.getElementById('xrayFlowGroup');
     if (flowGroup) flowGroup.style.display = transport === 'tcp' ? '' : 'none';
     _refreshMainFallbackVisibility();
+    refreshFrontInbounds();
 }
 
 // True if main or any extra inbound uses TLS — drives #xrayTlsConfig visibility.
@@ -1134,6 +1212,7 @@ function addExtraInbound() {
     container.appendChild(node);
     checkXrayPortConflict();
     if (typeof updateXraySecurityUI === 'function') updateXraySecurityUI();
+    refreshFrontInbounds();
 }
 
 function removeExtraInbound(btn) {
@@ -1143,6 +1222,7 @@ function removeExtraInbound(btn) {
     card.remove();
     checkXrayPortConflict();
     if (typeof updateXraySecurityUI === 'function') updateXraySecurityUI();
+    refreshFrontInbounds();
 }
 
 function _findExtraCard(el) {
@@ -1171,6 +1251,7 @@ function updateExtraXrayTransportUI(selectEl) {
     if (xhttp) xhttp.style.display = transport === 'xhttp' ? '' : 'none';
     if (flow) flow.style.display = transport === 'tcp' ? '' : 'none';
     _refreshExtraFallbackVisibility(card);
+    refreshFrontInbounds();
 }
 
 function updateExtraXraySecurityUI(selectEl) {
@@ -1196,6 +1277,189 @@ function updateExtraInboundSummary(el) {
     const summary = card.querySelector('.extra-inbound-summary');
     if (summary) summary.textContent = transport.toUpperCase() + ' / ' + security + ' : ' + port;
 }
+
+// ─── Reverse proxy front ─────────────────────────────────────────────────────
+// The picker is rebuilt from the live form: an inbound added in this session
+// must be selectable before the node is saved.
+const FRONT_TRANSPORTS = ['ws', 'grpc', 'xhttp'];
+
+function frontSelectedIds() {
+    const section = document.getElementById('frontSection');
+    if (!section) return [];
+    const checked = Array.from(section.querySelectorAll('input[name="xray.front.inboundIds"]:checked'));
+    if (checked.length > 0) return checked.map(input => input.value);
+    try {
+        return JSON.parse(section.dataset.inboundIds || '[]');
+    } catch (_) {
+        return [];
+    }
+}
+
+function frontCandidates() {
+    const candidates = [];
+    const mainTransport = document.getElementById('xrayTransport')?.value || 'tcp';
+    if (FRONT_TRANSPORTS.includes(mainTransport)) {
+        candidates.push({
+            id: 'main',
+            label: i18n.frontMainInbound,
+            note: mainTransport.toUpperCase(),
+        });
+    }
+    document.querySelectorAll('#extraInboundsContainer .extra-inbound-card').forEach((card, index) => {
+        const transport = card.querySelector('select[name="xray_extra_transport"]')?.value || 'tcp';
+        const id = card.querySelector('input[name="xray_extra_id"]')?.value || '';
+        if (!id || !FRONT_TRANSPORTS.includes(transport)) return;
+        const label = card.querySelector('input[name="xray_extra_label"]')?.value.trim();
+        candidates.push({
+            id,
+            label: label || `#${index + 1}`,
+            note: transport.toUpperCase(),
+        });
+    });
+    return candidates;
+}
+
+function refreshFrontInbounds() {
+    const container = document.getElementById('frontInbounds');
+    if (!container) return;
+    const selected = new Set(frontSelectedIds());
+    const candidates = frontCandidates();
+
+    if (candidates.length === 0) {
+        container.innerHTML = '<div class="efp-inbound-empty"></div>';
+        container.firstChild.textContent = i18n.frontNoCandidates;
+        return;
+    }
+
+    container.innerHTML = '';
+    for (const candidate of candidates) {
+        const label = document.createElement('label');
+        label.className = 'checkbox-tag';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.name = 'xray.front.inboundIds';
+        input.value = candidate.id;
+        input.checked = selected.has(candidate.id);
+        const text = document.createElement('span');
+        text.textContent = candidate.label;
+        const note = document.createElement('small');
+        note.className = 'efp-inbound-note';
+        note.textContent = candidate.note;
+        text.appendChild(note);
+        label.append(input, text);
+        container.appendChild(label);
+    }
+}
+
+function onFrontToggle() {
+    const enabled = document.getElementById('frontEnabled')?.checked;
+    const body = document.getElementById('frontBody');
+    if (body) body.style.display = enabled ? '' : 'none';
+    if (enabled) refreshFrontInbounds();
+}
+
+<% if (node?._id) { %>
+let frontPollTimer = null;
+
+function frontLog(lines) {
+    const log = document.getElementById('frontLog');
+    if (!log) return;
+    log.style.display = '';
+    log.textContent = (lines || []).join('\n');
+    log.scrollTop = log.scrollHeight;
+}
+
+async function applyFront() {
+    const button = document.getElementById('frontApplyBtn');
+    const hint = document.getElementById('frontApplyHint');
+    if (button) button.disabled = true;
+    if (hint) hint.textContent = i18n.frontApplying;
+    try {
+        const response = await fetch('/panel/nodes/<%= node._id %>/front-apply', {
+            method: 'POST',
+            credentials: 'include',
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || i18n.error);
+        frontLog(data.task?.logs);
+        pollFrontTask();
+    } catch (error) {
+        if (hint) hint.textContent = error.message;
+        if (button) button.disabled = false;
+    }
+}
+
+async function pollFrontTask() {
+    clearTimeout(frontPollTimer);
+    try {
+        const response = await fetch('/panel/nodes/<%= node._id %>/front-task', {
+            credentials: 'include',
+        });
+        const task = await response.json();
+        frontLog(task.logs);
+        if (task.state === 'running') {
+            frontPollTimer = setTimeout(pollFrontTask, 2000);
+            return;
+        }
+        const button = document.getElementById('frontApplyBtn');
+        const hint = document.getElementById('frontApplyHint');
+        if (button) button.disabled = false;
+        if (hint) hint.textContent = task.state === 'error' ? (task.error || i18n.error) : i18n.frontApplied;
+        const badge = document.getElementById('frontStatusBadge');
+        if (badge) {
+            badge.className = 'badge badge-' + (task.state === 'error' ? 'danger' : 'success');
+        }
+    } catch (error) {
+        frontPollTimer = setTimeout(pollFrontTask, 4000);
+    }
+}
+
+async function uploadFrontSite(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    const state = document.getElementById('frontSiteState');
+    try {
+        const body = new FormData();
+        body.append('file', file);
+        const response = await fetch('/panel/nodes/<%= node._id %>/front-site-upload', {
+            method: 'POST',
+            credentials: 'include',
+            body,
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || i18n.error);
+        if (state) state.textContent = i18n.frontSiteStored.replace('{bytes}', data.size);
+        const custom = document.querySelector('input[name="xray.front.siteMode"][value="custom"]');
+        if (custom) custom.checked = true;
+    } catch (error) {
+        if (state) state.textContent = error.message;
+    } finally {
+        input.value = '';
+    }
+}
+
+async function resetFrontSite() {
+    const state = document.getElementById('frontSiteState');
+    try {
+        const response = await fetch('/panel/nodes/<%= node._id %>/front-site', {
+            method: 'DELETE',
+            credentials: 'include',
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || i18n.error);
+        if (state) state.textContent = '';
+        const nginx = document.querySelector('input[name="xray.front.siteMode"][value="nginx"]');
+        if (nginx) nginx.checked = true;
+    } catch (error) {
+        if (state) state.textContent = error.message;
+    }
+}
+<% } else { %>
+function applyFront() {
+    const hint = document.getElementById('frontApplyHint');
+    if (hint) hint.textContent = i18n.frontSaveFirst;
+}
+<% } %>
 
 // Serialize a row's checked fingerprint-pool checkboxes into its sibling hidden
 // CSV input. The hidden input (not the checkboxes) is submitted so the parallel
@@ -1236,6 +1500,7 @@ function updateExtraInboundTitle(input) {
         const idx = parseInt(card.dataset.extraIdx || '0', 10);
         title.textContent = v || ((i18n.xrayExtraInbound || 'Extra inbound') + ' #' + (idx + 1));
     }
+    refreshFrontInbounds();
 }
 
 async function generateExtraXrayKeys(btn) {

@@ -178,11 +178,16 @@ async function checkPanelCertRotation(syncInstance) {
 
     let nodes;
     try {
+        // The main inbound, an extra one or the front can serve the cert.
         nodes = await HyNode.find({
             type: 'xray',
             active: true,
-            'xray.security': 'tls',
             'xray.tlsSource': 'panel',
+            $or: [
+                { 'xray.security': 'tls' },
+                { 'xray.extraInbounds.security': 'tls' },
+                { 'xray.front.enabled': true },
+            ],
         });
     } catch (err) {
         logger.error(`[CertWatch] Failed to list panel-source nodes: ${err.message}`);
@@ -688,6 +693,20 @@ class SyncService {
                 logger.info(`[Xray Sync] Node ${node.name}: synced ${userPayload.length} users via agent`);
             } catch (error) {
                 logger.warn(`[Xray Sync] Node ${node.name}: agent sync failed: ${error.message}`);
+            }
+        }
+
+        // Step 4: the front. After the restart, so the fronted inbounds already
+        // sit on loopback and Caddy can take over the public port.
+        if (node.xray?.front?.enabled || node.xray?.front?.appliedFingerprint) {
+            try {
+                const front = require('./edgeFront/provisionService');
+                const result = await front.reconcileFront(node);
+                if (result.error) {
+                    logger.warn(`[Xray Sync] Node ${node.name}: front reconcile failed: ${result.error}`);
+                }
+            } catch (error) {
+                logger.warn(`[Xray Sync] Node ${node.name}: front reconcile skipped: ${error.message}`);
             }
         }
 

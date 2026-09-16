@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 
+const { shellQuote } = require('../utils/shell');
+
 const MAX_CRON_BYTES = 64 * 1024;
 const MAX_COMMAND_CHARS = 4096;
 const MAX_OUTPUT_CHARS = 20000;
@@ -65,10 +67,6 @@ function validateCronContent(content) {
     }
   }
   return true;
-}
-
-function shellQuote(value) {
-  return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
 }
 
 function truncateOutput(value) {

@@ -101,6 +101,11 @@ const stubs = {
             invalidateCount += 1;
         },
     },
+    // Active toggles never touch the reverse-proxy front; stubbed so the real
+    // module does not pull in the panel config.
+    '../services/edgeFront/frontConfig': {
+        applyFrontPatch: () => null,
+    },
 };
 
 Module._load = function patchedLoad(request, parent, isMain) {

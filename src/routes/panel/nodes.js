@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
+const multer = require('multer');
 const router = express.Router();
 
 const Admin = require('../../models/adminModel');
@@ -32,6 +33,9 @@ const {
     isValidHostname,
     CDN_ORIGIN_CANDIDATE_SELECT,
 } = require('../../utils/cdnConfig');
+const { applyFrontLayout } = require('../../services/edgeFront/frontConfig');
+const frontProvisionService = require('../../services/edgeFront/provisionService');
+const { MAX_CUSTOM_BYTES, validateCustomHtml } = require('../../utils/decoyPage');
 const config = require('../../../config');
 const logger = require('../../utils/logger');
 
@@ -69,6 +73,26 @@ const xrayVersionApplyLimiter = rateLimit({
     max: 3,
     standardHeaders: true,
     legacyHeaders: false,
+});
+
+const frontApplyLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 6,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const frontUploadLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// In-memory: the page is small and goes straight into the node document.
+const frontSiteUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_CUSTOM_BYTES, files: 1 },
 });
 
 const cdnResolveLimiter = rateLimit({
@@ -590,6 +614,7 @@ router.post('/nodes', async (req, res) => {
 
         if (nodeType === 'xray') {
             nodeData.xray = parseXrayFormFields(req.body);
+            applyFrontLayout(nodeData.xray, nodeData, null);
             const xrayError = validateXrayFormFields(nodeData.xray, nodeData);
             if (xrayError) {
                 return sendNodeFormResult(req, res, '/panel/nodes/add', xrayError);
@@ -838,6 +863,93 @@ router.post('/nodes/:id/xray-version', xrayVersionApplyLimiter, async (req, res)
     }
 });
 
+// ─── Reverse proxy front ─────────────────────────────────────────────────────
+
+router.get('/nodes/:id/front-task', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+        return res.status(400).json({ error: 'Invalid node id' });
+    }
+    return res.json(frontProvisionService.getTask(req.params.id));
+});
+
+router.post('/nodes/:id/front-apply', frontApplyLimiter, async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ error: 'Invalid node id' });
+        }
+        const node = await HyNode.findById(req.params.id);
+        if (!node) return res.status(404).json({ error: 'Node not found' });
+        if (node.type !== 'xray') return res.status(400).json({ error: 'Node is not an Xray node' });
+        if (!node.xray?.front?.enabled) {
+            return res.status(400).json({ error: 'Enable the reverse proxy front and save the node first' });
+        }
+        if (!node.ssh?.password && !node.ssh?.privateKey) {
+            return res.status(409).json({ error: 'SSH credentials are required to apply the front' });
+        }
+
+        const task = frontProvisionService.startFrontApply(node._id);
+        logger.info(`[Panel] Front apply started for ${node.name} by ${req.session.adminUsername} (IP: ${req.ip})`);
+        return res.status(202).json({ accepted: true, task });
+    } catch (error) {
+        logger.error(`[Panel] Front apply error: ${error.message}`);
+        return res.status(error.statusCode || 500).json({ error: error.message });
+    }
+});
+
+// Stored on the node and applied on the next front apply; siteMode switches to
+// 'custom' so the upload takes effect.
+router.post('/nodes/:id/front-site-upload', frontUploadLimiter, (req, res) => {
+    frontSiteUpload.single('file')(req, res, async (err) => {
+        try {
+            if (err) {
+                const tooLarge = err.code === 'LIMIT_FILE_SIZE';
+                return res.status(400).json({
+                    error: tooLarge
+                        ? `File too large (max ${MAX_CUSTOM_BYTES} bytes)`
+                        : err.message,
+                });
+            }
+            if (!mongoose.isValidObjectId(req.params.id)) {
+                return res.status(400).json({ error: 'Invalid node id' });
+            }
+            if (!req.file?.buffer) return res.status(400).json({ error: 'No file uploaded' });
+
+            validateCustomHtml(req.file.buffer);
+            const result = await HyNode.updateOne({ _id: req.params.id, type: 'xray' }, {
+                $set: {
+                    'xray.front.siteMode': 'custom',
+                    'xray.front.siteHtml': req.file.buffer,
+                },
+            });
+            if (result.matchedCount === 0) {
+                return res.status(404).json({ error: 'Node not found' });
+            }
+            await invalidateNodesCache();
+            return res.json({ success: true, size: req.file.buffer.length });
+        } catch (error) {
+            logger.error(`[Panel] Front site upload error: ${error.message}`);
+            return res.status(400).json({ error: error.message });
+        }
+    });
+});
+
+router.delete('/nodes/:id/front-site', async (req, res) => {
+    try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).json({ error: 'Invalid node id' });
+        }
+        const result = await HyNode.updateOne({ _id: req.params.id, type: 'xray' }, {
+            $set: { 'xray.front.siteMode': 'nginx', 'xray.front.siteHtml': null },
+        });
+        if (result.matchedCount === 0) return res.status(404).json({ error: 'Node not found' });
+        await invalidateNodesCache();
+        return res.json({ success: true });
+    } catch (error) {
+        logger.error(`[Panel] Front site reset error: ${error.message}`);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
 // GET /panel/nodes/:id - Edit node form
 router.get('/nodes/:id', async (req, res) => {
     try {
@@ -847,7 +959,7 @@ router.get('/nodes/:id', async (req, res) => {
         // PEM is then stripped via sanitizeXrayForRender before reaching EJS.
         const [node, groups, cascadeLinks, settings, candidateNodes, currentAdmin] = await Promise.all([
             HyNode.findById(req.params.id)
-                .select('+xray.manualKey')
+                .select('+xray.manualKey +xray.front.siteHtml')
                 .populate('groups', 'name color'),
             getActiveGroups(),
             CascadeLink.find({
@@ -915,8 +1027,9 @@ router.get('/nodes/:id', async (req, res) => {
 router.post('/nodes/:id', async (req, res) => {
     const nodeId = req.params.id;
     try {
-        // Full doc (not partial) — we .save() it below; +manualKey is select:false.
-        const existingNode = await HyNode.findById(nodeId).select('+xray.manualKey');
+        // Full doc (not partial) — we .save() it below; manualKey and the
+        // front's decoy page are select:false.
+        const existingNode = await HyNode.findById(nodeId).select('+xray.manualKey +xray.front.siteHtml');
         if (!existingNode) {
             return res.redirect('/panel/nodes');
         }
@@ -1008,9 +1121,19 @@ router.post('/nodes/:id', async (req, res) => {
                 ...existingXray,
                 ...parsedXray,
             };
-            const portForValidate = parseInt(req.body.port, 10) || existingNode.port;
-            const domainForValidate = String(req.body.domain || '').trim();
-            const xrayError = validateXrayFormFields(updates.xray, { port: portForValidate, domain: domainForValidate });
+            if (parsedXray.front) {
+                // The form posts only the operator-editable part of the front.
+                updates.xray.front = { ...existingXray.front, ...parsedXray.front };
+            }
+            const nodeForValidate = {
+                port: parseInt(req.body.port, 10) || existingNode.port,
+                domain: String(req.body.domain || '').trim(),
+                ip: String(req.body.ip || existingNode.ip || '').trim(),
+            };
+            applyFrontLayout(updates.xray, nodeForValidate, existingXray.front);
+            // The front takes over the public port, so the inbound moves.
+            updates.port = nodeForValidate.port;
+            const xrayError = validateXrayFormFields(updates.xray, nodeForValidate);
             if (xrayError) {
                 return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, xrayError);
             }

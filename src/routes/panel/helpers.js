@@ -34,6 +34,7 @@ const {
     normalizeFingerprint,
     normalizeFingerprintPool,
 } = require('../../utils/fingerprints');
+const { normalizeXrayFront, xrayNeedsTls } = require('../../utils/xrayFront');
 const { version: appVersion } = require('../../../package.json');
 
 // Compiled template cache (production only)
@@ -389,7 +390,25 @@ function parseXrayFormFields(body) {
     // touch extras can just delete the field from the result.
     xray.extraInbounds = parseExtraInbounds(body);
 
+    const front = parseXrayFront(body);
+    if (front) xray.front = front;
+
     return xray;
+}
+
+/**
+ * Parse the reverse-proxy front block, or null when the form did not carry it.
+ * siteHtml is uploaded separately (see the front-site-upload route).
+ */
+function parseXrayFront(body) {
+    // An unchecked checkbox posts nothing, hence the hidden marker.
+    if (body['xray.front.present'] !== '1') return null;
+    return normalizeXrayFront({
+        enabled: body['xray.front.enabled'],
+        publicPort: body['xray.front.publicPort'],
+        siteMode: body['xray.front.siteMode'],
+        inboundIds: body['xray.front.inboundIds'],
+    });
 }
 
 /**
@@ -417,7 +436,8 @@ function validateXrayFormFields(xray, node) {
 
     // TLS-source-specific validation is independent of extra inbounds, run
     // it first so the early-return below does not mask manual-PEM mistakes.
-    const tlsSecurity = (xray?.security === 'tls');
+    // Covers extras and the front too: either can be the only TLS consumer.
+    const tlsSecurity = xrayNeedsTls(xray);
     if (tlsSecurity && xray?.tlsSource === 'acme') {
         const domain = String(node?.domain || '').trim().toLowerCase();
         if (!domain) {
@@ -504,7 +524,7 @@ function validateXrayFormFields(xray, node) {
     if (mainXhttpErr) return mainXhttpErr;
 
     if (!xray || !Array.isArray(xray.extraInbounds) || xray.extraInbounds.length === 0) {
-        return null;
+        return validateXrayFrontFields(xray, node);
     }
 
     const mainPort = parseInt(node?.port, 10);
@@ -560,7 +580,12 @@ function validateXrayFormFields(xray, node) {
         // reject submissions with empty privateKey here.
     }
 
-    return null;
+    return validateXrayFrontFields(xray, node);
+}
+
+function validateXrayFrontFields(xray, node) {
+    // Required lazily: edgeFront pulls in nodeSetup, which pulls in syncService.
+    return require('../../services/edgeFront/frontConfig').validateFront(xray, node);
 }
 
 /**
@@ -601,6 +626,12 @@ function sanitizeXrayForRender(xray) {
     } else {
         plain.manualKeySet = false;
         plain.manualKey = '';
+    }
+    // The form only needs the size, not up to 256 KB of decoy HTML. Copied,
+    // since `plain` is shallow when the caller passes a lean object.
+    if (plain.front) {
+        plain.front = { ...plain.front, siteHtmlBytes: plain.front.siteHtml?.length || 0 };
+        delete plain.front.siteHtml;
     }
     return plain;
 }
@@ -1456,7 +1487,9 @@ module.exports = {
     connectNodeSSH,
     parseXrayFormFields,
     parseExtraInbounds,
+    parseXrayFront,
     validateXrayFormFields,
+    validateXrayFrontFields,
     ensureExtraInboundRealityKeys,
     resolveManualKeyPlaceholder,
     sanitizeXrayForRender,

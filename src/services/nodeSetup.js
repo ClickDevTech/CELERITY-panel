@@ -11,13 +11,7 @@ const cryptoService = require('./cryptoService');
 const Settings = require('../models/settingsModel');
 const configGenerator = require('./configGenerator');
 const { isServerlessNode } = require('../utils/nodeTypes');
-
-function isLoopbackAddress(value) {
-    const address = String(value || '').trim().toLowerCase();
-    return /^127\./.test(address)
-        || address === '::1'
-        || address === '0:0:0:0:0:0:0:1';
-}
+const { isLoopbackAddress, hasOwnTlsInbound } = require('../utils/xrayFront');
 
 /**
  * Check if a node is on the same VPS as the panel
@@ -1011,8 +1005,16 @@ async function setupXrayNode(node, options = {}) {
             return { success: false, error: msg, logs, realityKeys: null };
         }
 
-        // ACME on same-VPS is incompatible (port 80 held by panel Caddy).
         const xrayCfgEarly = node?.xray || {};
+        if (sameVps && xrayCfgEarly.front?.enabled) {
+            const msg = `Reverse proxy front is incompatible with same-VPS deployment: `
+                + `the panel's Caddy already owns port 443 on this server. `
+                + `Move the node to a separate VPS or turn the front off.`;
+            log(`ERROR: ${msg}`);
+            return { success: false, error: msg, logs, realityKeys: null };
+        }
+
+        // ACME on same-VPS is incompatible (port 80 held by panel Caddy).
         if (sameVps && xrayCfgEarly.security === 'tls' && xrayCfgEarly.tlsSource === 'acme') {
             const msg = `tlsSource='acme' is incompatible with same-VPS deployment: ` +
                 `port 80 is held by the panel's Caddy and cannot be used for HTTP-01. ` +
@@ -1119,10 +1121,13 @@ async function setupXrayNode(node, options = {}) {
         logs.push(configContent.substring(0, 500) + (configContent.length > 500 ? '\n...' : ''));
         logs.push('--- End config preview ---');
 
+        // Any inbound may terminate TLS, not just the main one.
+        const terminatesTls = hasOwnTlsInbound(xrayCfg);
+
         // Self-signed TLS: openssl is only invoked when explicitly requested.
         // For tlsSource=panel/manual the certificate is inlined into config.json
         // by configGenerator and never written to disk on the remote node.
-        if (xrayCfg.security === 'tls' && xrayCfg.tlsSource === 'self-signed') {
+        if (terminatesTls && xrayCfg.tlsSource === 'self-signed') {
             log('Generating self-signed TLS certificate (testing only)...');
             // Strip shell metacharacters from CN (node.sni is admin-only but
             // not strictly validated) and cap at the X.509 64-char CN limit.
@@ -1155,7 +1160,9 @@ fi
             if (!certResult.success) {
                 log(`Self-signed cert generation warning: ${certResult.error}`);
             }
-        } else if (xrayCfg.security === 'tls' && xrayCfg.tlsSource === 'acme') {
+        } else if (xrayCfg.front?.enabled && xrayCfg.tlsSource === 'acme') {
+            log('TLS source: acme — the reverse proxy front obtains and renews the certificate itself.');
+        } else if (terminatesTls && xrayCfg.tlsSource === 'acme') {
             const domain = String(node.domain || '').trim();
             const email = (String(xrayCfg.acmeEmail || '').trim()) ||
                           (String(config.ACME_EMAIL || '').trim());
@@ -1173,7 +1180,7 @@ fi
                 throw new Error(`ACME setup failed: ${acmeResult.error || 'see logs above'}`);
             }
             log('ACME cert installed and auto-renewal cron registered on the node.');
-        } else if (xrayCfg.security === 'tls') {
+        } else if (terminatesTls || xrayCfg.front?.enabled) {
             log(`TLS source: ${xrayCfg.tlsSource || 'panel'} — certificate inlined in config.json (no on-node openssl)`);
         }
 
@@ -1192,6 +1199,10 @@ fi
                 && !isLoopbackAddress(inbound.listen || '0.0.0.0')) {
                 externalPorts.push(port);
             }
+        }
+        // The front owns the public port, plus :80 for the ACME challenge.
+        if (xrayConfig.front?.enabled) {
+            externalPorts.push(xrayConfig.front.publicPort || 443, 80);
         }
         const allPorts = [...new Set(externalPorts)];
 

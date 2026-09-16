@@ -425,6 +425,9 @@
                     </template>
                 </div>
 
+                <%# ========== Reverse proxy front ========== %>
+                <%- include('front', { node: node, t: t }) %>
+
                 <%# ========== Advanced (collapsible) ========== %>
                 <details class="node-advanced-details" id="xrayAdvancedDetails">
                     <summary class="node-advanced-summary">

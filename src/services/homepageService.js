@@ -12,40 +12,14 @@
 const crypto = require('crypto');
 
 const logger = require('../utils/logger');
-
-// 256 KB is plenty for a static landing/decoy page and bounds heap usage.
-const MAX_CUSTOM_BYTES = 256 * 1024;
+const {
+    MAX_CUSTOM_BYTES,
+    NGINX_WELCOME_BUFFER: NGINX_BUFFER,
+    validateCustomHtml,
+} = require('../utils/decoyPage');
 
 const FAKE_SERVER_HEADER = 'nginx/1.24.0';
 
-// Verbatim nginx 1.24 (Debian/Ubuntu) welcome page — kept byte-for-byte
-// so masking is convincing. Do not pretty-print or reformat.
-const NGINX_WELCOME_HTML = `<!DOCTYPE html>
-<html>
-<head>
-<title>Welcome to nginx!</title>
-<style>
-html { color-scheme: light dark; }
-body { width: 35em; margin: 0 auto;
-font-family: Tahoma, Verdana, Arial, sans-serif; }
-</style>
-</head>
-<body>
-<h1>Welcome to nginx!</h1>
-<p>If you see this page, the nginx web server is successfully installed and
-working. Further configuration is required.</p>
-
-<p>For online documentation and support please refer to
-<a href="http://nginx.org/">nginx.org</a>.<br/>
-Commercial support is available at
-<a href="http://nginx.com/">nginx.com</a>.</p>
-
-<p><em>Thank you for using nginx.</em></p>
-</body>
-</html>
-`;
-
-const NGINX_BUFFER = Buffer.from(NGINX_WELCOME_HTML, 'utf8');
 const NGINX_ETAG = computeEtag(NGINX_BUFFER);
 
 // Atomically-replaced state object. Always treat as immutable; never mutate fields.
@@ -159,18 +133,7 @@ async function setMode(mode) {
  * Persist a new custom HTML buffer and refresh the in-memory cache.
  */
 async function setCustom(buffer) {
-    if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
-        throw new Error('Empty file');
-    }
-    if (buffer.length > MAX_CUSTOM_BYTES) {
-        throw new Error(`File too large (max ${MAX_CUSTOM_BYTES} bytes)`);
-    }
-    // Reject obvious binary content — checking the first 4 KB is enough
-    // to catch executables/images while keeping cost negligible.
-    const probe = buffer.subarray(0, Math.min(4096, buffer.length));
-    if (probe.includes(0)) {
-        throw new Error('Binary content not allowed');
-    }
+    validateCustomHtml(buffer);
 
     const Settings = require('../models/settingsModel');
     await Settings.update({

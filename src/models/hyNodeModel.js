@@ -222,6 +222,31 @@ const xrayExtraInboundSchema = new mongoose.Schema({
     fallbackDest: { type: String, default: '', trim: true, maxlength: 253 },
 }, { _id: false });
 
+// Caddy front owning the public port: fronted inbounds move to loopback with
+// security='none', so only ws/grpc/xhttp can be fronted. Domain and TLS
+// material stay in node.domain / xray.tlsSource — same host, same cert. ALPN is
+// not configurable: the front advertises h2 and http/1.1, and the client picks
+// per transport (see frontClientAlpn).
+const xrayFrontSchema = new mongoose.Schema({
+    enabled: { type: Boolean, default: false },
+    // Owned by Caddy, not by any inbound.
+    publicPort: { type: Number, default: 443, min: 1, max: 65535 },
+    siteMode: { type: String, enum: ['nginx', 'custom'], default: 'nginx' },
+    // select:false — up to 256 KB no hot path needs.
+    siteHtml: { type: Buffer, default: null, select: false },
+    // 'main' for the main inbound, otherwise extraInbounds[].id.
+    inboundIds: { type: [String], default: [] },
+    // Provisioning is skipped while this matches the desired state.
+    appliedFingerprint: { type: String, default: '' },
+    status: {
+        type: String,
+        enum: ['disabled', 'pending', 'active', 'error'],
+        default: 'disabled',
+    },
+    lastError: { type: String, default: '' },
+    caddyVersion: { type: String, default: '' },
+}, { _id: false });
+
 const xrayConfigSchema = new mongoose.Schema({
     // Client-facing inbound bind address. Keep the public wildcard for
     // backwards compatibility; advanced setups can bind to loopback/LAN.
@@ -303,6 +328,9 @@ const xrayConfigSchema = new mongoose.Schema({
     // ports and transports (Reality TCP + WS+TLS + gRPC, etc). Optional, the
     // main inbound is still defined by the flat fields above.
     extraInbounds: { type: [xrayExtraInboundSchema], default: [] },
+
+    // Caddy front on the node's public port (see xrayFrontSchema).
+    front: { type: xrayFrontSchema, default: () => ({}) },
 
     // Per-node access-log shipping state. Independent of the node's core
     // health: a shipping failure never marks the node offline.
