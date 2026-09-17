@@ -581,6 +581,8 @@
     "aclGeoUpdateInterval": "Geo database update interval",
     "aclRulesEditorHint": "Inline ACL rules are edited on the",
     "aclRulesEditorLink": "Outbounds / ACL page",
+    "outboundsAclButton": "Outbounds / ACL",
+    "outboundsAclButtonHint": "ACL rules and outbound proxies",
     "domainHintHysteria": "If set — TLS certificate will be issued automatically (ACME). Also used in subscription URLs instead of IP.",
     "sniHintHysteria": "Custom SNI for clients. Works ONLY without domain (self-signed cert). If domain is set — this field is ignored.",
     "outboundsAclLockedDisabled": "Outbounds ACL editor is unavailable because ACL is disabled for this node.",

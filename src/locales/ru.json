@@ -581,6 +581,8 @@
     "aclGeoUpdateInterval": "Интервал обновления Geo-баз",
     "aclRulesEditorHint": "Inline-правила ACL редактируются на странице",
     "aclRulesEditorLink": "Outbounds / ACL",
+    "outboundsAclButton": "Outbounds / ACL",
+    "outboundsAclButtonHint": "Правила ACL и исходящие прокси",
     "domainHintHysteria": "Если указан — TLS-сертификат выпустится автоматически (ACME). Также используется в ссылках подписки вместо IP.",
     "sniHintHysteria": "Кастомный SNI для клиентов. Работает ТОЛЬКО без домена (self-signed сертификат). Если указан домен — это поле игнорируется.",
     "outboundsAclLockedDisabled": "Редактор ACL в Outbounds недоступен: ACL выключен в настройках ноды.",

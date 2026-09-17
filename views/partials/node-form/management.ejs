@@ -284,17 +284,21 @@
             <% } %>
             <% if (outboundsAclLocked) { %>
             <span class="action-btn is-disabled" style="text-decoration:none;text-align:center;" title="<%= t('nodes.outboundsAclLockedDisabled') %>" aria-disabled="true">
-                <span class="action-icon"><i class="ti ti-arrow-up-right"></i></span>
-                <span>Outbounds</span>
-                <% if (node.outbounds && node.outbounds.length > 0) { %>
+                <span class="action-icon"><i class="ti ti-filter"></i></span>
+                <span><%= t('nodes.outboundsAclButton') %></span>
+                <% if (node.aclRules && node.aclRules.length > 0) { %>
+                <span class="badge" style="font-size:10px;background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;margin-left:4px;"><%= node.aclRules.length %></span>
+                <% } else if (node.outbounds && node.outbounds.length > 0) { %>
                 <span class="badge" style="font-size:10px;background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;margin-left:4px;"><%= node.outbounds.length %></span>
                 <% } %>
             </span>
             <% } else { %>
-            <a href="/panel/nodes/<%= node._id %>/outbounds" class="action-btn" style="text-decoration:none;text-align:center;">
-                <span class="action-icon"><i class="ti ti-arrow-up-right"></i></span>
-                <span>Outbounds</span>
-                <% if (node.outbounds && node.outbounds.length > 0) { %>
+            <a href="/panel/nodes/<%= node._id %>/outbounds" class="action-btn" style="text-decoration:none;text-align:center;" title="<%= t('nodes.outboundsAclButtonHint') %>">
+                <span class="action-icon"><i class="ti ti-filter"></i></span>
+                <span><%= t('nodes.outboundsAclButton') %></span>
+                <% if (node.aclRules && node.aclRules.length > 0) { %>
+                <span class="badge" style="font-size:10px;background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;margin-left:4px;"><%= node.aclRules.length %></span>
+                <% } else if (node.outbounds && node.outbounds.length > 0) { %>
                 <span class="badge" style="font-size:10px;background:var(--accent);color:#fff;border-radius:10px;padding:1px 6px;margin-left:4px;"><%= node.outbounds.length %></span>
                 <% } %>
             </a>

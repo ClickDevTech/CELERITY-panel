@@ -581,6 +581,8 @@
     "aclGeoUpdateInterval": "Geo 数据库更新间隔",
     "aclRulesEditorHint": "内联 ACL 规则在",
     "aclRulesEditorLink": "出站 / ACL 页面",
+    "outboundsAclButton": "出站 / ACL",
+    "outboundsAclButtonHint": "ACL 规则和出站代理",
     "domainHintHysteria": "如果设置，将自动签发 TLS 证书（ACME）。订阅 URL 也会使用它而不是 IP。",
     "sniHintHysteria": "客户端使用的自定义 SNI。仅在无域名（自签名证书）时有效。如果设置了域名，此字段会被忽略。",
     "outboundsAclLockedDisabled": "由于此节点已禁用 ACL，出站 ACL 编辑器不可用。",
