@@ -15,6 +15,7 @@ const { invalidateNodesCache } = require('../utils/helpers');
 const nodeSetup = require('../services/nodeSetup');
 const syncService = require('../services/syncService');
 const { isServerlessNode, checkCascadeMembership } = require('../utils/nodeTypes');
+const nodeSetupLock = require('../utils/nodeSetupLock');
 const {
     mergeCdnConfig,
     normalizeCdnConfig,
@@ -959,6 +960,7 @@ router.post('/:id/update-config', requireScope('nodes:write'), async (req, res) 
  *   500 { success: false, error: string, logs: string[] }
  */
 router.post('/:id/setup', requireScope('nodes:write'), async (req, res) => {
+    let lockKey = null;
     try {
         const node = await HyNode.findById(req.params.id);
 
@@ -978,6 +980,17 @@ router.post('/:id/setup', requireScope('nodes:write'), async (req, res) => {
 
         if (isServerlessNode(node)) {
             return res.status(400).json({ success: false, error: 'This node type has no remote server to set up' });
+        }
+
+        // Locked by the canonical id: the one in the URL may differ in case.
+        lockKey = String(node._id);
+        if (!nodeSetupLock.acquire(lockKey, 'Node setup')) {
+            const holder = nodeSetupLock.holder(lockKey);
+            lockKey = null;
+            return res.status(409).json({
+                success: false,
+                error: `Node is busy: ${holder} is running`,
+            });
         }
 
         logger.info(`[Nodes API] Auto-setup started for ${node.name} (${node.ip}) via API`);
@@ -1012,6 +1025,8 @@ router.post('/:id/setup', requireScope('nodes:write'), async (req, res) => {
     } catch (error) {
         logger.error(`[Nodes API] Setup error: ${error.message}`);
         res.status(500).json({ error: error.message });
+    } finally {
+        if (lockKey) nodeSetupLock.release(lockKey);
     }
 });
 

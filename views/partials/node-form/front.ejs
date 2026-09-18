@@ -2,6 +2,8 @@
     selected inbounds proxied by path. %>
 <%
     const front = node?.xray?.front || {};
+    // A non-number here would reach String.replace() as a replacer callback.
+    const siteHtmlBytes = Number(front.siteHtmlBytes) || 0;
     const frontIds = Array.isArray(front.inboundIds) ? front.inboundIds.map(String) : [];
     const frontStatus = front.status || 'disabled';
     const frontStatusBadge = frontStatus === 'active'
@@ -69,21 +71,21 @@
                         <span><%= t('nodes.frontSiteCustom') %></span>
                     </label>
                 </div>
-                <% if (node?._id) { %>
-                    <input type="file" id="frontSiteFile" accept=".html,.htm,text/html" hidden
-                           onchange="uploadFrontSite(this)">
-                    <button type="button" class="btn btn-sm btn-secondary"
-                            onclick="document.getElementById('frontSiteFile').click()">
-                        <i class="ti ti-upload"></i> <%= t('nodes.frontSiteUpload') %>
+                <%# Available before the node exists too: the file is held in the
+                    browser and uploaded right after the node is created. %>
+                <input type="file" id="frontSiteFile" accept=".html,.htm,text/html" hidden
+                       onchange="uploadFrontSite(this)">
+                <button type="button" class="btn btn-sm btn-secondary"
+                        onclick="document.getElementById('frontSiteFile').click()">
+                    <i class="ti ti-upload"></i> <%= t('nodes.frontSiteUpload') %>
+                </button>
+                <span class="hint" id="frontSiteState">
+                    <%= siteHtmlBytes ? String(t('nodes.frontSiteStored')).replace('{bytes}', String(siteHtmlBytes)) : '' %>
+                </span>
+                <% if (siteHtmlBytes) { %>
+                    <button type="button" class="btn btn-sm" onclick="resetFrontSite()">
+                        <i class="ti ti-trash"></i>
                     </button>
-                    <span class="hint" id="frontSiteState">
-                        <%= front.siteHtmlBytes ? t('nodes.frontSiteStored').replace('{bytes}', front.siteHtmlBytes) : '' %>
-                    </span>
-                    <% if (front.siteHtmlBytes) { %>
-                        <button type="button" class="btn btn-sm" onclick="resetFrontSite()">
-                            <i class="ti ti-trash"></i>
-                        </button>
-                    <% } %>
                 <% } %>
             </div>
             <small><%= t('nodes.frontSiteHint') %></small>

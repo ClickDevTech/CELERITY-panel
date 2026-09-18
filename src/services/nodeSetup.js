@@ -1167,7 +1167,7 @@ fi
             const email = (String(xrayCfg.acmeEmail || '').trim()) ||
                           (String(config.ACME_EMAIL || '').trim());
             if (!domain) {
-                throw new Error('tlsSource=acme requires node.domain to be set in the Network section.');
+                throw new Error('tlsSource=acme requires node.domain to be set on the Main tab.');
             }
             if (!email) {
                 throw new Error('tlsSource=acme requires acmeEmail (or the panel-wide ACME_EMAIL env var).');

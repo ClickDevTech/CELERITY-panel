@@ -18,6 +18,7 @@ const HyNode = require('../models/hyNodeModel');
 const logger = require('../utils/logger');
 const { invalidateNodesCache } = require('../utils/helpers');
 const { shellQuote } = require('../utils/shell');
+const nodeSetupLock = require('../utils/nodeSetupLock');
 
 const RELEASES_URL = 'https://api.github.com/repos/XTLS/Xray-core/releases?per_page=100';
 const RELEASE_DOWNLOAD_PREFIX = 'https://github.com/XTLS/Xray-core/releases/download/';
@@ -504,15 +505,18 @@ async function runVersionChange(task, release) {
         }
 
         conn = await nodeSetup.connectSSH(node);
+        // A missing core is reported below instead of failing the script, so
+        // the operator gets a reason rather than "Xray preflight failed".
         const preflightOutput = await execRequired(conn, `
 ARCH="$(uname -m)"
 VERSION="$(xray version 2>/dev/null | awk 'NR==1 {print $2}')"
 echo "ARCH=$ARCH"
 echo "VERSION=$VERSION"
-test -n "$VERSION"
 `, 'Xray preflight');
         const preflight = parsePreflight(preflightOutput);
-        if (!preflight.version) throw new Error('Could not detect the installed Xray version');
+        if (!preflight.version) {
+            throw new Error('Xray is not installed on this node — run the initial setup first');
+        }
         task.currentVersion = preflight.version;
         appendLog(task, `Current Xray version: ${preflight.version}`);
 
@@ -644,6 +648,7 @@ fi
         logger.error(`[Xray Update] Node ${task.nodeId}: ${lastError}`);
     } finally {
         if (conn) conn.end();
+        nodeSetupLock.release(task.nodeId);
         task.finishedAt = new Date().toISOString();
         scheduleTaskCleanup(task.nodeId, task.id);
     }
@@ -679,6 +684,11 @@ async function startVersionChange(nodeId, version) {
         startedAt: new Date().toISOString(),
         finishedAt: null,
     };
+    if (!nodeSetupLock.acquire(key, 'Xray version change')) {
+        const error = new Error(`Node is busy: ${nodeSetupLock.holder(key)} is running`);
+        error.statusCode = 409;
+        throw error;
+    }
     tasks.set(key, task);
     setImmediate(() => runVersionChange(task, release));
     return taskSnapshot(task);

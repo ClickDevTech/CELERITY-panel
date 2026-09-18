@@ -26,6 +26,7 @@ const uaStatsService = require('../../services/uaStatsService');
 const { getActiveGroups, invalidateNodesCache } = require('../../utils/helpers');
 const { buildNodeUiMeta } = require('../../utils/nodeUi');
 const { isServerlessNode, checkCascadeMembership } = require('../../utils/nodeTypes');
+const nodeSetupLock = require('../../utils/nodeSetupLock');
 const {
     normalizeCdnConfig,
     validateCdnOrigin,
@@ -438,6 +439,7 @@ router.get('/nodes/add', async (req, res) => {
             panelDomain: config.PANEL_DOMAIN || '',
             lastInitScript: settings?.lastInitScript || '',
             canAddPairedProtocol: false,
+            frontSiteMaxBytes: MAX_CUSTOM_BYTES,
         });
     } catch (error) {
         logger.error('[Panel] GET /nodes/add error:', error.message);
@@ -1017,6 +1019,7 @@ router.get('/nodes/:id', async (req, res) => {
             lastInitScript: settings?.lastInitScript || '',
             canAddPairedProtocol,
             xrayUpdateTotpEnabled: !!currentAdmin?.twoFactor?.enabled,
+            frontSiteMaxBytes: MAX_CUSTOM_BYTES,
         });
     } catch (error) {
         res.status(500).send('Error: ' + error.message);
@@ -1252,6 +1255,7 @@ router.post('/nodes/:id', async (req, res) => {
 
 // POST /panel/nodes/:id/setup - Auto-setup node via SSH
 router.post('/nodes/:id/setup', async (req, res) => {
+    let lockKey = null;
     try {
         const node = await HyNode.findById(req.params.id);
         
@@ -1266,7 +1270,19 @@ router.post('/nodes/:id/setup', async (req, res) => {
         if (!node.ssh?.password && !node.ssh?.privateKey) {
             return res.status(400).json({ success: false, error: 'SSH данные не настроены', logs: [] });
         }
-        
+
+        // Locked by the canonical id: the one in the URL may differ in case.
+        lockKey = String(node._id);
+        if (!nodeSetupLock.acquire(lockKey, 'Node setup')) {
+            const holder = nodeSetupLock.holder(lockKey);
+            lockKey = null;
+            return res.status(409).json({
+                success: false,
+                error: `Node is busy: ${holder} is running`,
+                logs: [],
+            });
+        }
+
         logger.info(`[Panel] Starting setup for node ${node.name} (type: ${node.type || 'hysteria'}, role: ${node.cascadeRole || 'standalone'})`);
         
         let result;
@@ -1320,6 +1336,8 @@ router.post('/nodes/:id/setup', async (req, res) => {
     } catch (error) {
         logger.error(`[Panel] Setup error: ${error.message}`);
         res.status(500).json({ success: false, error: error.message, logs: [`Exception: ${error.message}`] });
+    } finally {
+        if (lockKey) nodeSetupLock.release(lockKey);
     }
 });
 

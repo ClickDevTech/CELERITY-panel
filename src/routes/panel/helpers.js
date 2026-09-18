@@ -441,7 +441,7 @@ function validateXrayFormFields(xray, node) {
     if (tlsSecurity && xray?.tlsSource === 'acme') {
         const domain = String(node?.domain || '').trim().toLowerCase();
         if (!domain) {
-            return 'ACME mode requires a domain — fill in the Domain field in the Network section.';
+            return 'ACME mode requires a domain — fill in the Domain field on the Main tab.';
         }
         if (!HOSTNAME_RE.test(domain)) {
             return 'ACME mode: domain looks invalid (expected an FQDN like node1.example.com).';
@@ -454,7 +454,7 @@ function validateXrayFormFields(xray, node) {
     if (tlsSecurity && xray?.tlsSource === 'manual') {
         const domain = String(node?.domain || '').trim().toLowerCase();
         if (!domain) {
-            return 'Manual TLS requires a domain — fill in the Domain field in the Network section.';
+            return 'Manual TLS requires a domain — fill in the Domain field on the Main tab.';
         }
         if (!HOSTNAME_RE.test(domain)) {
             return 'Manual TLS: domain looks invalid (expected an FQDN like example.com).';
@@ -609,6 +609,15 @@ function resolveManualKeyPlaceholder(parsedXray, existingXray) {
     return parsedXray;
 }
 
+// toObject() turns a Buffer path into a BSON Binary, whose `length` is a
+// method rather than a number.
+function bufferByteLength(value) {
+    if (!value) return 0;
+    const length = value.length;
+    if (typeof length === 'function') return Number(length.call(value)) || 0;
+    return Number(length) || 0;
+}
+
 /**
  * Strip secret material from an xray object before sending it to the browser
  * (form render). Returns a deep-ish copy — leaves nested arrays/objects alone
@@ -630,7 +639,7 @@ function sanitizeXrayForRender(xray) {
     // The form only needs the size, not up to 256 KB of decoy HTML. Copied,
     // since `plain` is shallow when the caller passes a lean object.
     if (plain.front) {
-        plain.front = { ...plain.front, siteHtmlBytes: plain.front.siteHtml?.length || 0 };
+        plain.front = { ...plain.front, siteHtmlBytes: bufferByteLength(plain.front.siteHtml) };
         delete plain.front.siteHtml;
     }
     return plain;

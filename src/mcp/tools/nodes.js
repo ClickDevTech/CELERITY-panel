@@ -12,6 +12,7 @@ const cache = require('../../services/cacheService');
 const cryptoService = require('../../services/cryptoService');
 const logger = require('../../utils/logger');
 const { isServerlessNode, checkCascadeMembership } = require('../../utils/nodeTypes');
+const nodeSetupLock = require('../../utils/nodeSetupLock');
 const {
     mergeCdnConfig,
     normalizeCdnConfig,
@@ -720,13 +721,23 @@ async function manageNode(args, emit) {
             const opts = setupOptions || { installHysteria: true, setupPortHopping: true, restartService: true };
             const nodeSetup = require('../../services/nodeSetup');
 
+            // Locked by the canonical id: the requested one may differ in case.
+            const lockKey = String(node._id);
+            if (!nodeSetupLock.acquire(lockKey, 'Node setup')) {
+                return { error: `Node is busy: ${nodeSetupLock.holder(lockKey)} is running`, code: 409 };
+            }
+
             emit('progress', { step: 1, total: 3, message: `Connecting to ${node.name} via SSH...` });
 
             let result;
-            if (node.type === 'xray') {
-                result = await nodeSetup.setupXrayNode(node, { restartService: opts.restartService });
-            } else {
-                result = await nodeSetup.setupNode(node, opts);
+            try {
+                if (node.type === 'xray') {
+                    result = await nodeSetup.setupXrayNode(node, { restartService: opts.restartService });
+                } else {
+                    result = await nodeSetup.setupNode(node, opts);
+                }
+            } finally {
+                nodeSetupLock.release(lockKey);
             }
 
             if (result.success) {

@@ -601,6 +601,9 @@ const i18n = {
     frontApplying: <%- JSON.stringify(t("nodes.frontApplying")) %>,
     frontApplied: <%- JSON.stringify(t("nodes.frontApplied")) %>,
     frontSiteStored: <%- JSON.stringify(t("nodes.frontSiteStored")) %>,
+    frontSitePending: <%- JSON.stringify(t("nodes.frontSitePending")) %>,
+    frontSiteTooLarge: <%- JSON.stringify(t("nodes.frontSiteTooLarge")) %>,
+    frontSiteUploadFailed: <%- JSON.stringify(t("nodes.frontSiteUploadFailed")) %>,
     frontLockedTransport: <%- JSON.stringify(t("nodes.frontLockedTransport")) %>,
     xrayExtraInbound: <%- JSON.stringify(t("nodes.xrayExtraInbound")) %>,
     xrayRemoveInboundConfirm: <%- JSON.stringify(t("nodes.xrayRemoveInboundConfirm")) %>
@@ -702,14 +705,12 @@ function applyTypeVisibility(type) {
     if (root) root.dataset.nodeType = type;
 }
 
-// The `port` and `domain` inputs are rendered once and moved between panes:
-// Hysteria shows them among the network settings, Xray next to the main inbound
-// and inside the manual-TLS block. Moving the live node keeps values and
-// listeners intact across protocol switches.
+// The `port` input is rendered once and moved between panes: Hysteria shows it
+// among the network settings, Xray next to the main inbound. Moving the live
+// node keeps values and listeners intact across protocol switches.
 function moveSharedFields(type) {
     const pairs = [
         ['portGroup', type === 'xray' ? 'portSlotXray' : 'portSlotHysteria'],
-        ['domainGroup', type === 'xray' ? 'domainSlotXray' : 'domainSlotHysteria'],
     ];
     for (const [fieldId, slotId] of pairs) {
         const field = document.getElementById(fieldId);
@@ -792,6 +793,7 @@ function switchProto(proto) {
     applyTypeVisibility(proto);
     moveSharedFields(proto);
     syncRequiredByType(proto);
+    updateDomainHint(proto);
     // The cascade filter is an Xray-only concern; leaving it on would hide
     // panes that a Hysteria node needs.
     if (proto !== 'xray') {
@@ -949,9 +951,8 @@ function refreshExtraInboundsEmpty() {
     empty.style.display = count === 0 ? '' : 'none';
 }
 
-// Picks one of four TLS-source sub-blocks; manual+acme also reveal #domainGroup.
+// Picks one of four TLS-source sub-blocks.
 function updateXrayTlsSourceUI() {
-    const proto = document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
     const checked = document.querySelector('input[name="xray.tlsSource"]:checked');
     const source = checked ? checked.value : 'panel';
     const chip = document.getElementById('xrayTlsSourceChip');
@@ -964,19 +965,15 @@ function updateXrayTlsSourceUI() {
     if (acmeBlock) acmeBlock.style.display = source === 'acme' ? '' : 'none';
     if (manualBlock) manualBlock.style.display = source === 'manual' ? '' : 'none';
     if (selfSignedInfo) selfSignedInfo.style.display = source === 'self-signed' ? '' : 'none';
+}
 
-    // Domain visibility: hysteria always; xray only when manual/acme TLS source.
-    const domainGroup = document.getElementById('domainGroup');
-    const domainHintHy = document.getElementById('domainHintHysteria');
-    const domainHintXr = document.getElementById('domainHintXrayManual');
-    if (domainGroup) {
-        const xrayNeedsDomain = (source === 'manual' || source === 'acme');
-        const showForXrayDomain = (proto === 'xray' && _anyXrayTlsInboundActive() && xrayNeedsDomain);
-        const showForHysteria = (proto !== 'xray');
-        domainGroup.style.display = (showForXrayDomain || showForHysteria) ? '' : 'none';
-        if (domainHintHy) domainHintHy.style.display = showForHysteria ? '' : 'none';
-        if (domainHintXr) domainHintXr.style.display = showForXrayDomain ? '' : 'none';
-    }
+// The Domain field itself is always visible; only its hint follows the protocol.
+function updateDomainHint(type) {
+    const isXray = type === 'xray';
+    const hintHysteria = document.getElementById('domainHintHysteria');
+    const hintXray = document.getElementById('domainHintXrayManual');
+    if (hintHysteria) hintHysteria.style.display = isXray ? 'none' : '';
+    if (hintXray) hintXray.style.display = isXray ? '' : 'none';
 }
 
 // Lightweight client-side PEM check; authoritative validation happens
@@ -1280,6 +1277,51 @@ function onFrontToggle() {
     refreshRailBadges();
 }
 
+// Set on a node that does not exist yet: uploaded by the submit handler once
+// the node has an id. Cleared on a direct upload.
+let frontStagedSite = null;
+const FRONT_SITE_MAX_BYTES = <%= Number(typeof frontSiteMaxBytes !== 'undefined' ? frontSiteMaxBytes : 262144) %>;
+
+async function uploadFrontSite(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    const state = document.getElementById('frontSiteState');
+    const custom = document.querySelector('input[name="xray.front.siteMode"][value="custom"]');
+    try {
+        if (file.size > FRONT_SITE_MAX_BYTES) {
+            throw new Error(i18n.frontSiteTooLarge.replace('{bytes}', FRONT_SITE_MAX_BYTES));
+        }
+        const nodeId = <%- JSON.stringify(node?._id ? String(node._id) : '') %>;
+        if (!nodeId) {
+            frontStagedSite = file;
+            if (state) state.textContent = i18n.frontSitePending.replace('{bytes}', file.size);
+            if (custom) custom.checked = true;
+            return;
+        }
+        const data = await sendFrontSite(nodeId, file);
+        frontStagedSite = null;
+        if (state) state.textContent = i18n.frontSiteStored.replace('{bytes}', data.size);
+        if (custom) custom.checked = true;
+    } catch (error) {
+        if (state) state.textContent = error.message;
+    } finally {
+        input.value = '';
+    }
+}
+
+async function sendFrontSite(nodeId, file) {
+    const body = new FormData();
+    body.append('file', file);
+    const response = await fetch('/panel/nodes/' + nodeId + '/front-site-upload', {
+        method: 'POST',
+        credentials: 'include',
+        body,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || i18n.error);
+    return data;
+}
+
 <% if (node?._id) { %>
 let frontPollTimer = null;
 
@@ -1333,30 +1375,6 @@ async function pollFrontTask() {
         }
     } catch (error) {
         frontPollTimer = setTimeout(pollFrontTask, 4000);
-    }
-}
-
-async function uploadFrontSite(input) {
-    const file = input.files?.[0];
-    if (!file) return;
-    const state = document.getElementById('frontSiteState');
-    try {
-        const body = new FormData();
-        body.append('file', file);
-        const response = await fetch('/panel/nodes/<%= node._id %>/front-site-upload', {
-            method: 'POST',
-            credentials: 'include',
-            body,
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || i18n.error);
-        if (state) state.textContent = i18n.frontSiteStored.replace('{bytes}', data.size);
-        const custom = document.querySelector('input[name="xray.front.siteMode"][value="custom"]');
-        if (custom) custom.checked = true;
-    } catch (error) {
-        if (state) state.textContent = error.message;
-    } finally {
-        input.value = '';
     }
 }
 
@@ -1888,6 +1906,7 @@ const xrvT = {
     prereleaseWarn: <%- JSON.stringify(t('nodes.xrayVersionPrereleaseWarn')) %>,
     downgradeWarn: <%- JSON.stringify(t('nodes.xrayVersionDowngradeWarn')) %>,
     noSsh: <%- JSON.stringify(t('nodes.xrayVersionNoSsh')) %>,
+    notInstalled: <%- JSON.stringify(t('nodes.xrayVersionNotInstalled')) %>,
     confirm: <%- JSON.stringify(t('nodes.xrayVersionConfirmSummary')) %>,
     passwordRequired: <%- JSON.stringify(t('settings.updatePasswordRequired')) %>,
     totpRequired: <%- JSON.stringify(t('settings.updateTotpRequired')) %>,
@@ -1959,7 +1978,9 @@ function renderXrayVersionSelection() {
         xrvSelectedVersion = preferred.version;
     }
     select.disabled = !xrvReleases.length;
-    button.disabled = !xrvReleases.length || !xrvCanChange;
+    // Without a known current version the remote preflight has nothing to
+    // switch from — the node needs its initial setup (or a live re-check).
+    button.disabled = !xrvReleases.length || !xrvCanChange || !xrvCurrentVersion;
     onXrayVersionChange();
 }
 
@@ -1976,6 +1997,7 @@ function onXrayVersionChange() {
     if (release?.prerelease) warnings.push(xrvT.prereleaseWarn);
     if (xrvCurrentVersion && diff < 0) warnings.push(xrvT.downgradeWarn);
     if (!xrvCanChange) warnings.push(xrvT.noSsh);
+    if (xrvCanChange && !xrvCurrentVersion) warnings.push(xrvT.notInstalled);
     const warning = document.getElementById('xrayVersionWarning');
     if (warning) {
         warning.style.display = warnings.length ? '' : 'none';
@@ -2643,6 +2665,62 @@ document.getElementById('nodeForm')?.addEventListener('submit', async function(e
         }
     }
 });
+
+<% if (!node?._id) { %>
+// The decoy page upload needs a node id, so a staged file turns the plain form
+// POST into a fetch: create the node, then push the file to the new id.
+document.getElementById('nodeForm')?.addEventListener('submit', async function(event) {
+    if (!frontStagedSite || event.defaultPrevented) return;
+    const type = document.querySelector('input[name="type"]:checked')?.value;
+    if (type !== 'xray') return;
+
+    event.preventDefault();
+    if (this.dataset.saving === '1') return;
+    this.dataset.saving = '1';
+
+    try {
+        const body = new URLSearchParams();
+        new FormData(this).forEach((value, key) => {
+            if (typeof value === 'string') body.append(key, value);
+        });
+        const response = await fetch(this.action, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            },
+            credentials: 'same-origin',
+            body,
+        });
+        const result = await response.json();
+        // Same destination the plain form POST would have reached, so a
+        // rejected save still lands on a page with a visible error banner.
+        if (!response.ok || !result.success) {
+            delete this.dataset.saving;
+            window.location.assign(nodeFormErrorUrl(result.redirect, result.error || i18n.error));
+            return;
+        }
+
+        try {
+            await sendFrontSite(String(result.redirect).split('/').pop(), frontStagedSite);
+        } catch (uploadError) {
+            // The node exists by now. Say so on its page rather than let it
+            // quietly serve the nginx page instead.
+            const message = i18n.frontSiteUploadFailed.replace('{error}', uploadError.message);
+            window.location.assign(nodeFormErrorUrl(result.redirect, message));
+            return;
+        }
+        window.location.assign(result.redirect);
+    } catch (error) {
+        delete this.dataset.saving;
+        window.location.assign(nodeFormErrorUrl('/panel/nodes/add', error.message));
+    }
+});
+
+function nodeFormErrorUrl(redirect, message) {
+    return (redirect || '/panel/nodes/add') + '?error=' + encodeURIComponent(message);
+}
+<% } %>
 
 document.getElementById('cdnSection')?.addEventListener('input', function() {
     const inlineError = document.getElementById('cdnInlineError');

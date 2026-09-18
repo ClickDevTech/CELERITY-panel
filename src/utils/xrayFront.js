@@ -231,7 +231,7 @@ function validateXrayFront(xray = {}, node = {}, context = {}) {
     }
 
     if (!String(node.domain || '').trim()) {
-        return 'Reverse proxy front requires a domain in the Network section.';
+        return 'Reverse proxy front requires a domain — fill in the Domain field on the Main tab.';
     }
 
     const publicPort = front.publicPort;

@@ -70,6 +70,12 @@
         </div>
     </div>
 
+    <%# Drives the connection address, TLS serverName and certificate mode, so
+        it stays visible for every protocol that has a host of its own. %>
+    <div data-types="hysteria xray">
+        <%- include('field-domain') %>
+    </div>
+
     <%# A missing field is explained rather than silently dropped. %>
     <div class="nf-info" data-types="virtual cdn" style="margin-bottom:20px;">
         <i class="ti ti-server-off"></i>

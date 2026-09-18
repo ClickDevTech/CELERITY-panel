@@ -433,16 +433,13 @@
                 </div>
             </div>
 
-            <%# Manual PEM block — owns the shared Domain field %>
+            <%# Manual PEM block. The Domain field it refers to is on the main pane. %>
             <div class="nf-group tls-source-manual" id="xrayTlsManualBlock" style="<%= xrTlsSource === 'manual' ? '' : 'display:none' %>">
                 <div class="nf-info">
                     <i class="ti ti-bulb"></i>
                     <div>
                         <small><%= t('nodes.xrayTlsManualDomainHint') %></small>
                     </div>
-                </div>
-                <div id="domainSlotXray">
-                    <% if (xrIsXray) { %><%- include('field-domain') %><% } %>
                 </div>
                 <div class="form-group">
                     <label for="xrayManualCert"><%= t('nodes.xrayManualCertLabel') %></label>

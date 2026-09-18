@@ -1,4 +1,5 @@
-<%# Pane: hy-network — ports, domain, ACME, SNI. %>
+<%# Pane: hy-network — ports, ACME, SNI. The domain input lives on the main
+    pane: every protocol needs it. %>
 <% const netIsXray = node?.type === 'xray'; %>
 <div class="nf-pane" data-pane="hy-network" data-types="hysteria">
     <div class="nf-pane__head">
@@ -28,9 +29,6 @@
 
     <div class="nf-group">
         <div class="nf-group__title"><%= t('nodes.groupDomainCert') %></div>
-        <div id="domainSlotHysteria">
-            <% if (!netIsXray) { %><%- include('field-domain') %><% } %>
-        </div>
 
         <details class="nf-module <%= node?.domain ? '' : 'is-na' %>" id="acmeModule" <%= acmeAdvancedEnabled ? 'open' : '' %>>
             <summary class="nf-module__head">
