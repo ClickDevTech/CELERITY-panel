@@ -38,7 +38,7 @@
     "build:assets": "npx --yes esbuild public/css/style.css public/css/network.css --minify --loader:.css=css --outdir=public/css --out-extension:.css=.min.css --allow-overwrite && npx --yes esbuild public/js/network.js --minify --outfile=public/js/network.min.js"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.500.0",
+    "@aws-sdk/client-s3": "~3.1111.0",
     "@clickhouse/client": "^1.23.1",
     "@root/greenlock-express": "^4.0.3",
     "axios": "^1.6.2",

@@ -7,6 +7,7 @@ const { promisify } = require('util');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const { Readable } = require('stream');
 const crypto = require('crypto');
 const config = require('../../config');
 const logger = require('../utils/logger');
@@ -72,6 +73,25 @@ function isBackupKeyForPrefix(key, prefix) {
     return BACKUP_FILE_PREFIXES.some(filePrefix => key.startsWith(buildS3Key(normalizedPrefix, filePrefix))) && key.endsWith('.tar.gz');
 }
 
+// Since v3.729 the SDK adds a CRC32 trailer with Content-Encoding: aws-chunked
+// to streamed bodies. Most S3-compatible providers reject it, and the unparsed
+// reply surfaces as a bare "UnknownError".
+const S3_CHECKSUM_COMPAT = {
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
+};
+
+// SDK errors keep the useful parts outside `message`.
+function formatS3Error(error) {
+    const parts = [
+        error?.name && error.name !== 'Error' ? error.name : '',
+        error?.Code && error.Code !== error?.name ? error.Code : '',
+        error?.$metadata?.httpStatusCode ? `HTTP ${error.$metadata.httpStatusCode}` : '',
+        error?.message && error.message !== error?.name ? error.message : '',
+    ].filter(Boolean);
+    return parts.length ? parts.join(' — ') : String(error?.message || error);
+}
+
 function getS3Client(settings) {
     if (!s3Client && settings?.backup?.s3?.enabled) {
         try {
@@ -84,6 +104,7 @@ function getS3Client(settings) {
                     secretAccessKey: cryptoService.decryptSafe(settings.backup.s3.secretAccessKey),
                 },
                 forcePathStyle: !!settings.backup.s3.endpoint, // for MinIO and similar
+                ...S3_CHECKSUM_COMPAT,
             });
         } catch (err) {
             logger.error(`[Backup] Failed to initialize S3 client: ${err.message}`);
@@ -144,14 +165,15 @@ async function createBackup(settings) {
             try {
                 s3 = await uploadToS3(archivePath, `${backupName}.tar.gz`, settings);
             } catch (error) {
+                const details = formatS3Error(error);
                 s3 = {
                     enabled: true,
                     success: false,
                     skipped: false,
                     key: null,
-                    error: error.message,
+                    error: details,
                 };
-                logger.error(`[Backup] S3 upload error: ${error.message}`);
+                logger.error(`[Backup] S3 upload error: ${details}`);
             }
         }
 
@@ -266,7 +288,7 @@ async function rotateS3Backups(settings) {
         }
         
     } catch (error) {
-        logger.error(`[Backup] S3 rotation error: ${error.message}`);
+        logger.error(`[Backup] S3 rotation error: ${formatS3Error(error)}`);
     }
 }
 
@@ -394,6 +416,7 @@ async function testS3Connection(s3Config) {
                 secretAccessKey: s3Config.secretAccessKey,
             },
             forcePathStyle: !!s3Config.endpoint,
+            ...S3_CHECKSUM_COMPAT,
         });
         
         await client.send(new HeadBucketCommand({ Bucket: s3Config.bucket }));
@@ -403,10 +426,14 @@ async function testS3Connection(s3Config) {
             `.celerity-s3-test-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.txt`
         );
 
+        // Streamed like a real backup: a string body takes a different code
+        // path and passes on providers where the actual upload fails.
+        const probe = Buffer.from('celerity-s3-write-test');
         await client.send(new PutObjectCommand({
             Bucket: s3Config.bucket,
             Key: testKey,
-            Body: 'celerity-s3-write-test',
+            Body: Readable.from(probe),
+            ContentLength: probe.length,
             ContentType: 'text/plain',
         }));
 
@@ -420,7 +447,7 @@ async function testS3Connection(s3Config) {
     } catch (error) {
         return { 
             success: false, 
-            error: error.message,
+            error: formatS3Error(error),
         };
     }
 }
@@ -463,7 +490,7 @@ async function listS3Backups(settings) {
             .sort((a, b) => b.created - a.created); // newest first
             
     } catch (error) {
-        logger.error(`[Backup] List S3 backups error: ${error.message}`);
+        logger.error(`[Backup] List S3 backups error: ${formatS3Error(error)}`);
         return [];
     }
 }
