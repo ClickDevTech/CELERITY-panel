@@ -710,11 +710,13 @@ class SyncService {
             }
         }
 
-        // Update node status
+        // Update node status. checkXrayAgentHealth owns it: it counts failures
+        // and flips to offline at the threshold. Overwriting the status here
+        // also reset that counter, so the node never settled.
         try {
             const health = await this.checkXrayAgentHealth(node);
             if (!health.online && hasAgent) {
-                await HyNode.updateOne({ _id: node._id }, { $set: { status: 'error', lastSync: new Date(), healthFailures: 0 } });
+                await HyNode.updateOne({ _id: node._id }, { $set: { lastSync: new Date() } });
                 await invalidateNodesCache();
                 return false;
             }
