@@ -221,16 +221,40 @@
             <div class="nf-group__title">XHTTP</div>
             <div class="form-row">
                 <div class="form-group">
-                    <label><%= t('nodes.xrayXhttpPath') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayXhttpPath') %></label>
+                        <%- include('field-help', {
+                            idPrefix: `xrayExtraXhttpPath${idx}`,
+                            textKey: 'nodes.xrayXhttpPathHelp',
+                            scope: 'both',
+                            t,
+                        }) %>
+                    </div>
                     <input type="text" name="xray_extra_xhttpPath" value="<%= e.xhttpPath || '/' %>" placeholder="/">
                 </div>
                 <div class="form-group">
-                    <label><%= t('nodes.xrayXhttpHost') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayXhttpHost') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                        <%- include('field-help', {
+                            idPrefix: `xrayExtraXhttpHost${idx}`,
+                            textKey: 'nodes.xrayXhttpHostHelp',
+                            scope: 'both',
+                            t,
+                        }) %>
+                    </div>
                     <input type="text" name="xray_extra_xhttpHost" value="<%= e.xhttpHost || '' %>" placeholder="cdn.example.com">
                 </div>
             </div>
             <div class="form-group" style="max-width:260px;">
-                <label><%= t('nodes.xrayXhttpMode') %></label>
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayXhttpMode') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `xrayExtraXhttpMode${idx}`,
+                        textKey: 'nodes.xrayXhttpModeHelp',
+                        scope: 'both',
+                        t,
+                    }) %>
+                </div>
                 <select name="xray_extra_xhttpMode">
                     <option value="auto" <%= (e.xhttpMode || 'auto') === 'auto' ? 'selected' : '' %>>Auto</option>
                     <option value="packet-up" <%= e.xhttpMode === 'packet-up' ? 'selected' : '' %>>Packet Up</option>
@@ -240,34 +264,82 @@
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label><%= t('nodes.xrayXhttpPadding') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayXhttpPadding') %></label>
+                        <%- include('field-help', {
+                            idPrefix: `xrayExtraXhttpPadding${idx}`,
+                            textKey: 'nodes.xrayXhttpPaddingHelp',
+                            scope: 'both',
+                            t,
+                        }) %>
+                    </div>
                     <input type="text" name="xray_extra_xhttpXPaddingBytes" value="<%= e.xhttpXPaddingBytes || '' %>" placeholder="100-1000">
                 </div>
                 <div class="form-group">
-                    <label><%= t('nodes.xrayXhttpMaxPost') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayXhttpMaxPost') %></label>
+                        <%- include('field-help', {
+                            idPrefix: `xrayExtraXhttpMaxPost${idx}`,
+                            textKey: 'nodes.xrayXhttpMaxPostHelp',
+                            scope: 'both',
+                            t,
+                        }) %>
+                    </div>
                     <input type="text" name="xray_extra_xhttpScMaxEachPostBytes" value="<%= e.xhttpScMaxEachPostBytes || '' %>" placeholder="1000000">
                 </div>
             </div>
             <div class="form-row-3">
                 <div class="form-group">
-                    <label><%= t('nodes.xrayXhttpXmuxConcurrency') %></label>
-                    <input type="text" name="xray_extra_xhttpXmuxMaxConcurrency" value="<%= e.xhttpXmuxMaxConcurrency || '' %>" placeholder="16-32">
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayXhttpXmuxConcurrency') %></label>
+                        <%- include('field-help', {
+                            idPrefix: `xrayExtraXhttpXmuxConcurrency${idx}`,
+                            textKey: 'nodes.xrayXhttpXmuxConcurrencyHelp',
+                            scope: 'client',
+                            t,
+                        }) %>
+                    </div>
+                    <input type="text" name="xray_extra_xhttpXmuxMaxConcurrency" value="<%= e.xhttpXmuxMaxConcurrency || '' %>" placeholder="0">
                 </div>
                 <div class="form-group">
-                    <label><%= t('nodes.xrayXhttpXmuxRequests') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayXhttpXmuxRequests') %></label>
+                        <%- include('field-help', {
+                            idPrefix: `xrayExtraXhttpXmuxRequests${idx}`,
+                            textKey: 'nodes.xrayXhttpXmuxRequestsHelp',
+                            scope: 'client',
+                            t,
+                        }) %>
+                    </div>
                     <input type="text" name="xray_extra_xhttpXmuxHMaxRequestTimes" value="<%= e.xhttpXmuxHMaxRequestTimes || '' %>" placeholder="600-900">
                 </div>
                 <div class="form-group">
-                    <label><%= t('nodes.xrayXhttpXmuxReusableSecs') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayXhttpXmuxReusableSecs') %></label>
+                        <%- include('field-help', {
+                            idPrefix: `xrayExtraXhttpXmuxReusableSecs${idx}`,
+                            textKey: 'nodes.xrayXhttpXmuxReusableSecsHelp',
+                            scope: 'client',
+                            t,
+                        }) %>
+                    </div>
                     <input type="text" name="xray_extra_xhttpXmuxHMaxReusableSecs" value="<%= e.xhttpXmuxHMaxReusableSecs || '' %>" placeholder="1800-3000">
                 </div>
             </div>
             <div class="form-group">
-                <label class="nf-tag">
-                    <input type="checkbox" name="xray_extra_xhttpNoGrpcHeader" value="<%= e.id || '' %>"
-                           <%= e.xhttpNoGrpcHeader ? 'checked' : '' %>>
-                    <span><%= t('nodes.xrayXhttpNoGrpcHeader') %></span>
-                </label>
+                <div class="nf-label-row">
+                    <label class="nf-tag">
+                        <input type="checkbox" name="xray_extra_xhttpNoGrpcHeader" value="<%= e.id || '' %>"
+                               <%= e.xhttpNoGrpcHeader ? 'checked' : '' %>>
+                        <span><%= t('nodes.xrayXhttpNoGrpcHeader') %></span>
+                    </label>
+                    <%- include('field-help', {
+                        idPrefix: `xrayExtraXhttpNoGrpcHeader${idx}`,
+                        textKey: 'nodes.xrayXhttpNoGrpcHeaderHelp',
+                        scope: 'client',
+                        t,
+                    }) %>
+                </div>
             </div>
             <%- include('xray-xhttp-advanced', {
                 xhttp: e,

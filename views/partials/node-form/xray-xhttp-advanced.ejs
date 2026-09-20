@@ -14,7 +14,15 @@
     <div class="nf-module__body">
         <div class="form-row-3">
             <div class="form-group">
-                <label for="<%= idp %>Method"><%= t('nodes.xrayXhttpUploadMethod') %></label>
+                <div class="nf-label-row">
+                    <label for="<%= idp %>Method"><%= t('nodes.xrayXhttpUploadMethod') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}Method`,
+                        textKey: 'nodes.xrayXhttpUploadMethodHelp',
+                        scope: 'client',
+                        t,
+                    }) %>
+                </div>
                 <select id="<%= idp %>Method" name="<%= p %>xhttpUplinkHTTPMethod">
                     <option value="" <%= !xa.xhttpUplinkHTTPMethod ? 'selected' : '' %>><%= t('nodes.xrayXhttpDefault') %></option>
                     <% ['GET','POST','PUT','PATCH'].forEach(function(method) { %>
@@ -23,49 +31,113 @@
                 </select>
             </div>
             <div class="form-group">
-                <label for="<%= idp %>DataPlacement"><%= t('nodes.xrayXhttpDataPlacement') %></label>
+                <div class="nf-label-row">
+                    <label for="<%= idp %>DataPlacement"><%= t('nodes.xrayXhttpDataPlacement') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}DataPlacement`,
+                        textKey: 'nodes.xrayXhttpDataPlacementHelp',
+                        scope: 'both',
+                        t,
+                    }) %>
+                </div>
                 <select id="<%= idp %>DataPlacement" name="<%= p %>xhttpUplinkDataPlacement">
-                    <option value="" <%= !xa.xhttpUplinkDataPlacement ? 'selected' : '' %>><%= t('nodes.xrayXhttpDefault') %></option>
+                    <option value="" <%= !xa.xhttpUplinkDataPlacement ? 'selected' : '' %>><%= t('nodes.xrayXhttpDataPlacementDefault') %></option>
                     <% ['body','header','cookie'].forEach(function(placement) { %>
                         <option value="<%= placement %>" <%= xa.xhttpUplinkDataPlacement === placement ? 'selected' : '' %>><%= placement %></option>
                     <% }); %>
                 </select>
             </div>
             <div class="form-group">
-                <label for="<%= idp %>DataKey"><%= t('nodes.xrayXhttpDataKey') %></label>
+                <div class="nf-label-row">
+                    <label for="<%= idp %>DataKey"><%= t('nodes.xrayXhttpDataKey') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}DataKey`,
+                        textKey: 'nodes.xrayXhttpDataKeyHelp',
+                        scope: 'both',
+                        t,
+                    }) %>
+                </div>
                 <input id="<%= idp %>DataKey" name="<%= p %>xhttpUplinkDataKey" value="<%= xa.xhttpUplinkDataKey || '' %>" maxlength="64" placeholder="X-Data">
             </div>
         </div>
         <div class="form-row-3">
             <div class="form-group">
-                <label><%= t('nodes.xrayXhttpChunkSize') %></label>
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayXhttpChunkSize') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}ChunkSize`,
+                        textKey: 'nodes.xrayXhttpChunkSizeHelp',
+                        scope: 'client',
+                        t,
+                    }) %>
+                </div>
                 <input name="<%= p %>xhttpUplinkChunkSize" value="<%= xa.xhttpUplinkChunkSize || '' %>" placeholder="3000-4000">
             </div>
             <div class="form-group">
-                <label><%= t('nodes.xrayXhttpMinPostInterval') %></label>
-                <input name="<%= p %>xhttpScMinPostsIntervalMs" value="<%= xa.xhttpScMinPostsIntervalMs || '' %>" placeholder="0">
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayXhttpMinPostInterval') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}MinPostInterval`,
+                        textKey: 'nodes.xrayXhttpMinPostIntervalHelp',
+                        scope: 'client',
+                        t,
+                    }) %>
+                </div>
+                <input name="<%= p %>xhttpScMinPostsIntervalMs" value="<%= xa.xhttpScMinPostsIntervalMs || '' %>" placeholder="30">
             </div>
             <div class="form-group">
-                <label><%= t('nodes.xrayXhttpMaxHeaderBytes') %></label>
-                <input type="number" name="<%= p %>xhttpServerMaxHeaderBytes" value="<%= xa.xhttpServerMaxHeaderBytes || '' %>" min="0" max="1048576" placeholder="65536">
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayXhttpMaxHeaderBytes') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}MaxHeaderBytes`,
+                        textKey: 'nodes.xrayXhttpMaxHeaderBytesHelp',
+                        scope: 'server',
+                        t,
+                    }) %>
+                </div>
+                <input type="number" name="<%= p %>xhttpServerMaxHeaderBytes" value="<%= xa.xhttpServerMaxHeaderBytes || '' %>" min="0" max="1048576" placeholder="8192">
             </div>
         </div>
         <div class="form-row-3">
             <div class="form-group">
-                <label><%= t('nodes.xrayXhttpPaddingPlacement') %></label>
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayXhttpPaddingPlacement') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}PaddingPlacement`,
+                        textKey: 'nodes.xrayXhttpPaddingPlacementHelp',
+                        scope: 'both',
+                        t,
+                    }) %>
+                </div>
                 <select name="<%= p %>xhttpXPaddingPlacement">
                     <option value=""><%= t('nodes.xrayXhttpDefault') %></option>
                     <% ['query','header','cookie','queryInHeader'].forEach(function(placement) { %>
-                        <option value="<%= placement %>" <%= xa.xhttpXPaddingPlacement === placement ? 'selected' : '' %>><%= placement %></option>
+                        <option value="<%= placement %>" <%= xa.xhttpXPaddingPlacement === placement ? 'selected' : '' %>><%= placement === 'query' ? t('nodes.xrayXhttpPaddingQueryRequestOnly') : placement %></option>
                     <% }); %>
                 </select>
             </div>
             <div class="form-group">
-                <label><%= t('nodes.xrayXhttpPaddingKey') %></label>
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayXhttpPaddingKey') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}PaddingKey`,
+                        textKey: 'nodes.xrayXhttpPaddingKeyHelp',
+                        scope: 'both',
+                        t,
+                    }) %>
+                </div>
                 <input name="<%= p %>xhttpXPaddingKey" value="<%= xa.xhttpXPaddingKey || '' %>" maxlength="64" placeholder="utm_source">
             </div>
             <div class="form-group">
-                <label><%= t('nodes.xrayXhttpPaddingMethod') %></label>
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayXhttpPaddingMethod') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}PaddingMethod`,
+                        textKey: 'nodes.xrayXhttpPaddingMethodHelp',
+                        scope: 'both',
+                        t,
+                    }) %>
+                </div>
                 <select name="<%= p %>xhttpXPaddingMethod">
                     <option value=""><%= t('nodes.xrayXhttpDefault') %></option>
                     <% ['tokenish','repeat-x'].forEach(function(method) { %>
@@ -76,36 +148,76 @@
         </div>
         <div class="form-row-3">
             <div class="form-group">
-                <label><%= t('nodes.xrayXhttpPaddingHeader') %></label>
-                <input name="<%= p %>xhttpXPaddingHeader" value="<%= xa.xhttpXPaddingHeader || '' %>" maxlength="64" placeholder="Referer">
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayXhttpPaddingHeader') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}PaddingHeader`,
+                        textKey: 'nodes.xrayXhttpPaddingHeaderHelp',
+                        scope: 'both',
+                        t,
+                    }) %>
+                </div>
+                <input name="<%= p %>xhttpXPaddingHeader" value="<%= xa.xhttpXPaddingHeader || '' %>" maxlength="64" placeholder="X-Padding">
             </div>
             <div class="form-group">
-                <label><%= t('nodes.xrayXhttpSessionTable') %></label>
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayXhttpSessionTable') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}SessionTable`,
+                        textKey: 'nodes.xrayXhttpSessionTableHelp',
+                        scope: 'client',
+                        t,
+                    }) %>
+                </div>
                 <select name="<%= p %>xhttpSessionIDTable">
-                    <option value=""><%= t('nodes.xrayXhttpDefault') %></option>
+                    <option value=""><%= t('nodes.xrayXhttpSessionDefaultUuid') %></option>
                     <% ['uuid','Base62','BASE36','base36','ALPHABET','Alphabet','alphabet','HEX','hex','number'].forEach(function(table) { %>
-                        <option value="<%= table %>" <%= xa.xhttpSessionIDTable === table ? 'selected' : '' %>><%= table %></option>
+                        <option value="<%= table %>" <%= xa.xhttpSessionIDTable === table ? 'selected' : '' %>><%= table === 'uuid' ? t('nodes.xrayXhttpSessionUuidLegacy') : table %></option>
                     <% }); %>
                 </select>
             </div>
             <div class="form-group">
-                <label><%= t('nodes.xrayXhttpSessionLength') %></label>
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayXhttpSessionLength') %></label>
+                    <%- include('field-help', {
+                        idPrefix: `${idp}SessionLength`,
+                        textKey: 'nodes.xrayXhttpSessionLengthHelp',
+                        scope: 'client',
+                        t,
+                    }) %>
+                </div>
                 <input name="<%= p %>xhttpSessionIDLength" value="<%= xa.xhttpSessionIDLength || '' %>" maxlength="21" placeholder="16-32">
             </div>
         </div>
-        <label class="nf-tag" style="margin-bottom:14px;">
-            <input type="checkbox" name="<%= p %>xhttpXPaddingObfsMode"
-                   <% if (checkboxValue) { %>value="<%= checkboxValue %>"<% } %>
-                   <%= xa.xhttpXPaddingObfsMode ? 'checked' : '' %>>
-            <span><%= t('nodes.xrayXhttpPaddingObfs') %></span>
-        </label>
+        <div class="nf-label-row" style="margin-bottom:14px;">
+            <label class="nf-tag">
+                <input type="checkbox" name="<%= p %>xhttpXPaddingObfsMode"
+                       <% if (checkboxValue) { %>value="<%= checkboxValue %>"<% } %>
+                       <%= xa.xhttpXPaddingObfsMode ? 'checked' : '' %>>
+                <span><%= t('nodes.xrayXhttpPaddingObfs') %></span>
+            </label>
+            <%- include('field-help', {
+                idPrefix: `${idp}PaddingObfs`,
+                textKey: 'nodes.xrayXhttpPaddingObfsHelp',
+                scope: 'both',
+                t,
+            }) %>
+        </div>
         <% [
-            [t('nodes.xrayXhttpSession'), 'xhttpSessionPlacement', 'xhttpSessionKey', 'sid'],
-            [t('nodes.xrayXhttpSequence'), 'xhttpSeqPlacement', 'xhttpSeqKey', 'part'],
+            [t('nodes.xrayXhttpSession'), 'xhttpSessionPlacement', 'xhttpSessionKey', 'sid', 'xrayXhttpSessionPlacementHelp', 'xrayXhttpSessionKeyHelp'],
+            [t('nodes.xrayXhttpSequence'), 'xhttpSeqPlacement', 'xhttpSeqKey', 'part', 'xrayXhttpSeqPlacementHelp', 'xrayXhttpSeqKeyHelp'],
         ].forEach(function(row) { %>
             <div class="form-row">
                 <div class="form-group">
-                    <label><%= row[0] %> <%= t('nodes.xrayXhttpPlacement') %></label>
+                    <div class="nf-label-row">
+                        <label><%= row[0] %> <%= t('nodes.xrayXhttpPlacement') %></label>
+                        <%- include('field-help', {
+                            idPrefix: `${idp}${row[1]}`,
+                            textKey: `nodes.${row[4]}`,
+                            scope: 'both',
+                            t,
+                        }) %>
+                    </div>
                     <select name="<%= p + row[1] %>">
                         <option value=""><%= t('nodes.xrayXhttpDefault') %></option>
                         <% ['query','header','path','cookie'].forEach(function(value) { %>
@@ -114,7 +226,15 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label><%= row[0] %> <%= t('nodes.xrayXhttpKey') %></label>
+                    <div class="nf-label-row">
+                        <label><%= row[0] %> <%= t('nodes.xrayXhttpKey') %></label>
+                        <%- include('field-help', {
+                            idPrefix: `${idp}${row[2]}`,
+                            textKey: `nodes.${row[5]}`,
+                            scope: 'both',
+                            t,
+                        }) %>
+                    </div>
                     <input name="<%= p + row[2] %>" value="<%= xa[row[2]] || '' %>" maxlength="64" placeholder="<%= row[3] %>">
                 </div>
             </div>

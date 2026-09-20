@@ -1,0 +1,17 @@
+<%
+    const scopeKey = scope === 'client'
+        ? 'xrayXhttpScopeClient'
+        : (scope === 'server' ? 'xrayXhttpScopeServer' : 'xrayXhttpScopeBoth');
+    const scopeLabel = t(`nodes.${scopeKey}`);
+    const helpText = t(textKey);
+%>
+<span class="nf-help">
+    <button type="button" class="nf-help__trigger"
+            aria-label="<%= `${t('nodes.xrayXhttpHelpLabel')}: ${scopeLabel}. ${helpText}` %>">
+        <i class="ti ti-info-circle" aria-hidden="true"></i>
+    </button>
+    <span class="nf-help__bubble" role="tooltip" aria-hidden="true">
+        <span class="nf-help__scope"><%= scopeLabel %></span>
+        <span class="nf-help__text"><%= helpText %></span>
+    </span>
+</span>
