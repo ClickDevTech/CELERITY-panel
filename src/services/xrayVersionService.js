@@ -488,7 +488,7 @@ async function synchronizeNode(node) {
         return true;
     }
     const syncService = require('./syncService');
-    return syncService.updateXrayNodeConfig(node);
+    return syncService.updateXrayNodeConfig(node, { lockHeld: true });
 }
 
 async function runVersionChange(task, release) {

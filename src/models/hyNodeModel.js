@@ -236,6 +236,30 @@ const xrayFrontSchema = new mongoose.Schema({
     siteHtml: { type: Buffer, default: null, select: false },
     // 'main' for the main inbound, otherwise extraInbounds[].id.
     inboundIds: { type: [String], default: [] },
+    // Public listener state captured before the inbounds move behind Caddy.
+    // It is required for exact disable and provisioning rollback.
+    layoutSnapshot: {
+        main: {
+            port: { type: Number },
+            listen: { type: String },
+            security: { type: String },
+        },
+        extras: [{
+            _id: false,
+            id: { type: String },
+            port: { type: Number },
+            listen: { type: String },
+            security: { type: String },
+        }],
+    },
+    // Exact panel-side state before a front mutation. The remote transaction
+    // already backs up Xray/Caddy; this hidden copy lets a failed cutover roll
+    // MongoDB and subscriptions back to the same runtime.
+    rollbackSnapshot: {
+        type: mongoose.Schema.Types.Mixed,
+        default: null,
+        select: false,
+    },
     // Provisioning is skipped while this matches the desired state.
     appliedFingerprint: { type: String, default: '' },
     status: {

@@ -28,7 +28,10 @@ const {
     XHTTP_SESSION_TABLE_VALUES,
     validateXrayXhttp,
 } = require('../../utils/xhttpOptions');
-const { applyFrontPatch } = require('../../services/edgeFront/frontConfig');
+const {
+    applyFrontPatch,
+    captureFrontRollbackState,
+} = require('../../services/edgeFront/frontConfig');
 
 async function invalidateNodesCache() {
     await cache.invalidateNodes();
@@ -566,7 +569,10 @@ async function manageNode(args, emit) {
             // +siteHtml: the front subdocument is written whole, so the decoy
             // page has to be carried over instead of being dropped by the $set.
             const existing = await HyNode.findById(id)
-                .select('type ip domain port virtual cdn xray name flag active groups +xray.front.siteHtml')
+                .select(
+                    'type ip domain port virtual cdn xray name flag active groups '
+                    + '+xray.front.siteHtml +xray.front.rollbackSnapshot'
+                )
                 .lean();
             if (!existing) return { error: `Node '${id}' not found`, code: 404 };
 
@@ -622,15 +628,25 @@ async function manageNode(args, emit) {
                 const nextXray = { ...(existing.xray || {}), ...(data.xray || {}) };
                 const xhttpError = validateXrayXhttp(nextXray);
                 if (xhttpError) return { error: xhttpError, code: 400 };
-                if (data.xray?.front) {
+                const frontRuntimeTouched = data.xray !== undefined
+                    || updates.domain !== undefined
+                    || updates.ip !== undefined
+                    || updates.port !== undefined;
+                if (frontRuntimeTouched
+                    && (nextXray.front?.enabled || existing.xray?.front?.enabled)) {
                     const frontNode = {
                         port: updates.port !== undefined ? updates.port : existing.port,
                         domain: updates.domain !== undefined ? updates.domain : existing.domain,
                         ip: nextIp,
                     };
-                    const frontError = applyFrontPatch(nextXray, frontNode, existing.xray?.front);
+                    const frontError = applyFrontPatch(
+                        nextXray,
+                        frontNode,
+                        existing.xray?.front,
+                        captureFrontRollbackState(existing)
+                    );
                     if (frontError) return { error: frontError, code: 400 };
-                    // Write back only what the layout can rewrite.
+                    // Persist pending state and everything the layout can rewrite.
                     updates.port = frontNode.port;
                     for (const key of ['front', 'listen', 'security', 'extraInbounds']) {
                         if (nextXray[key] !== undefined) updates[`xray.${key}`] = nextXray[key];

@@ -20,8 +20,10 @@ const XRAY_FRONT_CLIENT_ALPN = {
 
 // Caddy terminates TLS, so a fronted inbound must speak plain HTTP.
 const XRAY_FRONT_TRANSPORTS = ['ws', 'grpc', 'xhttp'];
-// 'self-signed' is refused: every client would fail verification.
-const XRAY_FRONT_TLS_SOURCES = ['acme', 'panel', 'manual'];
+// The front must present a certificate for the node domain. Reusing the panel
+// certificate makes the decoy unreachable in browsers and breaks clients that
+// do not support a dial address different from the TLS server name.
+const XRAY_FRONT_TLS_SOURCES = ['acme', 'manual'];
 const XRAY_FRONT_PORT_BASE = 8443;
 const XRAY_FRONT_LOOPBACK = '127.0.0.1';
 // inboundIds entry standing for the main inbound; extras carry their own id.
@@ -42,6 +44,10 @@ function frontClientAlpn(transport) {
     return XRAY_FRONT_CLIENT_ALPN[String(transport || '')] || XRAY_FRONT_ALPN;
 }
 
+function frontPublicHost(node = {}) {
+    return String(node.domain || '').trim();
+}
+
 // Main inbound and extras as one list; `id` matches front.inboundIds entries.
 function listXrayInbounds(xray = {}, nodePort = 443) {
     const main = {
@@ -52,7 +58,9 @@ function listXrayInbounds(xray = {}, nodePort = 443) {
         transport: xray.transport || 'tcp',
         security: xray.security || 'reality',
         wsPath: xray.wsPath,
+        wsHost: xray.wsHost,
         xhttpPath: xray.xhttpPath,
+        xhttpHost: xray.xhttpHost,
         grpcServiceName: xray.grpcServiceName,
     };
     const extras = (Array.isArray(xray.extraInbounds) ? xray.extraInbounds : [])
@@ -65,7 +73,9 @@ function listXrayInbounds(xray = {}, nodePort = 443) {
             transport: inbound.transport || 'tcp',
             security: inbound.security || 'reality',
             wsPath: inbound.wsPath,
+            wsHost: inbound.wsHost,
             xhttpPath: inbound.xhttpPath,
+            xhttpHost: inbound.xhttpHost,
             grpcServiceName: inbound.grpcServiceName,
         }));
     return [main, ...extras];
@@ -75,6 +85,29 @@ function listXrayInbounds(xray = {}, nodePort = 443) {
 function isInboundFronted(xray = {}, extraId = null) {
     const front = xray.front;
     if (!front?.enabled) return false;
+    const id = String(extraId || MAIN_INBOUND_ID);
+    const ids = Array.isArray(front.inboundIds) ? front.inboundIds : [];
+    return ids.some(entry => String(entry || '') === id);
+}
+
+// A configured front is not client-facing until its remote transaction has
+// passed both smoke tests and the applied fingerprint has been persisted.
+function isFrontActive(xray = {}) {
+    const front = xray.front;
+    return !!(front?.enabled
+        && front.status === 'active'
+        && String(front.appliedFingerprint || '').trim());
+}
+
+// During disable, the old remote front remains authoritative until Xray has
+// reclaimed the public listeners and Caddy has stopped successfully.
+function isInboundFrontPublished(xray = {}, extraId = null) {
+    const front = xray.front;
+    const remoteFrontStillActive = isFrontActive(xray)
+        || (!front?.enabled
+            && front?.status === 'pending'
+            && String(front.appliedFingerprint || '').trim());
+    if (!remoteFrontStillActive) return false;
     const id = String(extraId || MAIN_INBOUND_ID);
     const ids = Array.isArray(front.inboundIds) ? front.inboundIds : [];
     return ids.some(entry => String(entry || '') === id);
@@ -118,6 +151,9 @@ function buildFrontRoutes(xray = {}, nodePort = 443) {
             // must reach the inbound too instead of the decoy site.
             paths: base === '/' ? ['/*'] : [base, `${base}/*`],
             upstream: `${XRAY_FRONT_LOOPBACK}:${inbound.port}`,
+            upstreamHost: inbound.transport === 'ws'
+                ? String(inbound.wsHost || '').trim()
+                : (inbound.transport === 'xhttp' ? String(inbound.xhttpHost || '').trim() : ''),
             // WebSocket upgrades over HTTP/1.1; the rest are HTTP/2 cleartext.
             h2c: inbound.transport !== 'ws',
         });
@@ -157,6 +193,22 @@ function assignFrontLoopbackPorts(xray = {}, node = {}) {
     return assigned;
 }
 
+function captureFrontInboundLayout(xray = {}, node = {}) {
+    return {
+        main: {
+            port: node.port || 443,
+            listen: xray.listen || '0.0.0.0',
+            security: xray.security || 'reality',
+        },
+        extras: (xray.extraInbounds || []).map(inbound => ({
+            id: String(inbound?.id || ''),
+            port: inbound?.port,
+            listen: inbound?.listen || '0.0.0.0',
+            security: inbound?.security || 'reality',
+        })).filter(inbound => inbound.id),
+    };
+}
+
 // Park the fronted inbounds on loopback without TLS. Mutates in place.
 function applyFrontInboundLayout(xray = {}, node = {}) {
     const ports = assignFrontLoopbackPorts(xray, node);
@@ -174,6 +226,24 @@ function applyFrontInboundLayout(xray = {}, node = {}) {
         inbound.security = 'none';
         inbound.port = port;
     }
+}
+
+function restoreFrontInboundLayout(xray = {}, node = {}, snapshot = null) {
+    const main = snapshot?.main;
+    if (!Number.isInteger(main?.port) || !main?.listen || !main?.security) return false;
+    node.port = main.port;
+    xray.listen = main.listen;
+    xray.security = main.security;
+
+    const extras = new Map((snapshot.extras || []).map(inbound => [String(inbound.id || ''), inbound]));
+    for (const inbound of (xray.extraInbounds || [])) {
+        const saved = extras.get(String(inbound?.id || ''));
+        if (!saved) continue;
+        inbound.port = saved.port || inbound.port;
+        inbound.listen = saved.listen || '0.0.0.0';
+        inbound.security = saved.security || 'reality';
+    }
+    return true;
 }
 
 // Give a public TLS listener back, otherwise the node goes dark once the front
@@ -249,7 +319,7 @@ function validateXrayFront(xray = {}, node = {}, context = {}) {
         }
         // Caddy holds port 80 for the challenge, so acme.sh cannot run next to it.
         if (hasOwnTlsInbound(xray)) {
-            return "With TLS source 'acme' the front owns port 80 for the certificate challenge, so no other inbound on this node can terminate TLS. Move those inbounds behind the front, or switch TLS source to 'panel' or 'manual'.";
+            return "With TLS source 'acme' the front owns port 80 for the certificate challenge, so no other inbound on this node can terminate TLS. Move those inbounds behind the front, or switch TLS source to 'manual'.";
         }
     }
 
@@ -330,13 +400,18 @@ module.exports = {
     MAIN_INBOUND_ID,
     isLoopbackAddress,
     isInboundFronted,
+    isFrontActive,
+    isInboundFrontPublished,
     hasOwnTlsInbound,
     xrayNeedsTls,
     frontClientAlpn,
+    frontPublicHost,
     frontBasePath,
     buildFrontRoutes,
     assignFrontLoopbackPorts,
+    captureFrontInboundLayout,
     applyFrontInboundLayout,
+    restoreFrontInboundLayout,
     releaseFrontInboundLayout,
     normalizeXrayFront,
     validateXrayFront,

@@ -4,7 +4,11 @@
 // by path to loopback. Pure string building; the provisioner ships the result.
 
 const appConfig = require('../../../config');
-const { buildFrontRoutes, XRAY_FRONT_ALPN } = require('../../utils/xrayFront');
+const {
+    buildFrontRoutes,
+    frontPublicHost,
+    XRAY_FRONT_ALPN,
+} = require('../../utils/xrayFront');
 
 const CADDY_BIN = '/usr/bin/caddy';
 const CADDYFILE_PATH = '/etc/caddy/Caddyfile';
@@ -12,6 +16,8 @@ const CADDY_TLS_DIR = '/etc/caddy/tls';
 const CADDY_CERT_PATH = `${CADDY_TLS_DIR}/cert.pem`;
 const CADDY_KEY_PATH = `${CADDY_TLS_DIR}/key.pem`;
 const SITE_ROOT = '/var/lib/celerity-front/site';
+const FRONT_SMOKE_HEADER = 'X-Celerity-Front-Smoke';
+const FRONT_SMOKE_VALUE = 'route';
 
 // Quoting is not enough: Caddy placeholders and quotes break out of a token.
 const UNSAFE_TOKEN_RE = /["'{}\\\s]/;
@@ -26,14 +32,8 @@ function assertSafeToken(value, what) {
     return token;
 }
 
-// With the panel certificate the client is told to use PANEL_DOMAIN as SNI
-// (see subscription _resolveXrayTlsClientHints), so the site block must match.
 function frontSiteHost(node) {
-    const tlsSource = node?.xray?.tlsSource || 'panel';
-    if (tlsSource === 'panel') {
-        return String(appConfig?.PANEL_DOMAIN || node?.domain || '').trim();
-    }
-    return String(node?.domain || '').trim();
+    return frontPublicHost(node);
 }
 
 function resolveAcmeEmail(node) {
@@ -41,7 +41,10 @@ function resolveAcmeEmail(node) {
         || String(appConfig?.ACME_EMAIL || '').trim();
 }
 
-function buildTlsDirective(node) {
+function buildTlsDirective(node, {
+    certPath = CADDY_CERT_PATH,
+    keyPath = CADDY_KEY_PATH,
+} = {}) {
     const tlsSource = node?.xray?.tlsSource || 'panel';
     // Both, so each transport can negotiate the version it needs. Clients are
     // told which one to offer (see frontClientAlpn).
@@ -49,23 +52,36 @@ function buildTlsDirective(node) {
     // acme lets Caddy manage the certificate; panel and manual ship PEM files.
     const head = tlsSource === 'acme'
         ? 'tls {'
-        : `tls ${CADDY_CERT_PATH} ${CADDY_KEY_PATH} {`;
+        : `tls ${certPath} ${keyPath} {`;
     return [`\t${head}`, alpnLine, '\t}'].join('\n');
 }
 
 function buildRouteBlock(route, index) {
     const matcher = `@front${index}`;
+    const smokeMatcher = `@front${index}Smoke`;
     const paths = route.paths.map(p => `"${assertSafeToken(p, 'inbound path')}"`).join(' ');
     const upstream = route.h2c ? `h2c://${route.upstream}` : route.upstream;
+    const upstreamHost = route.upstreamHost
+        ? assertSafeToken(route.upstreamHost, 'upstream host')
+        : '';
     const lines = [
         `\t${matcher} path ${paths}`,
+        `\t${smokeMatcher} {`,
+        '\t\tremote_ip 127.0.0.1',
+        `\t\theader ${FRONT_SMOKE_HEADER} ${FRONT_SMOKE_VALUE}`,
+        '\t}',
         `\thandle ${matcher} {`,
+        `\t\trespond ${smokeMatcher} 204`,
     ];
     if (route.transport === 'grpc') {
         // Xray's gRPC inbound reads the client IP from X-Real-IP; ws and xhttp
         // take it from the X-Forwarded-For Caddy sets on its own.
         lines.push(`\t\treverse_proxy ${upstream} {`);
         lines.push('\t\t\theader_up X-Real-IP {remote_host}');
+        lines.push('\t\t}');
+    } else if (upstreamHost) {
+        lines.push(`\t\treverse_proxy ${upstream} {`);
+        lines.push(`\t\t\theader_up Host ${upstreamHost}`);
         lines.push('\t\t}');
     } else {
         lines.push(`\t\treverse_proxy ${upstream}`);
@@ -75,7 +91,11 @@ function buildRouteBlock(route, index) {
 }
 
 // Throws FRONT_CONFIG_INVALID when the front is not renderable.
-function buildCaddyfile(node) {
+function buildCaddyfile(node, {
+    certPath = CADDY_CERT_PATH,
+    keyPath = CADDY_KEY_PATH,
+    siteRoot = SITE_ROOT,
+} = {}) {
     const xray = node?.xray || {};
     const front = xray.front || {};
     if (!front.enabled) {
@@ -105,7 +125,7 @@ function buildCaddyfile(node) {
         throw err;
     }
 
-    const global = ['{'];
+    const global = ['{', '\tadmin off'];
     if ((xray.tlsSource || 'panel') === 'acme') {
         const email = resolveAcmeEmail(node);
         if (!email) {
@@ -120,12 +140,12 @@ function buildCaddyfile(node) {
 
     const body = [
         `https://${host}:${port} {`,
-        buildTlsDirective(node),
+        buildTlsDirective(node, { certPath, keyPath }),
         '',
         ...routes.flatMap((route, index) => [buildRouteBlock(route, index), '']),
         // Everything else is the decoy site.
         '\thandle {',
-        `\t\troot * ${SITE_ROOT}`,
+        `\t\troot * ${siteRoot}`,
         '\t\tfile_server',
         '\t}',
         '}',
@@ -141,6 +161,8 @@ module.exports = {
     CADDY_CERT_PATH,
     CADDY_KEY_PATH,
     SITE_ROOT,
+    FRONT_SMOKE_HEADER,
+    FRONT_SMOKE_VALUE,
     frontSiteHost,
     resolveAcmeEmail,
     buildCaddyfile,

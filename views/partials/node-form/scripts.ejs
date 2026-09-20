@@ -951,20 +951,42 @@ function refreshExtraInboundsEmpty() {
     empty.style.display = count === 0 ? '' : 'none';
 }
 
-// Picks one of four TLS-source sub-blocks.
-function updateXrayTlsSourceUI() {
-    const checked = document.querySelector('input[name="xray.tlsSource"]:checked');
-    const source = checked ? checked.value : 'panel';
+// Picks one of four TLS-source sub-blocks. A newly-enabled front moves away
+// from unsupported panel/self-signed TLS before the form can be submitted.
+function updateXrayTlsSourceUI(options) {
+    options = options || {};
+    let checked = document.querySelector('input[name="xray.tlsSource"]:checked');
+    let source = checked ? checked.value : 'panel';
+    const frontEnabled = !!document.getElementById('frontEnabled')?.checked;
+    if (frontEnabled && options.normalizeForFront && !['acme', 'manual'].includes(source)) {
+        const acme = document.querySelector('input[name="xray.tlsSource"][value="acme"]');
+        if (acme) {
+            acme.checked = true;
+            checked = acme;
+            source = 'acme';
+        }
+    }
     const chip = document.getElementById('xrayTlsSourceChip');
     if (chip) chip.textContent = source;
     const panelInfo = document.getElementById('xrayTlsPanelInfo');
     const acmeBlock = document.getElementById('xrayTlsAcmeBlock');
     const manualBlock = document.getElementById('xrayTlsManualBlock');
     const selfSignedInfo = document.getElementById('xrayTlsSelfSignedInfo');
+    const panelRecommended = document.getElementById('xrayTlsPanelRecommended');
+    const unsupported = document.querySelectorAll(
+        'input[name="xray.tlsSource"][value="panel"], '
+        + 'input[name="xray.tlsSource"][value="self-signed"]'
+    );
+    unsupported.forEach(function(radio) {
+        // Keep a selected legacy panel front renderable, but once the operator
+        // chooses a supported source it cannot be selected again while enabled.
+        radio.disabled = frontEnabled && !radio.checked;
+    });
     if (panelInfo) panelInfo.style.display = source === 'panel' ? '' : 'none';
     if (acmeBlock) acmeBlock.style.display = source === 'acme' ? '' : 'none';
     if (manualBlock) manualBlock.style.display = source === 'manual' ? '' : 'none';
     if (selfSignedInfo) selfSignedInfo.style.display = source === 'self-signed' ? '' : 'none';
+    if (panelRecommended) panelRecommended.style.display = frontEnabled ? 'none' : '';
 }
 
 // The Domain field itself is always visible; only its hint follows the protocol.
@@ -1274,6 +1296,7 @@ function onFrontToggle() {
     const body = document.getElementById('frontBody');
     if (body) body.style.display = enabled ? '' : 'none';
     if (enabled) refreshFrontInbounds();
+    updateXrayTlsSourceUI({ normalizeForFront: enabled });
     refreshRailBadges();
 }
 

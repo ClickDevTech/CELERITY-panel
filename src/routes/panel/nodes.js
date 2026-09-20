@@ -34,7 +34,11 @@ const {
     isValidHostname,
     CDN_ORIGIN_CANDIDATE_SELECT,
 } = require('../../utils/cdnConfig');
-const { applyFrontLayout } = require('../../services/edgeFront/frontConfig');
+const {
+    applyFrontLayout,
+    captureFrontRollbackState,
+    attachFrontRollbackState,
+} = require('../../services/edgeFront/frontConfig');
 const frontProvisionService = require('../../services/edgeFront/provisionService');
 const { MAX_CUSTOM_BYTES, validateCustomHtml } = require('../../utils/decoyPage');
 const config = require('../../../config');
@@ -1032,7 +1036,9 @@ router.post('/nodes/:id', async (req, res) => {
     try {
         // Full doc (not partial) — we .save() it below; manualKey and the
         // front's decoy page are select:false.
-        const existingNode = await HyNode.findById(nodeId).select('+xray.manualKey +xray.front.siteHtml');
+        const existingNode = await HyNode.findById(nodeId).select(
+            '+xray.manualKey +xray.front.siteHtml +xray.front.rollbackSnapshot'
+        );
         if (!existingNode) {
             return res.redirect('/panel/nodes');
         }
@@ -1117,6 +1123,7 @@ router.post('/nodes/:id', async (req, res) => {
             const existingXray = (existingNode.xray && typeof existingNode.xray.toObject === 'function')
                 ? existingNode.xray.toObject()
                 : (existingNode.xray || {});
+            const frontRollbackState = captureFrontRollbackState(existingNode);
             // resolveManualKeyPlaceholder runs BEFORE the merge so the
             // existing key is restored when the operator did not change it.
             const parsedXray = resolveManualKeyPlaceholder(parseXrayFormFields(req.body), existingXray);
@@ -1134,6 +1141,7 @@ router.post('/nodes/:id', async (req, res) => {
                 ip: String(req.body.ip || existingNode.ip || '').trim(),
             };
             applyFrontLayout(updates.xray, nodeForValidate, existingXray.front);
+            attachFrontRollbackState(updates.xray, frontRollbackState, existingXray.front);
             // The front takes over the public port, so the inbound moves.
             updates.port = nodeForValidate.port;
             const xrayError = validateXrayFormFields(updates.xray, nodeForValidate);

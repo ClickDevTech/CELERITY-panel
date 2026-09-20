@@ -369,7 +369,8 @@
             <div class="nf-choices" role="radiogroup" aria-label="<%= t('nodes.xrayTlsSourceLabel') %>">
                 <label class="nf-choice">
                     <input type="radio" name="xray.tlsSource" value="panel" <%= xrTlsSource === 'panel' ? 'checked' : '' %> onchange="updateXrayTlsSourceUI()">
-                    <span class="badge badge-success"><%= t('nodes.xrayTlsRecommended') %></span>
+                    <span class="badge badge-success" id="xrayTlsPanelRecommended"
+                          style="<%= node?.xray?.front?.enabled ? 'display:none' : '' %>"><%= t('nodes.xrayTlsRecommended') %></span>
                     <span class="nf-choice__text">
                         <span class="nf-choice__name"><%= t('nodes.xrayTlsSourcePanel') %></span>
                         <span class="nf-choice__hint"><%= t('nodes.xrayTlsSourcePanelHint') %></span>

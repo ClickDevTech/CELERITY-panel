@@ -139,7 +139,7 @@ Virtual nodes carry no IP/SSH/agent and never run health checks themselves.`,
         },
         XrayFrontConfig: {
             type: 'object',
-            description: 'Runs Caddy on the node public port: a decoy site on `/` and the selected inbounds reverse-proxied by path to loopback. Only WebSocket, gRPC, and XHTTP inbounds qualify, and the panel moves them to 127.0.0.1 with `security=none` on its own. The front advertises h2 and http/1.1, and each published inbound is given the ALPN its transport requires. Requires `domain`, a `tlsSource` of acme, panel, or manual, and a node on its own VPS.',
+            description: 'Runs Caddy on the node public port: a decoy site on `/` and the selected inbounds reverse-proxied by path to loopback. Only WebSocket, gRPC, and XHTTP inbounds qualify, and the panel moves them to 127.0.0.1 with `security=none` on its own. The front advertises h2 and http/1.1, and each published inbound is given the ALPN its transport requires. Requires `domain`, a `tlsSource` of acme or manual, SSH credentials, and a node on its own VPS. The panel certificate is not supported because the public front must present a certificate for the node domain.',
             properties: {
                 enabled: { type: 'boolean', default: false },
                 publicPort: {
@@ -195,6 +195,12 @@ Virtual nodes carry no IP/SSH/agent and never run health checks themselves.`,
                             },
                         },
                     },
+                },
+                tlsSource: {
+                    type: 'string',
+                    enum: ['panel', 'acme', 'manual', 'self-signed'],
+                    default: 'panel',
+                    description: 'TLS source for Xray inbounds. When front.enabled=true, only acme and manual are accepted.',
                 },
                 front: { $ref: '#/components/schemas/XrayFrontConfig' },
             },

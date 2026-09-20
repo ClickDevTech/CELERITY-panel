@@ -27,7 +27,13 @@ const webhookService = require('../services/webhookService');
 const { isServerlessNode } = require('../utils/nodeTypes');
 const { isValidXhttpRange, isAllZeroRange } = require('../utils/xhttpOptions');
 const { distributeFingerprints, pickFingerprint } = require('../utils/fingerprints');
-const { isInboundFronted, frontClientAlpn } = require('../utils/xrayFront');
+const {
+    isInboundFronted,
+    isFrontActive,
+    isInboundFrontPublished,
+    frontClientAlpn,
+    frontPublicHost,
+} = require('../utils/xrayFront');
 
 // ==================== HELPERS ====================
 
@@ -576,7 +582,13 @@ function getXrayPublishedInbounds(node) {
             xhttpSeqKey: i.xhttpSeqKey,
         }));
 
-    return [main, ...extras].map(inbound => _applyFrontPublication(node, inbound));
+    const frontActive = isFrontActive(xray);
+    return [main, ...extras]
+        // Desired front settings are saved before the remote cutover. Do not
+        // leak their loopback ports, nor advertise Caddy before smoke tests
+        // have promoted the front to active.
+        .filter(inbound => frontActive || !isInboundFronted(xray, inbound.extraId))
+        .map(inbound => _applyFrontPublication(node, inbound));
 }
 
 /**
@@ -585,18 +597,22 @@ function getXrayPublishedInbounds(node) {
  */
 function _applyFrontPublication(node, inbound) {
     const front = node.xray?.front;
-    if (!isInboundFronted(node.xray, inbound.extraId)) return inbound;
+    if (!isInboundFrontPublished(node.xray, inbound.extraId)) return inbound;
+    const publicHost = node.xray?.tlsSource === 'panel'
+        ? _resolveXrayTlsClientHints(node).host
+        : frontPublicHost(node);
     const published = {
         ...inbound,
+        address: frontPublicHost(node),
         port: front.publicPort || 443,
         security: 'tls',
         alpn: frontClientAlpn(inbound.transport),
     };
-    // Caddy selects its site block by Host, and gRPC carries it in :authority,
-    // which defaults to the dial address — not the name the front answers on.
-    if (inbound.transport === 'grpc') {
-        published.grpcAuthority = _resolveXrayTlsClientHints(node).host;
-    }
+    // Public HTTP identity must match the node certificate. Any custom inbound
+    // host is preserved only on the Caddy-to-Xray hop by the Caddyfile.
+    if (inbound.transport === 'ws') published.wsHost = publicHost;
+    if (inbound.transport === 'xhttp') published.xhttpHost = publicHost;
+    if (inbound.transport === 'grpc') published.grpcAuthority = publicHost;
     return published;
 }
 
@@ -3659,4 +3675,5 @@ module.exports.singboxRuleSetTag = _singboxRuleSetTag;
 module.exports.vlessURIForInbound = generateVlessURIForInbound;
 module.exports.singboxVlessOutboundForInbound = _buildSingboxVlessOutboundForInbound;
 module.exports.clashVlessProxyForInbound = _buildClashVlessProxyForInbound;
+module.exports.v2rayOutboundsForNode = _buildV2rayOutboundsForNode;
 module.exports.resolveCdnOrigins = resolveCdnOrigins;
