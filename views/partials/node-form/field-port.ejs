@@ -2,7 +2,10 @@
     next to the main inbound, so the block is moved between two slots by
     moveSharedFields() instead of being rendered twice. %>
 <div class="form-group" id="portGroup">
-    <label for="port"><%= t('nodes.port') %></label>
+    <div class="nf-label-row">
+        <label for="port"><%= t('nodes.port') %></label>
+        <%- include('field-help', { textKey: 'nodes.portHelp', scope: 'both' }) %>
+    </div>
     <input type="number" id="port" name="port" value="<%= node?.port || 443 %>"
            placeholder="443" oninput="checkXrayPortConflict()">
     <div id="xrayPortConflictWarn" class="alert alert-error" style="display:none;margin-top:8px;">

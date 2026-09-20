@@ -36,7 +36,10 @@
     </div>
 
     <div class="form-group" style="margin-top:16px;">
-        <label for="xrayAclRules"><%= t('outbounds.rules') %></label>
+        <div class="nf-label-row">
+            <label for="xrayAclRules"><%= t('outbounds.rules') %></label>
+            <%- include('field-help', { textKey: 'outbounds.rulesTooltip', scope: 'server', t }) %>
+        </div>
         <%# Deliberately not named `aclRules`: parseHysteriaFormFields falls back
             to that field, and this block is in the DOM even when Hysteria is
             the selected protocol. %>

@@ -24,7 +24,10 @@ const cands = candidateNodes || [];
     </div>
 
     <div class="nf-standalone-field">
-        <div class="nf-standalone-label"><%= t('nodes.virtualSelectMode') %></div>
+        <div class="nf-label-row">
+            <div class="nf-standalone-label"><%= t('nodes.virtualSelectMode') %></div>
+            <%- include('field-help', { textKey: 'nodes.virtualSectionHint', t }) %>
+        </div>
         <div class="nf-seg" id="virtualSelectModeSeg">
             <label>
                 <input type="radio" name="virtual.selectMode" value="manual"
@@ -42,8 +45,10 @@ const cands = candidateNodes || [];
     </div>
 
     <div class="form-group" id="virtualManualGroup" style="<%= selectMode === 'manual' ? '' : 'display:none' %>">
-        <label><%= t('nodes.virtualSources') %></label>
-        <small><%= t('nodes.virtualSourcesHint') %></small>
+        <div class="nf-label-row">
+            <label><%= t('nodes.virtualSources') %></label>
+            <%- include('field-help', { textKey: 'nodes.virtualSourcesHint', t }) %>
+        </div>
         <% if (cands.length === 0) { %>
             <div class="nf-info" style="margin-top:8px;">
                 <i class="ti ti-info-circle"></i>
@@ -66,8 +71,10 @@ const cands = candidateNodes || [];
     </div>
 
     <div class="form-group" id="virtualGroupGroup" style="<%= selectMode === 'group' ? '' : 'display:none' %>;max-width:360px;">
-        <label for="virtualSourceGroup"><%= t('nodes.virtualSourceGroup') %></label>
-        <small><%= t('nodes.virtualSourceGroupHint') %></small>
+        <div class="nf-label-row">
+            <label for="virtualSourceGroup"><%= t('nodes.virtualSourceGroup') %></label>
+            <%- include('field-help', { textKey: 'nodes.virtualSourceGroupHint', t }) %>
+        </div>
         <select id="virtualSourceGroup" name="virtual.sourceGroup">
             <option value=""><%= t('nodes.virtualSourceGroupPlaceholder') %></option>
             <% (groups || []).forEach(g => { %>
@@ -77,8 +84,10 @@ const cands = candidateNodes || [];
     </div>
 
     <div class="nf-group">
-        <div class="nf-group__title"><%= t('nodes.virtualStrategy') %></div>
-        <small class="nf-section__hint"><%= t('nodes.virtualStrategyHint') %></small>
+        <div class="nf-label-row">
+            <div class="nf-group__title"><%= t('nodes.virtualStrategy') %></div>
+            <%- include('field-help', { textKey: 'nodes.virtualStrategyHint', t }) %>
+        </div>
         <div class="nf-choices" id="virtualStrategyChoices">
             <% [
                 { id: 'random',     icon: 'ti-arrows-shuffle', key: 'Random' },
@@ -102,11 +111,13 @@ const cands = candidateNodes || [];
     </div>
 
     <div class="form-group">
-        <label class="nf-tag">
-            <input type="checkbox" name="virtual.fallbackToFirst" <%= fallbackToFirst ? 'checked' : '' %>>
-            <span><%= t('nodes.virtualFallbackToFirst') %></span>
-        </label>
-        <small style="display:block;margin-top:6px;"><%= t('nodes.virtualFallbackToFirstHint') %></small>
+        <div class="nf-label-row">
+            <label class="nf-tag">
+                <input type="checkbox" name="virtual.fallbackToFirst" <%= fallbackToFirst ? 'checked' : '' %>>
+                <span><%= t('nodes.virtualFallbackToFirst') %></span>
+            </label>
+            <%- include('field-help', { textKey: 'nodes.virtualFallbackToFirstHint', t }) %>
+        </div>
     </div>
 </div>
 
@@ -123,39 +134,49 @@ const cands = candidateNodes || [];
 
         <div class="form-row">
             <div class="form-group">
-                <label for="virtualObsDestination"><%= t('nodes.virtualObsDestination') %></label>
+                <div class="nf-label-row">
+                    <label for="virtualObsDestination"><%= t('nodes.virtualObsDestination') %></label>
+                    <%- include('field-help', { textKey: 'nodes.virtualObsDestinationHint', t }) %>
+                </div>
                 <input type="text" id="virtualObsDestination" name="virtual.observatory.destination"
                        value="<%= obs.destination || 'http://www.gstatic.com/generate_204' %>"
                        placeholder="http://www.gstatic.com/generate_204">
-                <small><%= t('nodes.virtualObsDestinationHint') %></small>
             </div>
             <div class="form-group">
-                <label for="virtualObsConnectivity"><%= t('nodes.virtualObsConnectivity') %></label>
+                <div class="nf-label-row">
+                    <label for="virtualObsConnectivity"><%= t('nodes.virtualObsConnectivity') %></label>
+                    <%- include('field-help', { textKey: 'nodes.virtualObsConnectivityHint', t }) %>
+                </div>
                 <input type="text" id="virtualObsConnectivity" name="virtual.observatory.connectivity"
                        value="<%= obs.connectivity || '' %>"
                        placeholder="<%= t('nodes.virtualObsConnectivityPlaceholder') %>">
-                <small><%= t('nodes.virtualObsConnectivityHint') %></small>
             </div>
         </div>
 
         <div class="form-row-3">
             <div class="form-group">
-                <label for="virtualObsInterval"><%= t('nodes.virtualObsInterval') %></label>
+                <div class="nf-label-row">
+                    <label for="virtualObsInterval"><%= t('nodes.virtualObsInterval') %></label>
+                    <%- include('field-help', { textKey: 'nodes.virtualObsIntervalHint', t }) %>
+                </div>
                 <input type="text" id="virtualObsInterval" name="virtual.observatory.interval"
                        value="<%= obs.interval || '1m' %>" placeholder="1m">
-                <small><%= t('nodes.virtualObsIntervalHint') %></small>
             </div>
             <div class="form-group">
-                <label for="virtualObsTimeout"><%= t('nodes.virtualObsTimeout') %></label>
+                <div class="nf-label-row">
+                    <label for="virtualObsTimeout"><%= t('nodes.virtualObsTimeout') %></label>
+                    <%- include('field-help', { textKey: 'nodes.virtualObsTimeoutHint', t }) %>
+                </div>
                 <input type="text" id="virtualObsTimeout" name="virtual.observatory.timeout"
                        value="<%= obs.timeout || '5s' %>" placeholder="5s">
-                <small><%= t('nodes.virtualObsTimeoutHint') %></small>
             </div>
             <div class="form-group" id="virtualObsSamplingGroup" style="<%= strategy === 'leastLoad' ? '' : 'display:none' %>">
-                <label for="virtualObsSampling"><%= t('nodes.virtualObsSampling') %></label>
+                <div class="nf-label-row">
+                    <label for="virtualObsSampling"><%= t('nodes.virtualObsSampling') %></label>
+                    <%- include('field-help', { textKey: 'nodes.virtualObsSamplingHint', t }) %>
+                </div>
                 <input type="number" id="virtualObsSampling" name="virtual.observatory.sampling"
                        value="<%= obs.sampling || 3 %>" min="1" max="100">
-                <small><%= t('nodes.virtualObsSamplingHint') %></small>
             </div>
         </div>
     </div>
@@ -169,24 +190,31 @@ const cands = candidateNodes || [];
 
         <div class="form-row">
             <div class="form-group">
-                <label for="virtualTolerance"><%= t('nodes.virtualTolerance') %></label>
+                <div class="nf-label-row">
+                    <label for="virtualTolerance"><%= t('nodes.virtualTolerance') %></label>
+                    <%- include('field-help', { textKey: 'nodes.virtualToleranceHint', t }) %>
+                </div>
                 <input type="number" id="virtualTolerance" name="virtual.tolerance"
                        value="<%= tolerance %>" min="0" max="5000">
-                <small><%= t('nodes.virtualToleranceHint') %></small>
             </div>
             <div class="form-group">
-                <label for="virtualIdleTimeout"><%= t('nodes.virtualIdleTimeout') %></label>
+                <div class="nf-label-row">
+                    <label for="virtualIdleTimeout"><%= t('nodes.virtualIdleTimeout') %></label>
+                    <%- include('field-help', { textKey: 'nodes.virtualIdleTimeoutHint', t }) %>
+                </div>
                 <input type="text" id="virtualIdleTimeout" name="virtual.idleTimeout"
                        value="<%= idleTimeout %>" placeholder="30m">
-                <small><%= t('nodes.virtualIdleTimeoutHint') %></small>
             </div>
         </div>
 
         <div class="form-group">
-            <label class="nf-tag">
-                <input type="checkbox" name="virtual.interruptExistConnections" <%= interruptExistConnections ? 'checked' : '' %>>
-                <span><%= t('nodes.virtualInterruptExisting') %></span>
-            </label>
+            <div class="nf-label-row">
+                <label class="nf-tag">
+                    <input type="checkbox" name="virtual.interruptExistConnections" <%= interruptExistConnections ? 'checked' : '' %>>
+                    <span><%= t('nodes.virtualInterruptExisting') %></span>
+                </label>
+                <%- include('field-help', { textKey: 'nodes.virtualInterruptExistingHint', t }) %>
+            </div>
             <small style="display:block;margin-top:6px;"><%= t('nodes.virtualInterruptExistingHint') %></small>
         </div>
     </div>

@@ -13,20 +13,25 @@
         </div>
     </div>
     <div class="form-group">
-        <label for="sshPassword"><%= t('nodes.sshPassword') %> <%= node?.ssh?.password ? t('nodes.sshPasswordSet') : '' %></label>
+        <div class="nf-label-row">
+            <label for="sshPassword"><%= t('nodes.sshPassword') %> <%= node?.ssh?.password ? t('nodes.sshPasswordSet') : '' %></label>
+            <%- include('field-help', { textKey: 'nodes.sshPasswordEncrypted', t }) %>
+        </div>
         <input type="password" id="sshPassword" name="ssh.password"
                placeholder="<%= node?.ssh?.password ? t('nodes.sshPasswordKeep') : t('nodes.sshPasswordPlaceholder') %>">
-        <small class="hint"><%= t('nodes.sshPasswordEncrypted') %></small>
     </div>
     <div class="form-group">
-        <label for="sshPrivateKey">
-            <%= t('nodes.sshPrivateKey') %>
-            <% if (node?.ssh?.privateKey) { %>
-                <span class="badge badge-success" id="sshPrivateKeyBadge"><%= t('nodes.sshPrivateKeySet') %></span>
-            <% } else { %>
-                <span class="badge badge-success" id="sshPrivateKeyBadge" style="display:none"><%= t('nodes.sshPrivateKeySet') %></span>
-            <% } %>
-        </label>
+        <div class="nf-label-row">
+            <label for="sshPrivateKey">
+                <%= t('nodes.sshPrivateKey') %>
+                <% if (node?.ssh?.privateKey) { %>
+                    <span class="badge badge-success" id="sshPrivateKeyBadge"><%= t('nodes.sshPrivateKeySet') %></span>
+                <% } else { %>
+                    <span class="badge badge-success" id="sshPrivateKeyBadge" style="display:none"><%= t('nodes.sshPrivateKeySet') %></span>
+                <% } %>
+            </label>
+            <%- include('field-help', { textKey: 'nodes.sshPrivateKeyHint', t }) %>
+        </div>
         <textarea id="sshPrivateKey" name="ssh.privateKey" rows="5"
                   placeholder="<%= t('nodes.sshPrivateKeyHint') %>"
                   style="font-family: monospace; font-size: 12px; resize: vertical;"></textarea>

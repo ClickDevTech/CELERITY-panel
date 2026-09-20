@@ -49,13 +49,18 @@
     <%# Two columns without IP, three with it — switchProto swaps the class. %>
     <div class="<%= (node?.type === 'virtual' || node?.type === 'cdn') ? 'form-row' : 'form-row-3' %>" id="identityRow">
         <div class="form-group">
-            <label for="name"><%= t('nodes.nodeName') %><span class="nf-req">*</span></label>
+            <div class="nf-label-row">
+                <label for="name"><%= t('nodes.nodeName') %><span class="nf-req">*</span></label>
+                <%- include('field-help', { textKey: 'nodes.nodeNameHint', scope: 'panel' }) %>
+            </div>
             <input type="text" id="name" name="name" value="<%= node?.name || '' %>"
                    placeholder="<%= t('nodes.nodeNamePlaceholder') %>" required>
-            <small><%= t('nodes.nodeNameHint') %></small>
         </div>
         <div class="form-group" id="ipFormGroup" data-types="hysteria xray">
-            <label for="ip"><%= t('nodes.ipAddress') %><span class="nf-req">*</span></label>
+            <div class="nf-label-row">
+                <label for="ip"><%= t('nodes.ipAddress') %><span class="nf-req">*</span></label>
+                <%- include('field-help', { textKey: 'nodes.ipAddressHelp' }) %>
+            </div>
             <input type="text" id="ip" name="ip" value="<%= node?.ip || '' %>"
                    placeholder="123.45.67.89" <%= (node?.type === 'virtual' || node?.type === 'cdn') ? '' : 'required' %>>
             <div id="siblingNodeHint" class="alert alert-info" style="display:none;margin-top:6px;font-size:13px;padding:7px 10px;">
@@ -63,10 +68,12 @@
             </div>
         </div>
         <div class="form-group">
-            <label for="flag"><%= t('nodes.flag') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+            <div class="nf-label-row">
+                <label for="flag"><%= t('nodes.flag') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                <%- include('field-help', { textKey: 'nodes.flagHint', scope: 'panel' }) %>
+            </div>
             <input type="text" id="flag" name="flag" value="<%= node?.flag || '' %>"
                    placeholder="<%= t('nodes.flagPlaceholder') %>">
-            <small><%= t('nodes.flagHint') %></small>
         </div>
     </div>
 
@@ -87,16 +94,21 @@
     </div>
 
     <div class="form-group">
-        <label for="comment"><%= t('nodes.comment') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+        <div class="nf-label-row">
+            <label for="comment"><%= t('nodes.comment') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+            <%- include('field-help', { textKey: 'nodes.commentHint', scope: 'panel' }) %>
+        </div>
         <input type="text" id="comment" name="comment"
                value="<%= node?.comment || '' %>"
                placeholder="<%= t('nodes.commentPlaceholder') %>"
                maxlength="500" autocomplete="off">
-        <small><%= t('nodes.commentHint') %></small>
     </div>
 
     <div class="form-group">
-        <label><%= t('nodes.groups') %></label>
+        <div class="nf-label-row">
+            <label><%= t('nodes.groups') %></label>
+            <%- include('field-help', { textKey: 'nodes.groupsHint', scope: 'panel' }) %>
+        </div>
         <div class="groups-select">
             <% if (groups && groups.length > 0) { %>
                 <% groups.forEach(group => {
@@ -112,7 +124,6 @@
                 <p class="hint"><%= t('nodes.noGroups') %> <a href="/panel/groups"><%= t('nodes.createGroup') %></a></p>
             <% } %>
         </div>
-        <small><%= t('nodes.groupsHint') %></small>
     </div>
 
     <details class="nf-module" id="cascadeRoleSection" data-types="xray" <%= (node?.cascadeRole && node.cascadeRole !== 'standalone') ? 'open' : '' %>>
@@ -168,11 +179,13 @@
             </div>
 
             <div class="form-group" style="margin-top:14px; max-width:210px">
-                <label for="country"><%= t('nodes.country') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                <div class="nf-label-row">
+                    <label for="country"><%= t('nodes.country') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                    <%- include('field-help', { textKey: 'nodes.countryHint', scope: 'panel' }) %>
+                </div>
                 <input type="text" id="country" name="country"
                        value="<%= node?.country || '' %>"
                        placeholder="RU, DE, NL...">
-                <small><%= t('nodes.countryHint') %></small>
             </div>
 
             <div class="alert alert-info" id="cascadeBridgeHint" style="<%= node?.cascadeRole === 'bridge' ? '' : 'display:none' %>">

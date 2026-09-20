@@ -12,11 +12,17 @@
         <small class="nf-section__hint"><%- renderDocsIcon('stats') %><%= t('nodes.sectionStatsHint') %></small>
         <div class="form-row">
             <div class="form-group">
-                <label for="statsPort"><%= t('nodes.statsPort') %></label>
+                <div class="nf-label-row">
+                    <label for="statsPort"><%= t('nodes.statsPort') %></label>
+                    <%- include('field-help', { textKey: 'nodes.statsPortHelp', scope: 'server', t }) %>
+                </div>
                 <input type="number" id="statsPort" name="statsPort" value="<%= node?.statsPort || 9999 %>">
             </div>
             <div class="form-group">
-                <label for="statsSecret"><%= t('nodes.statsSecret') %></label>
+                <div class="nf-label-row">
+                    <label for="statsSecret"><%= t('nodes.statsSecret') %></label>
+                    <%- include('field-help', { textKey: 'nodes.statsSecretHelp', scope: 'server', t }) %>
+                </div>
                 <div class="input-with-button">
                     <input type="text" id="statsSecret" name="statsSecret" value="<%= node?.statsSecret || '' %>"
                            placeholder="<%= node ? 'secret123' : 'Auto-generated if empty' %>">
@@ -30,10 +36,12 @@
     <div class="nf-group" data-types="xray">
         <div class="nf-group__title"><%= t('nodes.sectionStatsApi') %></div>
         <div class="form-group" style="max-width:240px;">
-            <label for="xrayApiPort"><%= t('nodes.xrayApiPort') %></label>
+            <div class="nf-label-row">
+                <label for="xrayApiPort"><%= t('nodes.xrayApiPort') %></label>
+                <%- include('field-help', { textKey: 'nodes.xrayApiPortHint', scope: 'server', t }) %>
+            </div>
             <input type="number" id="xrayApiPort" name="xray.apiPort"
                    value="<%= node?.xray?.apiPort || 61000 %>" placeholder="61000">
-            <small><%= t('nodes.xrayApiPortHint') %></small>
         </div>
     </div>
 

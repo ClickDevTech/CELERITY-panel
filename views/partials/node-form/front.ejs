@@ -26,11 +26,14 @@
     <input type="hidden" name="xray.front.present" value="1">
 
     <div class="nf-standalone-field">
-        <label class="checkbox-label">
-            <input type="checkbox" id="frontEnabled" name="xray.front.enabled"
-                   <%= front.enabled ? 'checked' : '' %> onchange="onFrontToggle()">
-            <span class="checkbox-text"><%= t('common.enabled') %></span>
-        </label>
+        <div class="nf-label-row">
+            <label class="checkbox-label">
+                <input type="checkbox" id="frontEnabled" name="xray.front.enabled"
+                       <%= front.enabled ? 'checked' : '' %> onchange="onFrontToggle()">
+                <span class="checkbox-text"><%= t('common.enabled') %></span>
+            </label>
+            <%- include('field-help', { textKey: 'nodes.frontHint', scope: 'panel', t }) %>
+        </div>
     </div>
 
     <div id="frontBody" style="<%= front.enabled ? '' : 'display:none;' %>">
@@ -43,21 +46,28 @@
         </div>
 
         <div class="form-group" style="margin-top:16px;">
-            <label for="frontPublicPort"><%= t('nodes.frontPublicPort') %></label>
+            <div class="nf-label-row">
+                <label for="frontPublicPort"><%= t('nodes.frontPublicPort') %></label>
+                <%- include('field-help', { textKey: 'nodes.frontPublicPortHint', scope: 'both', t }) %>
+            </div>
             <input type="number" id="frontPublicPort" name="xray.front.publicPort"
                    value="<%= front.publicPort || 443 %>" min="1" max="65535" placeholder="443"
                    style="max-width:200px;">
-            <small><%= t('nodes.frontPublicPortHint') %></small>
         </div>
 
         <div class="form-group">
-            <label><%= t('nodes.frontInbounds') %></label>
+            <div class="nf-label-row">
+                <label><%= t('nodes.frontInbounds') %></label>
+                <%- include('field-help', { textKey: 'nodes.frontInboundsHint', scope: 'both', t }) %>
+            </div>
             <div class="nf-picks" id="frontInbounds"></div>
-            <small><%= t('nodes.frontInboundsHint') %></small>
         </div>
 
         <div class="form-group">
-            <label><%= t('nodes.frontSite') %></label>
+            <div class="nf-label-row">
+                <label><%= t('nodes.frontSite') %></label>
+                <%- include('field-help', { textKey: 'nodes.frontSiteHint', scope: 'server', t }) %>
+            </div>
             <div class="nf-actions" style="margin-top:0;">
                 <div class="nf-seg">
                     <label>
@@ -88,7 +98,6 @@
                     </button>
                 <% } %>
             </div>
-            <small><%= t('nodes.frontSiteHint') %></small>
         </div>
 
         <% if (node?._id) { %>

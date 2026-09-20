@@ -3,7 +3,10 @@
     ACME module or inside the manual TLS sub-block, whichever applies.
     Moved between the two slots by moveSharedFields(). %>
 <div class="form-group" id="domainGroup">
-    <label for="domain"><%= t('nodes.domain') %></label>
+    <div class="nf-label-row">
+        <label for="domain"><%= t('nodes.domain') %></label>
+        <%- include('field-help', { textKey: 'nodes.domainHelp', t }) %>
+    </div>
     <input type="text" id="domain" name="domain" value="<%= node?.domain || '' %>"
            placeholder="de.example.com" oninput="toggleAcmeByDomain()">
     <small id="domainHintHysteria" style="<%= node?.type === 'xray' ? 'display:none' : '' %>"><%= t('nodes.domainHintHysteria') %></small>

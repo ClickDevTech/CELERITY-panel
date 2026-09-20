@@ -9,7 +9,10 @@
         <input name="cdn_edge_label" value="<%= edgeValue.label || '' %>" maxlength="64" placeholder="Edge 1">
     </div>
     <div class="form-group cdn-edge-address-field">
-        <label><%= t('nodes.cdnEdgeAddress') %></label>
+        <div class="nf-label-row">
+            <label><%= t('nodes.cdnEdgeAddress') %></label>
+            <%- include('field-help', { textKey: 'nodes.cdnEdgeAddressHelp', scope: 'client', t }) %>
+        </div>
         <input name="cdn_edge_address" value="<%= edgeValue.address || '' %>" maxlength="253" placeholder="203.0.113.10" required>
     </div>
     <label class="checkbox-label cdn-edge-enabled">

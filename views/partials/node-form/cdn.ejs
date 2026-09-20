@@ -29,7 +29,10 @@
 
     <div class="form-row">
         <div class="form-group">
-            <label for="cdnOriginNode"><%= t('nodes.cdnOriginNode') %><span class="nf-req">*</span></label>
+            <div class="nf-label-row">
+                <label for="cdnOriginNode"><%= t('nodes.cdnOriginNode') %><span class="nf-req">*</span></label>
+                <%- include('field-help', { textKey: 'nodes.cdnOriginNodeHelp', t }) %>
+            </div>
             <select id="cdnOriginNode" name="cdn.originNode" required onchange="updateCdnInboundOptions()">
                 <option value=""><%= t('nodes.cdnChooseOrigin') %></option>
                 <% xrayOrigins.forEach(function(origin) { %>
@@ -48,7 +51,10 @@
             </select>
         </div>
         <div class="form-group">
-            <label for="cdnOriginInbound"><%= t('nodes.cdnOriginInbound') %></label>
+            <div class="nf-label-row">
+                <label for="cdnOriginInbound"><%= t('nodes.cdnOriginInbound') %></label>
+                <%- include('field-help', { textKey: 'nodes.cdnOriginInboundHelp', t }) %>
+            </div>
             <select id="cdnOriginInbound" name="cdn.originInboundId" onchange="syncCdnPathHint()">
                 <%
                     // Transport, path and marker placements travel with each
@@ -147,7 +153,10 @@
     <div class="nf-group">
         <div class="form-row">
             <div class="form-group">
-                <label for="cdnDomain"><%= t('nodes.cdnDomain') %></label>
+                <div class="nf-label-row">
+                    <label for="cdnDomain"><%= t('nodes.cdnDomain') %></label>
+                    <%- include('field-help', { textKey: 'nodes.cdnDomainHint', t }) %>
+                </div>
                 <div class="input-with-button">
                     <input id="cdnDomain" name="cdn.domain" value="<%= cdn.domain || '' %>" maxlength="253" placeholder="cdn.example.com"
                            oninput="syncCdnDomainDefaults(); updateCdnConnectionPreview()">
@@ -155,11 +164,13 @@
                         <i class="ti ti-world-search"></i> <%= t('nodes.cdnResolveEdges') %>
                     </button>
                 </div>
-                <small><%= t('nodes.cdnDomainHint') %></small>
                 <small id="cdnResolveStatus" style="display:block;"></small>
             </div>
             <div class="form-group">
-                <label for="cdnPort"><%= t('nodes.cdnClientPort') %><span class="nf-req">*</span></label>
+                <div class="nf-label-row">
+                    <label for="cdnPort"><%= t('nodes.cdnClientPort') %><span class="nf-req">*</span></label>
+                    <%- include('field-help', { textKey: 'nodes.cdnClientPortHelp', scope: 'client', t }) %>
+                </div>
                 <input type="number" id="cdnPort" name="cdn.port" value="<%= cdn.port || 443 %>" min="1" max="65535" required
                        oninput="updateCdnConnectionPreview()">
             </div>
@@ -167,8 +178,10 @@
     </div>
 
     <div class="nf-group">
-        <div class="nf-group__title"><i class="ti ti-map-pin"></i> <%= t('nodes.cdnEdges') %></div>
-        <small class="nf-section__hint"><%= t('nodes.cdnEdgesHint') %></small>
+        <div class="nf-label-row">
+            <div class="nf-group__title"><i class="ti ti-map-pin"></i> <%= t('nodes.cdnEdges') %></div>
+            <%- include('field-help', { textKey: 'nodes.cdnEdgesHint', scope: 'client', t }) %>
+        </div>
         <div id="cdnEdgesContainer">
             <% (cdn.edges || []).forEach(function(edge, idx) { %>
                 <%- include('cdn-edge', { edge, idx, t }) %>
@@ -194,29 +207,43 @@
                 </select>
             </div>
             <div class="form-group cdn-tls-only">
-                <label for="cdnSni">SNI</label>
+                <div class="nf-label-row">
+                    <label for="cdnSni">SNI</label>
+                    <%- include('field-help', { textKey: 'nodes.cdnSniHelp', scope: 'client', t }) %>
+                </div>
                 <input id="cdnSni" name="cdn.sni" value="<%= cdn.sni || '' %>" maxlength="253" placeholder="cdn.example.com"
                        oninput="markCdnFieldManual(this); updateCdnConnectionPreview()">
             </div>
             <div class="form-group">
-                <label for="cdnHost">Host</label>
+                <div class="nf-label-row">
+                    <label for="cdnHost">Host</label>
+                    <%- include('field-help', { textKey: 'nodes.cdnHostHelp', scope: 'client', t }) %>
+                </div>
                 <input id="cdnHost" name="cdn.host" value="<%= cdn.host || '' %>" maxlength="253" placeholder="cdn.example.com"
                        oninput="markCdnFieldManual(this); updateCdnConnectionPreview()">
             </div>
         </div>
         <div class="form-row-3">
             <div class="form-group">
-                <label for="cdnPath"><%= t('nodes.cdnClientPath') %></label>
+                <div class="nf-label-row">
+                    <label for="cdnPath"><%= t('nodes.cdnClientPath') %></label>
+                    <%- include('field-help', { textKey: 'nodes.cdnClientPathHint', scope: 'client', t }) %>
+                </div>
                 <input id="cdnPath" name="cdn.path" value="<%= cdn.path || '' %>" maxlength="255" placeholder="/cdn/events.php"
                        oninput="syncCdnPathHint(); updateCdnConnectionPreview()">
-                <small><%= t('nodes.cdnClientPathHint') %></small>
             </div>
             <div class="form-group cdn-tls-only">
-                <label for="cdnAlpn">ALPN</label>
+                <div class="nf-label-row">
+                    <label for="cdnAlpn">ALPN</label>
+                    <%- include('field-help', { textKey: 'nodes.cdnAlpnHelp', scope: 'client', t }) %>
+                </div>
                 <input id="cdnAlpn" name="cdn.alpn" value="<%= (cdn.alpn || []).join(', ') %>" placeholder="h3, h2">
             </div>
             <div class="form-group" id="cdnXhttpModeGroup">
-                <label for="cdnXhttpMode"><%= t('nodes.xrayXhttpMode') %></label>
+                <div class="nf-label-row">
+                    <label for="cdnXhttpMode"><%= t('nodes.xrayXhttpMode') %></label>
+                    <%- include('field-help', { textKey: 'nodes.cdnXhttpModeHelp', scope: 'client', t }) %>
+                </div>
                 <select id="cdnXhttpMode" name="cdn.xhttpMode" onchange="updateCdnConnectionPreview()">
                     <option value=""><%= t('nodes.xrayXhttpDefault') %></option>
                     <% ['auto','packet-up','stream-up','stream-one'].forEach(function(mode) { %>
@@ -233,6 +260,7 @@
         fingerprint: cdn.fingerprint || 'chrome',
         fingerprintPool: cdn.fingerprintPool || [],
         extraClass: 'cdn-tls-only',
+        helpKey: 'nodes.cdnFingerprintHelp',
         poolHint: t('nodes.cdnFingerprintPoolHint'),
         t,
     }) %>

@@ -39,19 +39,27 @@
             <div class="nf-group__title"><%= t('nodes.groupIdentification') %></div>
             <div class="form-row">
                 <div class="form-group">
-                    <label><%= t('nodes.xrayInboundLabel') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayInboundLabel') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayInboundLabelHelp', t }) %>
+                    </div>
                     <input type="text" name="xray_extra_label" value="<%= e.label || '' %>"
                            maxlength="64" placeholder="<%= t('nodes.xrayInboundLabelPlaceholder') %>"
                            oninput="updateExtraInboundTitle(this)">
-                    <label class="checkbox-label" style="margin-top:8px;">
-                        <input type="checkbox" name="xray_extra_uniqueName" value="<%= e.id || '' %>"
-                               <%= e.uniqueName ? 'checked' : '' %>>
-                        <span class="checkbox-text"><%= t('nodes.xrayInboundUniqueName') %></span>
-                    </label>
-                    <small><%= t('nodes.xrayInboundUniqueNameHint') %></small>
+                    <div class="nf-label-row" style="margin-top:8px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="xray_extra_uniqueName" value="<%= e.id || '' %>"
+                                   <%= e.uniqueName ? 'checked' : '' %>>
+                            <span class="checkbox-text"><%= t('nodes.xrayInboundUniqueName') %></span>
+                        </label>
+                        <%- include('field-help', { textKey: 'nodes.xrayInboundUniqueNameHint', t }) %>
+                    </div>
                 </div>
                 <div class="form-group">
-                    <label><%= t('nodes.xrayInboundTag') %><span class="nf-req">*</span></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayInboundTag') %><span class="nf-req">*</span></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayInboundTagHelp', scope: 'server', t }) %>
+                    </div>
                     <input type="text" name="xray_extra_inboundTag" value="<%= e.inboundTag || '' %>"
                            pattern="[A-Za-z0-9_\-]{1,64}" maxlength="64" required
                            placeholder="vless-extra-<%= idx + 1 %>">
@@ -63,7 +71,10 @@
             <div class="nf-group__title"><%= t('nodes.groupTransportSecurity') %></div>
             <div class="form-row">
                 <div class="form-group">
-                    <label><%= t('nodes.xrayTransport') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayTransport') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayTransportHelp', scope: 'both', t }) %>
+                    </div>
                     <select name="xray_extra_transport" onchange="updateExtraXrayTransportUI(this); updateExtraInboundSummary(this);">
                         <option value="tcp" <%= transport === 'tcp' ? 'selected' : '' %>>TCP</option>
                         <option value="ws" <%= transport === 'ws' ? 'selected' : '' %>>WebSocket</option>
@@ -72,7 +83,10 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label><%= t('nodes.xraySecurity') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xraySecurity') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xraySecurityHelp', scope: 'both', t }) %>
+                    </div>
                     <select name="xray_extra_security" onchange="updateExtraXraySecurityUI(this); updateExtraInboundSummary(this);">
                         <option value="reality" <%= security === 'reality' ? 'selected' : '' %>><%= t('nodes.xraySecurityReality') %></option>
                         <option value="tls" <%= security === 'tls' ? 'selected' : '' %>><%= t('nodes.xraySecurityTls') %></option>
@@ -82,48 +96,67 @@
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label><%= t('nodes.port') %><span class="nf-req">*</span></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.port') %><span class="nf-req">*</span></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayInboundPortHelp', scope: 'both' }) %>
+                    </div>
                     <input type="number" name="xray_extra_port" value="<%= e.port || '' %>"
                            min="1" max="65535" required
                            oninput="updateExtraInboundSummary(this)">
                 </div>
                 <div class="form-group">
-                    <label><%= t('nodes.xrayListen') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayListen') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayListenHint', scope: 'server', t }) %>
+                    </div>
                     <input type="text" name="xray_extra_listen"
                            value="<%= e.listen || '0.0.0.0' %>"
                            maxlength="45" spellcheck="false" placeholder="0.0.0.0">
-                    <small><%= t('nodes.xrayListenHint') %></small>
                 </div>
             </div>
             <div class="form-row">
                 <div class="form-group extra-alpn-group" style="<%= security === 'tls' ? '' : 'display:none' %>">
-                    <label><%= t('nodes.xrayAlpn') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayAlpn') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayAlpnHint', scope: 'both', t }) %>
+                    </div>
                     <input type="text" name="xray_extra_alpn" value="<%= (e.alpn || []).join(', ') %>" placeholder="h2, http/1.1">
                 </div>
                 <div class="form-group extra-flow-group" style="<%= transport === 'tcp' ? '' : 'display:none' %>">
-                    <label><%= t('nodes.xrayFlow') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayFlow') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayFlowHint', scope: 'both', t }) %>
+                    </div>
                     <input type="text" name="xray_extra_flow" value="<%= e.flow || 'xtls-rprx-vision' %>" placeholder="xtls-rprx-vision">
                 </div>
             </div>
 
             <%# VLESS fallbacks[].dest — TCP+TLS only %>
             <div class="form-group extra-fallback-group" style="<%= (transport === 'tcp' && security === 'tls') ? '' : 'display:none' %>">
-                <label><%= t('nodes.xrayFallbackDestLabel') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayFallbackDestLabel') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                    <%- include('field-help', { textKey: 'nodes.xrayFallbackDestHint', scope: 'server', t }) %>
+                </div>
                 <input type="text" name="xray_extra_fallbackDest" value="<%= e.fallbackDest || '' %>"
                        placeholder="<%= t('nodes.xrayFallbackDestPlaceholder') %>"
                        maxlength="253" autocomplete="off" spellcheck="false">
-                <small><%= t('nodes.xrayFallbackDestHint') %></small>
             </div>
 
             <%# WebSocket fields %>
             <div class="extra-ws-fields" style="<%= transport === 'ws' ? '' : 'display:none' %>">
                 <div class="form-row">
                     <div class="form-group">
-                        <label><%= t('nodes.xrayWsPath') %></label>
+                        <div class="nf-label-row">
+                            <label><%= t('nodes.xrayWsPath') %></label>
+                            <%- include('field-help', { textKey: 'nodes.xrayWsPathHelp', scope: 'both', t }) %>
+                        </div>
                         <input type="text" name="xray_extra_wsPath" value="<%= e.wsPath || '/' %>" placeholder="/">
                     </div>
                     <div class="form-group">
-                        <label><%= t('nodes.xrayWsHost') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                        <div class="nf-label-row">
+                            <label><%= t('nodes.xrayWsHost') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                            <%- include('field-help', { textKey: 'nodes.xrayWsHostHint', scope: 'both', t }) %>
+                        </div>
                         <input type="text" name="xray_extra_wsHost" value="<%= e.wsHost || '' %>" placeholder="cdn.example.com">
                     </div>
                 </div>
@@ -132,7 +165,10 @@
             <%# gRPC fields %>
             <div class="extra-grpc-fields" style="<%= transport === 'grpc' ? '' : 'display:none' %>">
                 <div class="form-group">
-                    <label><%= t('nodes.xrayGrpcService') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayGrpcService') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayGrpcServiceHelp', scope: 'both', t }) %>
+                    </div>
                     <input type="text" name="xray_extra_grpcServiceName" value="<%= e.grpcServiceName || 'grpc' %>" placeholder="grpc">
                 </div>
             </div>
@@ -143,42 +179,62 @@
             <div class="nf-group__title">Reality</div>
             <div class="form-row">
                 <div class="form-group">
-                    <label><%= t('nodes.xrayRealityDest') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayRealityDest') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayRealityDestHint', scope: 'server', t }) %>
+                    </div>
                     <input type="text" name="xray_extra_realityDest" value="<%= e.realityDest || 'www.google.com:443' %>" placeholder="www.google.com:443">
                 </div>
                 <div class="form-group">
-                    <label><%= t('nodes.xrayRealitySni') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayRealitySni') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayRealitySniHint', scope: 'both', t }) %>
+                    </div>
                     <input type="text" name="xray_extra_realitySni" value="<%= (e.realitySni || ['www.google.com']).join(', ') %>" placeholder="www.google.com">
                 </div>
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label><%= t('nodes.xrayPrivateKey') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayPrivateKey') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayPrivateKeyHelp', scope: 'server', t }) %>
+                    </div>
                     <div class="input-with-button">
                         <input type="text" class="extra-reality-priv" name="xray_extra_realityPrivateKey" value="<%= e.realityPrivateKey || '' %>" placeholder="<%= t('nodes.xrayAutoGenerated') %>">
                         <button type="button" class="btn btn-sm" onclick="generateExtraXrayKeys(this)" title="<%= t('nodes.xrayGenerateKeys') %>"><i class="ti ti-refresh"></i></button>
                     </div>
                 </div>
                 <div class="form-group">
-                    <label><%= t('nodes.xrayPublicKey') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayPublicKey') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayPublicKeyHelp', scope: 'client', t }) %>
+                    </div>
                     <input type="text" class="extra-reality-pub" name="xray_extra_realityPublicKey" value="<%= e.realityPublicKey || '' %>" placeholder="<%= t('nodes.xrayAutoGenerated') %>">
                 </div>
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label><%= t('nodes.xrayShortIds') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayShortIds') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayShortIdsHint', scope: 'both', t }) %>
+                    </div>
                     <input type="text" name="xray_extra_realityShortIds" value="<%= (e.realityShortIds || ['']).join(', ') %>" placeholder=", 0123456789abcdef">
                 </div>
                 <div class="form-group">
-                    <label><%= t('nodes.xraySpiderX') %></label>
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xraySpiderX') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xraySpiderXHint', scope: 'client', t }) %>
+                    </div>
                     <input type="text" name="xray_extra_realitySpiderX" value="<%= e.realitySpiderX || '' %>" placeholder="/r/programming/">
-                    <small><%= t('nodes.xraySpiderXHint') %></small>
                 </div>
             </div>
         </div>
 
         <div class="nf-group">
-            <div class="nf-group__title"><i class="ti ti-fingerprint"></i> <%= t('nodes.xrayFingerprint') %></div>
+            <div class="nf-label-row">
+                <div class="nf-group__title"><i class="ti ti-fingerprint"></i> <%= t('nodes.xrayFingerprint') %></div>
+                <%- include('field-help', { textKey: 'nodes.xrayFingerprintHelp', scope: 'client', t }) %>
+            </div>
             <div class="form-row">
                 <div class="form-group">
                     <label><%= t('nodes.xrayFingerprint') %></label>

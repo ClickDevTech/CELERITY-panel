@@ -1,17 +1,28 @@
 <%
-    const scopeKey = scope === 'client'
-        ? 'xrayXhttpScopeClient'
-        : (scope === 'server' ? 'xrayXhttpScopeServer' : 'xrayXhttpScopeBoth');
-    const scopeLabel = t(`nodes.${scopeKey}`);
+    const scopeKeys = {
+        client: 'xrayXhttpScopeClient',
+        server: 'xrayXhttpScopeServer',
+        both: 'xrayXhttpScopeBoth',
+        panel: 'fieldScopePanel',
+    };
+    const resolvedScope = typeof scope === 'string' ? scope : '';
+    const scopeKey = scopeKeys[resolvedScope];
+    const scopeLabel = scopeKey ? t(`nodes.${scopeKey}`) : '';
     const helpText = t(textKey);
+    const helpLabel = t(typeof helpLabelKey === 'string' ? helpLabelKey : 'nodes.fieldHelpLabel');
+    const accessibleText = scopeLabel
+        ? `${helpLabel}: ${scopeLabel}. ${helpText}`
+        : `${helpLabel}: ${helpText}`;
 %>
-<span class="nf-help">
+<span class="nf-help" onmouseleave="this.classList.remove('is-dismissed')">
     <button type="button" class="nf-help__trigger"
-            aria-label="<%= `${t('nodes.xrayXhttpHelpLabel')}: ${scopeLabel}. ${helpText}` %>">
+            aria-label="<%= accessibleText %>"
+            onfocus="this.closest('.nf-help').classList.remove('is-dismissed')"
+            onkeydown="if (event.key === 'Escape') { this.closest('.nf-help').classList.add('is-dismissed'); this.blur(); }">
         <i class="ti ti-info-circle" aria-hidden="true"></i>
     </button>
     <span class="nf-help__bubble" role="tooltip" aria-hidden="true">
-        <span class="nf-help__scope"><%= scopeLabel %></span>
+        <% if (scopeLabel) { %><span class="nf-help__scope"><%= scopeLabel %></span><% } %>
         <span class="nf-help__text"><%= helpText %></span>
     </span>
 </span>

@@ -14,14 +14,19 @@
                 <% if (!netIsXray) { %><%- include('field-port') %><% } %>
             </div>
             <div class="form-group" id="portRangeGroup">
-                <label for="portRange"><%= t('nodes.portRange') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                <div class="nf-label-row">
+                    <label for="portRange"><%= t('nodes.portRange') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                    <%- include('field-help', { textKey: 'nodes.portRangeHint', scope: 'both', t }) %>
+                </div>
                 <input type="text" id="portRange" name="portRange" value="<%= node?.portRange || '20000-50000' %>"
                        placeholder="20000-50000">
-                <small><%= t('nodes.portRangeHint') %></small>
             </div>
         </div>
         <div class="form-group" id="hopIntervalGroup" style="max-width:320px;">
-            <label for="hopInterval"><%= t('nodes.hopInterval') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+            <div class="nf-label-row">
+                <label for="hopInterval"><%= t('nodes.hopInterval') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                <%- include('field-help', { textKey: 'nodes.hopIntervalHint', scope: 'client', t }) %>
+            </div>
             <input type="text" id="hopInterval" name="hopInterval" value="<%= node?.hopInterval || '' %>" placeholder="30s">
             <small><%- renderDocsIcon('portHopping') %><%= t('nodes.hopIntervalHint') %></small>
         </div>
@@ -57,31 +62,46 @@
                 <div id="acmeAdvancedToggleGroup" style="<%= node?.domain ? '' : 'display:none' %>">
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="acmeEmail"><%= t('nodes.acmeEmail') %></label>
+                            <div class="nf-label-row">
+                                <label for="acmeEmail"><%= t('nodes.acmeEmail') %></label>
+                                <%- include('field-help', { textKey: 'nodes.acmeEmailHelp', scope: 'server', t }) %>
+                            </div>
                             <input type="text" id="acmeEmail" name="acme.email" value="<%= node?.acme?.email || '' %>" placeholder="admin@example.com">
                         </div>
                         <div class="form-group">
-                            <label for="acmeCa"><%= t('nodes.acmeCa') %></label>
+                            <div class="nf-label-row">
+                                <label for="acmeCa"><%= t('nodes.acmeCa') %></label>
+                                <%- include('field-help', { textKey: 'nodes.acmeCaHelp', scope: 'server', t }) %>
+                            </div>
                             <select id="acmeCa" name="acme.ca">
                                 <option value="letsencrypt" <%= (node?.acme?.ca || 'letsencrypt') === 'letsencrypt' ? 'selected' : '' %>>Let's Encrypt</option>
                                 <option value="zerossl" <%= node?.acme?.ca === 'zerossl' ? 'selected' : '' %>>ZeroSSL</option>
                             </select>
                         </div>
                     </div>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="acmeAdvancedEnabled" name="acme.advanced.enabled" <%= acmeAdvancedEnabled ? 'checked' : '' %> onchange="toggleAcmeAdvancedFields()">
-                        <span class="checkbox-text"><%= t('nodes.enableOptionalSection') %></span>
-                    </label>
+                    <div class="nf-label-row">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="acmeAdvancedEnabled" name="acme.advanced.enabled" <%= acmeAdvancedEnabled ? 'checked' : '' %> onchange="toggleAcmeAdvancedFields()">
+                            <span class="checkbox-text"><%= t('nodes.enableOptionalSection') %></span>
+                        </label>
+                        <%- include('field-help', { textKey: 'nodes.acmeAdvancedHelp', scope: 'panel', t }) %>
+                    </div>
                 </div>
 
                 <div class="optional-fields-wrap" id="acmeAdvancedFieldsWrap" style="<%= !node?.domain || !acmeAdvancedEnabled ? 'display:none' : '' %>">
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="acmeListenHost"><%= t('nodes.acmeListenHost') %></label>
+                            <div class="nf-label-row">
+                                <label for="acmeListenHost"><%= t('nodes.acmeListenHost') %></label>
+                                <%- include('field-help', { textKey: 'nodes.acmeListenHostHelp', scope: 'server', t }) %>
+                            </div>
                             <input type="text" id="acmeListenHost" name="acme.listenHost" value="<%= node?.acme?.listenHost || '0.0.0.0' %>" placeholder="0.0.0.0">
                         </div>
                         <div class="form-group">
-                            <label for="acmeType"><%= t('nodes.acmeType') %></label>
+                            <div class="nf-label-row">
+                                <label for="acmeType"><%= t('nodes.acmeType') %></label>
+                                <%- include('field-help', { textKey: 'nodes.acmeTypeHelp', scope: 'server', t }) %>
+                            </div>
                             <select id="acmeType" name="acme.type" onchange="toggleAcmeTypeFields()">
                                 <option value="" <%= !node?.acme?.type ? 'selected' : '' %>><%= t('nodes.acmeTypeAuto') %></option>
                                 <option value="http" <%= node?.acme?.type === 'http' ? 'selected' : '' %>>HTTP-01</option>
@@ -93,25 +113,36 @@
 
                     <div class="form-row" id="acmeAltPortFields" style="<%= (node?.acme?.type === 'http' || node?.acme?.type === 'tls') ? '' : 'display:none' %>">
                         <div class="form-group <%= node?.acme?.type && node?.acme?.type !== 'http' ? 'is-inactive' : '' %>" id="acmeHttpFieldGroup">
-                            <label for="acmeHttpAltPort"><%= t('nodes.acmeHttpAltPort') %></label>
+                            <div class="nf-label-row">
+                                <label for="acmeHttpAltPort"><%= t('nodes.acmeHttpAltPort') %></label>
+                                <%- include('field-help', { textKey: 'nodes.acmeHttpAltPortHelp', scope: 'server', t }) %>
+                            </div>
                             <input type="number" id="acmeHttpAltPort" name="acme.httpAltPort" value="<%= node?.acme?.httpAltPort || '' %>" placeholder="8080" min="1" max="65535">
                         </div>
                         <div class="form-group <%= node?.acme?.type && node?.acme?.type !== 'tls' ? 'is-inactive' : '' %>" id="acmeTlsFieldGroup">
-                            <label for="acmeTlsAltPort"><%= t('nodes.acmeTlsAltPort') %></label>
+                            <div class="nf-label-row">
+                                <label for="acmeTlsAltPort"><%= t('nodes.acmeTlsAltPort') %></label>
+                                <%- include('field-help', { textKey: 'nodes.acmeTlsAltPortHelp', scope: 'server', t }) %>
+                            </div>
                             <input type="number" id="acmeTlsAltPort" name="acme.tlsAltPort" value="<%= node?.acme?.tlsAltPort || '' %>" placeholder="8443" min="1" max="65535">
                         </div>
                     </div>
 
                     <div id="acmeDnsFields" style="<%= node?.acme?.type === 'dns' ? '' : 'display:none' %>">
                         <div class="form-group" style="max-width:320px;">
-                            <label for="acmeDnsName"><%= t('nodes.acmeDnsName') %></label>
+                            <div class="nf-label-row">
+                                <label for="acmeDnsName"><%= t('nodes.acmeDnsName') %></label>
+                                <%- include('field-help', { textKey: 'nodes.acmeDnsProviderHint', scope: 'server', t }) %>
+                            </div>
                             <input type="text" id="acmeDnsName" name="acme.dns.name" value="<%= node?.acme?.dnsName || '' %>" placeholder="cloudflare">
                             <small><%- renderDocsIcon('acmeDnsConfig') %><%= t('nodes.acmeDnsProviderHint') %></small>
                         </div>
                         <div class="form-group">
-                            <label for="acmeDnsConfig"><%= t('nodes.acmeDnsConfig') %></label>
+                            <div class="nf-label-row">
+                                <label for="acmeDnsConfig"><%= t('nodes.acmeDnsConfig') %></label>
+                                <%- include('field-help', { textKey: 'nodes.acmeDnsConfigHint', scope: 'server', t }) %>
+                            </div>
                             <textarea id="acmeDnsConfig" name="acme.dns.config" rows="6" class="code-textarea" placeholder='{"cloudflare_api_token":"..."}'><%= node?.acme?.dnsConfig && Object.keys(node.acme.dnsConfig || {}).length ? JSON.stringify(node.acme.dnsConfig, null, 2) : '' %></textarea>
-                            <small><%= t('nodes.acmeDnsConfigHint') %></small>
                         </div>
                     </div>
                 </div>
@@ -122,10 +153,12 @@
     <div class="nf-group">
         <div class="nf-group__title">SNI</div>
         <div class="form-group" id="sniGroup" style="<%= sniVisibleInitially ? '' : 'display:none' %>;max-width:360px;">
-            <label for="sni">SNI <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+            <div class="nf-label-row">
+                <label for="sni">SNI <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                <%- include('field-help', { textKey: 'nodes.sniHintHysteria', scope: 'both', t }) %>
+            </div>
             <input type="text" id="sni" name="sni" value="<%= node?.sni || '' %>"
                    placeholder="bing.com">
-            <small><%= t('nodes.sniHintHysteria') %></small>
         </div>
         <div class="nf-info is-warning" id="sniHasDomainInfo" style="<%= sniDomainActive ? '' : 'display:none' %>">
             <i class="ti ti-alert-triangle"></i>

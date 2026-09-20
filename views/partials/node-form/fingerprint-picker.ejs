@@ -8,7 +8,14 @@
         : (value === 'qq' ? 'QQ' : (value === '360' ? '360' : value.charAt(0).toUpperCase() + value.slice(1)));
 %>
 <div class="nf-group <%= typeof extraClass === 'string' ? extraClass : '' %>" id="<%= idPrefix %>Picker" data-fingerprint-picker>
-    <div class="nf-group__title"><i class="ti ti-fingerprint"></i> <%= t('nodes.xrayFingerprint') %></div>
+    <div class="nf-label-row">
+        <div class="nf-group__title"><i class="ti ti-fingerprint"></i> <%= t('nodes.xrayFingerprint') %></div>
+        <%- include('field-help', {
+            textKey: typeof helpKey === 'string' ? helpKey : 'nodes.xrayFingerprintHelp',
+            scope: 'client',
+            t,
+        }) %>
+    </div>
     <small class="nf-section__hint"><%= t('nodes.xrayFingerprintHint') %></small>
 
     <div class="nf-choices" role="radiogroup" aria-label="<%= t('nodes.xrayFingerprint') %>">
