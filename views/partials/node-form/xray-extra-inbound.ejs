@@ -13,6 +13,10 @@
     const fingerprintList = ['chrome','firefox','safari','ios','android','edge','360','qq','random','randomized'];
     const fpLabel = (f) => f === 'ios' ? 'iOS' : (f === 'qq' ? 'QQ' : (f === '360' ? '360' : f.charAt(0).toUpperCase() + f.slice(1)));
     const summary = `${transport.toUpperCase()} / ${security} : ${e.port || ''}`;
+    const extraFronted = !!(typeof frontOn !== 'undefined' && frontOn
+        && Array.isArray(frontIds)
+        && e.id
+        && frontIds.map(String).includes(String(e.id)));
 %>
 <details class="nf-module extra-inbound-card" data-extra-idx="<%= idx %>">
     <summary class="nf-module__head">
@@ -92,6 +96,13 @@
                         <option value="tls" <%= security === 'tls' ? 'selected' : '' %>><%= t('nodes.xraySecurityTls') %></option>
                         <option value="none" <%= security === 'none' ? 'selected' : '' %>><%= t('nodes.xraySecurityNone') %></option>
                     </select>
+                </div>
+            </div>
+            <div class="nf-info extra-front-security-note" style="<%= extraFronted ? 'margin-top:12px' : 'display:none;margin-top:12px' %>">
+                <i class="ti ti-info-circle"></i>
+                <div>
+                    <strong><%= t('nodes.frontInboundSecurityTitle') %></strong>
+                    <small><%= t('nodes.frontInboundSecurityNote') %></small>
                 </div>
             </div>
             <div class="form-row">

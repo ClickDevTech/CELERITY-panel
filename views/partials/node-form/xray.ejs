@@ -6,6 +6,10 @@
     const xrPanelDomain = (typeof panelDomain === 'string' ? panelDomain : '') || '';
     const xrHasManualKey = !!(node?.xray && (node.xray.manualKeySet === true || node.xray.manualKey));
     const xrAnyTls = node?.xray?.security === 'tls' || (node?.xray?.extraInbounds || []).some(i => i && i.security === 'tls');
+    const xrFrontOn = !!node?.xray?.front?.enabled;
+    const xrFrontIds = Array.isArray(node?.xray?.front?.inboundIds) ? node.xray.front.inboundIds.map(String) : [];
+    const xrMainFronted = xrFrontOn && xrFrontIds.includes('main');
+    const xrTlsModuleOn = xrAnyTls || xrFrontOn;
     const xrExtras = node?.xray?.extraInbounds || [];
     const xrFallbackVisible = (node?.xray?.transport === 'tcp' || !node?.xray?.transport) && node?.xray?.security === 'tls';
 %>
@@ -41,6 +45,13 @@
                     <option value="tls" <%= node?.xray?.security === 'tls' ? 'selected' : '' %>><%= t('nodes.xraySecurityTls') %></option>
                     <option value="none" <%= node?.xray?.security === 'none' ? 'selected' : '' %>><%= t('nodes.xraySecurityNone') %></option>
                 </select>
+            </div>
+        </div>
+        <div class="nf-info" id="xrayFrontSecurityNote" style="<%= xrMainFronted ? 'margin-top:12px' : 'display:none;margin-top:12px' %>">
+            <i class="ti ti-info-circle"></i>
+            <div>
+                <strong><%= t('nodes.frontInboundSecurityTitle') %></strong>
+                <small><%= t('nodes.frontInboundSecurityNote') %></small>
             </div>
         </div>
 
@@ -354,13 +365,13 @@
 
         <div id="extraInboundsContainer">
             <% xrExtras.forEach(function(extra, idx) { %>
-                <%- include('xray-extra-inbound', { extra: extra, idx: idx, t: t }) %>
+                <%- include('xray-extra-inbound', { extra: extra, idx: idx, t: t, frontOn: xrFrontOn, frontIds: xrFrontIds }) %>
             <% }); %>
         </div>
 
         <%# Hidden template cloned client-side by addExtraInbound() %>
         <template id="extraInboundTemplate">
-            <%- include('xray-extra-inbound', { extra: {}, idx: 0, t: t }) %>
+            <%- include('xray-extra-inbound', { extra: {}, idx: 0, t: t, frontOn: false, frontIds: [] }) %>
         </template>
 
         <div class="nf-actions">
@@ -459,7 +470,7 @@
 
     <%# TLS source: panel | acme | manual | self-signed. Kept visible with an
         explanation when no inbound uses TLS, instead of disappearing. %>
-    <details class="nf-module <%= xrAnyTls ? '' : 'is-na' %>" id="xrayTlsConfig">
+    <details class="nf-module <%= xrTlsModuleOn ? '' : 'is-na' %>" id="xrayTlsConfig">
         <summary class="nf-module__head">
             <span class="nf-module__ico"><i class="ti ti-certificate"></i></span>
             <span class="nf-module__text">
@@ -472,11 +483,18 @@
             <i class="ti ti-chevron-down nf-module__chev"></i>
         </summary>
         <div class="nf-module__body">
-            <div class="nf-info" id="xrayTlsNotNeeded" style="<%= xrAnyTls ? 'display:none' : '' %>;margin-bottom:14px;">
+            <div class="nf-info" id="xrayTlsNotNeeded" style="<%= xrTlsModuleOn ? 'display:none' : '' %>;margin-bottom:14px;">
                 <i class="ti ti-info-circle"></i>
                 <div>
                     <strong><%= t('nodes.naTlsNotNeeded') %></strong>
                     <small><%= t('nodes.naTlsNotNeededHint') %></small>
+                </div>
+            </div>
+            <div class="nf-info" id="xrayFrontTlsNote" style="<%= xrFrontOn ? '' : 'display:none' %>;margin-bottom:14px;">
+                <i class="ti ti-info-circle"></i>
+                <div>
+                    <strong><%= t('nodes.frontTlsNeeded') %></strong>
+                    <small><%= t('nodes.frontTlsNeededHint') %></small>
                 </div>
             </div>
 

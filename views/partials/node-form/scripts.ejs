@@ -931,13 +931,7 @@ function updateXraySecurityUI() {
         el.style.display = security === 'reality' ? '' : 'none';
     });
     document.getElementById('alpnGroup').style.display = security === 'tls' ? '' : 'none';
-    // The certificate module stays on screen when no inbound needs TLS: dimmed
-    // and with a reason, instead of vanishing without explanation.
-    const needsTls = _anyXrayTlsInboundActive();
-    const tlsConfig = document.getElementById('xrayTlsConfig');
-    if (tlsConfig) tlsConfig.classList.toggle('is-na', !needsTls);
-    const tlsNotNeeded = document.getElementById('xrayTlsNotNeeded');
-    if (tlsNotNeeded) tlsNotNeeded.style.display = needsTls ? 'none' : '';
+    refreshFrontTlsModule();
     _refreshMainFallbackVisibility();
     updateXrayTlsSourceUI();
     refreshExtraInboundsEmpty();
@@ -1285,10 +1279,43 @@ function refreshFrontInbounds() {
             ? i18n.frontLockedTransport.replace('{transport}', candidate.note)
             : candidate.note;
         text.append(name, meta);
+        input.addEventListener('change', refreshFrontSecurityNotes);
         label.append(input, text);
         container.appendChild(label);
     }
+    refreshFrontSecurityNotes();
     refreshRailBadges();
+}
+
+// An inbound behind the front is saved with security "none". Say so next to
+// the control, and keep the certificate module available: Caddy still needs one.
+function refreshFrontSecurityNotes() {
+    const enabled = !!document.getElementById('frontEnabled')?.checked;
+    const inputs = document.querySelectorAll('#frontInbounds input[name="xray.front.inboundIds"]');
+    // Before the picker exists, fall back to the ids saved on the node.
+    // Once it exists, an unchecked box must hide the note instead of reviving
+    // the saved selection.
+    const ids = new Set(!enabled ? [] : (inputs.length
+        ? Array.from(inputs).filter(input => input.checked && !input.disabled).map(input => input.value)
+        : frontSelectedIds()));
+    const mainNote = document.getElementById('xrayFrontSecurityNote');
+    if (mainNote) mainNote.style.display = ids.has('main') ? '' : 'none';
+    document.querySelectorAll('#extraInboundsContainer .extra-inbound-card').forEach(card => {
+        const id = card.querySelector('input[name="xray_extra_id"]')?.value || '';
+        const note = card.querySelector('.extra-front-security-note');
+        if (note) note.style.display = id && ids.has(id) ? '' : 'none';
+    });
+}
+
+function refreshFrontTlsModule() {
+    const frontOn = !!document.getElementById('frontEnabled')?.checked;
+    const moduleOn = _anyXrayTlsInboundActive() || frontOn;
+    const tlsConfig = document.getElementById('xrayTlsConfig');
+    if (tlsConfig) tlsConfig.classList.toggle('is-na', !moduleOn);
+    const tlsNotNeeded = document.getElementById('xrayTlsNotNeeded');
+    if (tlsNotNeeded) tlsNotNeeded.style.display = moduleOn ? 'none' : '';
+    const frontTls = document.getElementById('xrayFrontTlsNote');
+    if (frontTls) frontTls.style.display = frontOn ? '' : 'none';
 }
 
 function onFrontToggle() {
@@ -1296,7 +1323,9 @@ function onFrontToggle() {
     const body = document.getElementById('frontBody');
     if (body) body.style.display = enabled ? '' : 'none';
     if (enabled) refreshFrontInbounds();
+    else refreshFrontSecurityNotes();
     updateXrayTlsSourceUI({ normalizeForFront: enabled });
+    refreshFrontTlsModule();
     refreshRailBadges();
 }
 
