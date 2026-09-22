@@ -2587,6 +2587,8 @@ async function resolveCdnEdges() {
     if (!form || !dirty) return;
     const onEdit = () => {
         dirty.style.display = '';
+        const saveError = document.getElementById('nodeFormError');
+        if (saveError) saveError.style.display = 'none';
         refreshRailBadges();
     };
     form.addEventListener('input', onEdit);
@@ -2611,6 +2613,8 @@ function revealInvalidControl(form) {
 }
 
 document.getElementById('nodeForm')?.addEventListener('submit', function(event) {
+    const dirty = document.getElementById('nodeFormDirty');
+    this.dataset.wasDirty = dirty && dirty.style.display !== 'none' ? '1' : '';
     if (!revealInvalidControl(this)) event.preventDefault();
 }, true);
 
@@ -2661,34 +2665,73 @@ document.getElementById('nodeForm')?.addEventListener('submit', function(event) 
     });
 })();
 
-document.getElementById('nodeForm')?.addEventListener('submit', async function(event) {
-    const type = document.querySelector('input[name="type"]:checked')?.value;
-    if (type !== 'cdn') return;
+function showNodeFormError(message) {
+    const banner = document.getElementById('nodeFormError');
+    const text = document.getElementById('nodeFormErrorText');
+    if (!banner || !text) return;
+    text.textContent = message || i18n.error;
+    banner.style.display = '';
+    banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
 
+function hideNodeFormError() {
+    const banner = document.getElementById('nodeFormError');
+    if (banner) banner.style.display = 'none';
+}
+
+// Only paths this page itself asked the server to return. The query may carry
+// an error string, so the checks apply to the path alone.
+function panelNodeRedirect(value) {
+    if (typeof value !== 'string') return '';
+    const path = value.split('?')[0];
+    if (!path.startsWith('/panel/') || path.includes('//') || path.includes('\\') || path.includes('..')) return '';
+    return value;
+}
+
+function nodeFormBody(form) {
+    const body = new URLSearchParams();
+    new FormData(form).forEach((value, key) => {
+        if (typeof value === 'string') body.append(key, value);
+    });
+    return body;
+}
+
+function finishNodeSave(form, submit, message) {
+    delete form.dataset.saving;
+    if (submit) submit.disabled = false;
+    if (form.dataset.wasDirty === '1') {
+        const dirty = document.getElementById('nodeFormDirty');
+        if (dirty) dirty.style.display = '';
+    }
+    showNodeFormError(message);
+    if (document.querySelector('input[name="type"]:checked')?.value === 'cdn') {
+        updateCdnConnectionPreview();
+    }
+}
+
+document.getElementById('nodeForm')?.addEventListener('submit', async function(event) {
+    if (event.defaultPrevented) {
+        if (this.dataset.wasDirty === '1') {
+            const dirty = document.getElementById('nodeFormDirty');
+            if (dirty) dirty.style.display = '';
+        }
+        return;
+    }
     event.preventDefault();
     if (this.dataset.saving === '1') return;
-    if (!this.reportValidity()) return;
     this.dataset.saving = '1';
+    hideNodeFormError();
 
     const submit = this.querySelector('button[type="submit"]');
-    const inlineError = document.getElementById('cdnInlineError');
+    if (submit) submit.disabled = true;
+    const type = document.querySelector('input[name="type"]:checked')?.value;
     const state = document.getElementById('cdnConnectionState');
-    const originalSubmitHtml = submit?.innerHTML || '';
-    if (submit) {
-        submit.disabled = true;
-        submit.innerHTML = `<i class="ti ti-loader-2 spin"></i> ${i18n.cdnSaving}`;
-    }
-    if (inlineError) inlineError.style.display = 'none';
-    if (state) {
+    if (type === 'cdn' && state) {
         state.className = 'badge badge-warning';
         state.textContent = i18n.cdnSaving;
     }
 
     try {
-        const body = new URLSearchParams();
-        new FormData(this).forEach((value, key) => {
-            if (typeof value === 'string') body.append(key, value);
-        });
         const response = await fetch(this.action, {
             method: 'POST',
             headers: {
@@ -2696,87 +2739,48 @@ document.getElementById('nodeForm')?.addEventListener('submit', async function(e
                 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
             },
             credentials: 'same-origin',
-            body,
+            body: nodeFormBody(this),
         });
-        const result = await response.json();
-        if (!response.ok || !result.success) {
-            throw new Error(result.error || i18n.cdnSaveFailed);
-        }
-        window.location.assign(result.redirect);
-    } catch (error) {
-        if (inlineError) {
-            inlineError.textContent = error.message || i18n.cdnSaveFailed;
-            inlineError.style.display = '';
-            inlineError.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        updateCdnConnectionPreview();
-        delete this.dataset.saving;
-        if (submit) {
-            submit.disabled = false;
-            submit.innerHTML = originalSubmitHtml;
-        }
-    }
-});
-
-<% if (!node?._id) { %>
-// The decoy page upload needs a node id, so a staged file turns the plain form
-// POST into a fetch: create the node, then push the file to the new id.
-document.getElementById('nodeForm')?.addEventListener('submit', async function(event) {
-    if (!frontStagedSite || event.defaultPrevented) return;
-    const type = document.querySelector('input[name="type"]:checked')?.value;
-    if (type !== 'xray') return;
-
-    event.preventDefault();
-    if (this.dataset.saving === '1') return;
-    this.dataset.saving = '1';
-
-    try {
-        const body = new URLSearchParams();
-        new FormData(this).forEach((value, key) => {
-            if (typeof value === 'string') body.append(key, value);
-        });
-        const response = await fetch(this.action, {
-            method: 'POST',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-            },
-            credentials: 'same-origin',
-            body,
-        });
-        const result = await response.json();
-        // Same destination the plain form POST would have reached, so a
-        // rejected save still lands on a page with a visible error banner.
-        if (!response.ok || !result.success) {
-            delete this.dataset.saving;
-            window.location.assign(nodeFormErrorUrl(result.redirect, result.error || i18n.error));
+        if (response.redirected) {
+            const next = new URL(response.url, window.location.origin);
+            const target = next.origin === window.location.origin
+                ? panelNodeRedirect(next.pathname + next.search)
+                : '';
+            if (!target) throw new Error(i18n.error);
+            window.location.assign(target);
             return;
         }
-
+        let result = {};
         try {
-            await sendFrontSite(String(result.redirect).split('/').pop(), frontStagedSite);
-        } catch (uploadError) {
-            // The node exists by now. Say so on its page rather than let it
-            // quietly serve the nginx page instead.
-            const message = i18n.frontSiteUploadFailed.replace('{error}', uploadError.message);
-            window.location.assign(nodeFormErrorUrl(result.redirect, message));
-            return;
+            result = await response.json();
+        } catch (_) {
+            result = {};
         }
-        window.location.assign(result.redirect);
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || i18n.error);
+        }
+        const redirect = panelNodeRedirect(result.redirect);
+        if (!redirect) throw new Error(i18n.error);
+
+        // A staged decoy needs the new node id. A failed create stays here;
+        // a failed upload still leaves, because the node already exists.
+        if (type === 'xray' && frontStagedSite) {
+            const nodeId = redirect.split('?')[0].replace(/\/$/, '').split('/').pop();
+            if (!nodeId || nodeId === 'nodes' || nodeId === 'add') throw new Error(i18n.error);
+            try {
+                await sendFrontSite(nodeId, frontStagedSite);
+            } catch (uploadError) {
+                const message = i18n.frontSiteUploadFailed.replace('{error}', uploadError.message);
+                const withError = panelNodeRedirect(redirect.split('?')[0] + '?error=' + encodeURIComponent(message));
+                if (!withError) throw new Error(message);
+                window.location.assign(withError);
+                return;
+            }
+        }
+        window.location.assign(redirect);
     } catch (error) {
-        delete this.dataset.saving;
-        window.location.assign(nodeFormErrorUrl('/panel/nodes/add', error.message));
+        finishNodeSave(this, submit, error.message || i18n.error);
     }
-});
-
-function nodeFormErrorUrl(redirect, message) {
-    return (redirect || '/panel/nodes/add') + '?error=' + encodeURIComponent(message);
-}
-<% } %>
-
-document.getElementById('cdnSection')?.addEventListener('input', function() {
-    const inlineError = document.getElementById('cdnInlineError');
-    if (inlineError) inlineError.style.display = 'none';
 });
 
 // SSH private key file upload

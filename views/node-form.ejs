@@ -5,6 +5,9 @@
 <% if (error) { %>
 <div class="alert alert-error" style="margin-bottom:16px;"><i class="ti ti-alert-circle"></i> <%= error %></div>
 <% } %>
+<div class="alert alert-error" id="nodeFormError" style="display:none;margin-bottom:16px;" role="alert">
+    <i class="ti ti-alert-circle"></i> <span id="nodeFormErrorText"></span>
+</div>
 
 <%
 const hysteriaDocsByLang = {
