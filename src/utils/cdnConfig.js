@@ -140,15 +140,18 @@ function normalizeCdnConfig(raw = {}) {
  *
  * @param {Object} cdn - normalized CDN config
  * @param {Object} origin - origin node (plain object with `type` and `xray`)
+ * @param {Object} [options]
+ * @param {boolean} [options.allowInactive] - the front is already attached to
+ *   this origin, so pausing the origin must not lock the front's own edits
  * @returns {{error: string}|{origin: Object, inbound: Object}}
  */
-function checkCdnOriginCompat(cdn, origin) {
+function checkCdnOriginCompat(cdn, origin, { allowInactive = false } = {}) {
     if (!origin || origin.type !== 'xray') {
         return { error: 'CDN origin must reference an existing Xray node' };
     }
-    // An inactive origin is dropped from every subscription, and the fronts in
-    // front of it would silently disappear along with it.
-    if (origin.active === false) {
+    // An inactive origin is dropped from every subscription, and a new front
+    // attached to it would silently never appear.
+    if (origin.active === false && !allowInactive) {
         return { error: `CDN origin "${origin.name || 'node'}" is disabled — enable it first` };
     }
 
@@ -288,15 +291,20 @@ function validateCdnClientPath(clientPath, serverPath, inbound = {}) {
  * @param {Object} [options]
  * @param {string} [options.selfId] - id of the node being saved, so an Xray node
  *   converted into a CDN cannot end up fronting itself
+ * @param {string} [options.currentOriginId] - origin the saved front already
+ *   points at; it may stay inactive, while a newly picked origin may not
  */
-async function validateCdnOrigin(cdn, HyNode, { selfId } = {}) {
+async function validateCdnOrigin(cdn, HyNode, { selfId, currentOriginId } = {}) {
     if (selfId && String(selfId) === String(cdn.originNode)) {
         return { error: 'CDN origin cannot be the CDN node itself' };
     }
     const origin = await HyNode.findById(cdn.originNode)
         .select('type xray name active')
         .lean();
-    return checkCdnOriginCompat(cdn, origin);
+    const current = String(currentOriginId?._id || currentOriginId || '');
+    return checkCdnOriginCompat(cdn, origin, {
+        allowInactive: !!current && current === String(cdn.originNode),
+    });
 }
 
 /**
@@ -304,6 +312,10 @@ async function validateCdnOrigin(cdn, HyNode, { selfId } = {}) {
  * already refused; switching its type, transport or security would break the
  * fronts just as thoroughly, only silently — the subscription keeps emitting
  * entries built from an inbound that no longer exists in that shape.
+ *
+ * Deactivating the origin is not such a change. The fronts stay stored, edges
+ * included, and the subscription drops them while the origin is inactive
+ * (see resolveCdnOrigins), then publishes them again once it is enabled.
  *
  * @param {string} originId - node being edited
  * @param {Object} nextOrigin - resulting node state (`type` and `xray`)
@@ -315,7 +327,7 @@ async function checkCdnDependents(originId, nextOrigin, HyNode) {
         .select('name cdn')
         .lean();
     for (const dependent of dependents) {
-        const result = checkCdnOriginCompat(dependent.cdn || {}, nextOrigin);
+        const result = checkCdnOriginCompat(dependent.cdn || {}, nextOrigin, { allowInactive: true });
         if (result.error) {
             return `CDN node "${dependent.name}" depends on this node: ${result.error}`;
         }

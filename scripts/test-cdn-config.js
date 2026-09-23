@@ -258,6 +258,22 @@ async function originModel(origin) {
     );
     assert.match(disabledOrigin.error, /disabled/);
 
+    // A front already attached to a paused origin stays editable…
+    const pausedOwnOrigin = await validateCdnOrigin(
+        { originNode: originId, path: '/api' },
+        await originModel({ ...xhttpOrigin, name: 'Origin', active: false }),
+        { selfId: '64b000000000000000000009', currentOriginId: originId }
+    );
+    assert.ifError(pausedOwnOrigin.error);
+
+    // …but cannot be moved onto another paused origin.
+    const pausedOtherOrigin = await validateCdnOrigin(
+        { originNode: originId, path: '/api' },
+        await originModel({ ...xhttpOrigin, name: 'Origin', active: false }),
+        { selfId: '64b000000000000000000009', currentOriginId: '64b000000000000000000008' }
+    );
+    assert.match(pausedOtherOrigin.error, /disabled/);
+
     // Converting an Xray node into a CDN must not let it front itself.
     const selfReference = await validateCdnOrigin(
         { originNode: originId, path: '/api/events.php' },
@@ -295,12 +311,21 @@ async function originModel(origin) {
     );
     assert.match(brokenByTransportChange, /XHTTP, WebSocket, or gRPC/);
 
-    const brokenByDisabling = await checkCdnDependents(
+    // Pausing the origin unpublishes the fronts without deleting them.
+    const pausedOrigin = await checkCdnDependents(
         originId,
         { ...xhttpOrigin, name: 'Origin', active: false },
         dependentsModel
     );
-    assert.match(brokenByDisabling, /disabled/);
+    assert.strictEqual(pausedOrigin, null);
+
+    // A shape change is still refused when it arrives together with the pause.
+    const brokenWhileDisabling = await checkCdnDependents(
+        originId,
+        { type: 'xray', name: 'Origin', active: false, xray: { transport: 'tcp', security: 'reality' } },
+        dependentsModel
+    );
+    assert.match(brokenWhileDisabling, /XHTTP, WebSocket, or gRPC/);
 
     const stillFine = await checkCdnDependents(originId, xhttpOrigin, dependentsModel);
     assert.strictEqual(stillFine, null);

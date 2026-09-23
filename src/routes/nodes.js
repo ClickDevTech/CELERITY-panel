@@ -99,8 +99,11 @@ async function setNodeActive(req, res, active) {
         }
 
         if (!active) {
-            // Disabling an origin removes it from every subscription, taking the
-            // CDN fronts built on top of it down without touching them.
+            // Disabling an origin removes it from every subscription. CDN fronts
+            // built on it leave subscriptions with it and keep their edges;
+            // they come back when the origin is enabled again. A pure
+            // deactivation passes the dependent check — only a shape change
+            // (type, transport, security) is still refused.
             if (node.type === 'xray') {
                 const dependentError = await checkCdnDependents(
                     req.params.id,
@@ -527,7 +530,10 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         } else if (nextType === 'cdn') {
             const normalized = normalizeCdnConfig(nextCdn);
             if (normalized.error) return res.status(400).json({ error: normalized.error });
-            const originCheck = await validateCdnOrigin(normalized.value, HyNode, { selfId: req.params.id });
+            const originCheck = await validateCdnOrigin(normalized.value, HyNode, {
+                selfId: req.params.id,
+                currentOriginId: existing.type === 'cdn' ? existing.cdn?.originNode : null,
+            });
             if (originCheck.error) return res.status(400).json({ error: originCheck.error });
             updates.cdn = normalized.value;
             updates.ip = null;
@@ -567,9 +573,9 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
             }
         }
 
-        // Only an Xray node can be a CDN origin, and only a type, inbound or
-        // active change can break the fronts — so the lookup stays off the hot
-        // path.
+        // Only an Xray node can be a CDN origin, and only a type or inbound
+        // change can break the fronts. Deactivation is allowed: the fronts
+        // stay stored and drop out of subscriptions until the origin is back.
         const originTouched = updates.type !== undefined
             || xrayPatch !== undefined
             || updates.active !== undefined;

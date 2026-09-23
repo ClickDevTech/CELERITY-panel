@@ -5,11 +5,15 @@
     const originId = String(cdn.originNode?._id || cdn.originNode || '');
     const originInboundId = cdn.originInboundId || '';
     const xrayOrigins = (candidateNodes || []).filter(candidate => candidate.type === 'xray');
+    // A paused origin can't be picked for a front, but the front already
+    // attached to it stays editable (validateCdnOrigin allows the same).
+    const isPausedCurrent = origin => !!node?._id && node?.type === 'cdn'
+        && origin.active === false && originId === String(origin._id);
     const cdnInboundMeta = (origin, inbound, isMain) => {
         const transport = inbound?.transport || 'tcp';
         const security = inbound?.security || 'reality';
         let incompatibility = '';
-        if (origin.active === false) incompatibility = t('nodes.cdnOriginDisabled');
+        if (origin.active === false && !isPausedCurrent(origin)) incompatibility = t('nodes.cdnOriginDisabled');
         else if (!['xhttp', 'ws', 'grpc'].includes(transport)) incompatibility = t('nodes.cdnTransportUnsupported');
         else if (security === 'reality') incompatibility = t('nodes.cdnRealityUnsupported');
         return {
@@ -45,7 +49,7 @@
                     <option value="<%= origin._id %>"
                             <%= originId === String(origin._id) ? 'selected' : '' %>
                             <%= hasCompatibleInbound ? '' : 'disabled' %>>
-                        <%= origin.flag || '' %> <%= origin.name %><%= hasCompatibleInbound ? '' : ` — ${t('nodes.cdnNoCompatibleInbounds')}` %>
+                        <%= origin.flag || '' %> <%= origin.name %><%= hasCompatibleInbound ? (isPausedCurrent(origin) ? ` — ${t('nodes.cdnOriginDisabled')}` : '') : ` — ${t('nodes.cdnNoCompatibleInbounds')}` %>
                     </option>
                 <% }); %>
             </select>

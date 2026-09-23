@@ -614,7 +614,10 @@ async function manageNode(args, emit) {
             } else if (nextType === 'cdn') {
                 const normalized = normalizeCdnConfig(nextCdn);
                 if (normalized.error) return { error: normalized.error, code: 400 };
-                const originCheck = await validateCdnOrigin(normalized.value, HyNode, { selfId: id });
+                const originCheck = await validateCdnOrigin(normalized.value, HyNode, {
+                    selfId: id,
+                    currentOriginId: existing.type === 'cdn' ? existing.cdn?.originNode : null,
+                });
                 if (originCheck.error) return { error: originCheck.error, code: 400 };
                 updates.cdn = normalized.value;
                 updates.ip = null;
@@ -654,9 +657,9 @@ async function manageNode(args, emit) {
                 }
             }
 
-            // Only an Xray node can be a CDN origin, and only a type, inbound or
-            // active change can break the fronts — so the lookup stays off the
-            // hot path.
+            // Only an Xray node can be a CDN origin, and only a type or inbound
+            // change can break the fronts. Deactivation is allowed: the fronts
+            // stay stored and drop out of subscriptions until the origin is back.
             const originTouched = updates.type !== undefined
                 || data.xray !== undefined
                 || updates.active !== undefined;

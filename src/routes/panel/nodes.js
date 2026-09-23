@@ -180,7 +180,7 @@ function applyVirtualFormFields(nodeData, body) {
     return null;
 }
 
-async function applyCdnFormFields(nodeData, body, selfId) {
+async function applyCdnFormFields(nodeData, body, selfId, currentOriginId = null) {
     const asArray = (value) => {
         if (value === undefined || value === null) return [];
         return Array.isArray(value) ? value : [value];
@@ -213,7 +213,7 @@ async function applyCdnFormFields(nodeData, body, selfId) {
     });
     if (normalized.error) return normalized.error;
 
-    const originCheck = await validateCdnOrigin(normalized.value, HyNode, { selfId });
+    const originCheck = await validateCdnOrigin(normalized.value, HyNode, { selfId, currentOriginId });
     if (originCheck.error) return originCheck.error;
     nodeData.cdn = normalized.value;
     return null;
@@ -1158,7 +1158,12 @@ router.post('/nodes/:id', async (req, res) => {
                 return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, virtualError);
             }
         } else if (nodeType === 'cdn') {
-            const cdnError = await applyCdnFormFields(updates, req.body, nodeId);
+            const cdnError = await applyCdnFormFields(
+                updates,
+                req.body,
+                nodeId,
+                existingNode.type === 'cdn' ? existingNode.cdn?.originNode : null
+            );
             if (cdnError) {
                 return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, cdnError);
             }

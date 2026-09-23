@@ -270,7 +270,8 @@ function reset() {
     assert.strictEqual(db.get('virtual-1').active, false);
     assert.strictEqual(db.get('virtual-1').status, 'offline');
 
-    // Disabling an origin would drop its CDN fronts from every subscription.
+    // Disabling an origin pulls its CDN fronts out of subscriptions but keeps
+    // the front nodes, including their edges.
     reset();
     db.set('xray-origin', {
         _id: 'xray-origin',
@@ -287,13 +288,16 @@ function reset() {
         name: 'CDN Front',
         type: 'cdn',
         active: true,
-        cdn: { originNode: 'xray-origin', path: '/api/events.php', security: 'tls' },
+        cdn: { originNode: 'xray-origin', path: '/api', security: 'tls', edges: [{ id: 'edge-1', address: '203.0.113.10', enabled: true }] },
     });
     res = await runRoute('/:id/disable', 'xray-origin');
-    assert.strictEqual(res.statusCode, 409);
-    assert.match(res.body.error, /CDN node "CDN Front"/);
-    assert.strictEqual(db.get('xray-origin').active, true);
-    assert.strictEqual(runtimeStopCalls.length, 0);
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(db.get('xray-origin').active, false);
+    assert.strictEqual(db.get('xray-origin').status, 'offline');
+    assert.strictEqual(runtimeStopCalls.length, 1);
+    assert.strictEqual(db.get('cdn-front').active, true);
+    assert.strictEqual(db.get('cdn-front').cdn.edges[0].address, '203.0.113.10');
 
     reset();
     res = await runRoute('/:id/enable', 'missing-node');

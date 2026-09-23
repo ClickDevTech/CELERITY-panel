@@ -612,8 +612,12 @@ hyNodeSchema.pre('validate', async function() {
             : (this.cdn || {});
         const normalized = normalizeCdnConfig(cdn);
         if (normalized.error) throw new Error(normalized.error);
+        const stored = this.isNew
+            ? null
+            : await this.constructor.findById(this._id).select('type cdn.originNode').lean();
         const originCheck = await validateCdnOrigin(normalized.value, this.constructor, {
             selfId: this._id,
+            currentOriginId: stored?.type === 'cdn' ? stored.cdn?.originNode : null,
         });
         if (originCheck.error) throw new Error(originCheck.error);
         return;

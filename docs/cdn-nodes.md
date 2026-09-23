@@ -63,5 +63,10 @@ panel, the REST API and the MCP tool all refuse the edit and name the node that
 blocks it — otherwise the fronts would keep publishing entries built from an
 inbound that no longer exists in that shape.
 
+Disabling such a node is allowed. Its fronts drop out of subscriptions while it
+is off and come back when it is enabled again; the front nodes and their edges
+stay stored and remain editable. A disabled node cannot be picked as the origin
+of a new front.
+
 CDN nodes are not supported for Hysteria 2 because Hysteria uses QUIC/UDP,
 while this node type targets HTTP-capable CDN transports.
