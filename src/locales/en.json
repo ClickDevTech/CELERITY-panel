@@ -349,6 +349,8 @@
     "activeEnabled": "Node enabled",
     "activeDisabled": "Node disabled",
     "activeToggleError": "Failed to update the node state",
+    "activeToggleNetworkError": "The panel did not get a response from the node. Reload the page to see its actual state",
+    "activeToggleWarning": "The node is removed from subscriptions, but its service was not stopped: {error}",
     "enableActiveTitle": "Start service and enable node",
     "disableActiveTitle": "Stop service and disable node",
     "enableActiveAria": "Start service and enable node",

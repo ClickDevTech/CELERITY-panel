@@ -910,6 +910,8 @@ const i18n = {
     nodeEnabled: <%- JSON.stringify(t("nodes.activeEnabled")) %>,
     nodeDisabled: <%- JSON.stringify(t("nodes.activeDisabled")) %>,
     nodeActiveError: <%- JSON.stringify(t("nodes.activeToggleError")) %>,
+    nodeActiveNetworkError: <%- JSON.stringify(t("nodes.activeToggleNetworkError")) %>,
+    nodeActiveWarning: <%- JSON.stringify(t("nodes.activeToggleWarning")) %>,
     nodeEnableTitle: <%- JSON.stringify(t("nodes.enableActiveTitle")) %>,
     nodeDisableTitle: <%- JSON.stringify(t("nodes.disableActiveTitle")) %>,
     nodeEnableAria: <%- JSON.stringify(t("nodes.enableActiveAria")) %>,
@@ -1058,7 +1060,7 @@ async function toggleNodeActive(nodeId, active) {
         const res = await fetch(`/api/nodes/${nodeId}/${active ? 'enable' : 'disable'}`, {
             method: 'POST',
             credentials: 'include'
-        });
+        }).catch(() => { throw new Error(i18n.nodeActiveNetworkError); });
         const data = await res.json().catch(() => ({}));
 
         if (!res.ok) {
@@ -1071,12 +1073,16 @@ async function toggleNodeActive(nodeId, active) {
 
         const finalActive = data.node && typeof data.node.active === 'boolean' ? data.node.active : active;
         setNodeActiveUi(nodeId, finalActive, data.node && data.node.status, data.node && data.node.type);
-        showToast(finalActive ? i18n.nodeEnabled : i18n.nodeDisabled);
+        if (data.warning) {
+            showToast(i18n.nodeActiveWarning.replace('{error}', data.warning), 'warning', 8000);
+        } else {
+            showToast(finalActive ? i18n.nodeEnabled : i18n.nodeDisabled);
+        }
     } catch (error) {
         if (!serverFailureApplied) {
             setNodeActiveUi(nodeId, previousActive);
         }
-        showToast(error.message || i18n.nodeActiveError, 'error');
+        showToast(error.message || i18n.nodeActiveError, 'error', 8000);
     } finally {
         setNodeActiveInputsDisabled(nodeId, false);
     }

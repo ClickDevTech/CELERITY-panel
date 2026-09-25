@@ -349,6 +349,8 @@
     "activeEnabled": "节点已启用",
     "activeDisabled": "节点已禁用",
     "activeToggleError": "更新节点运行状态失败",
+    "activeToggleNetworkError": "面板未收到节点的响应。请刷新页面查看实际状态",
+    "activeToggleWarning": "节点已从订阅中移除，但服务未能停止：{error}",
     "enableActiveTitle": "启动服务并启用节点",
     "disableActiveTitle": "停止服务并禁用节点",
     "enableActiveAria": "启动服务并启用节点",

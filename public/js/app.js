@@ -11,12 +11,15 @@ function formatBytes(bytes, decimals = 2) {
 }
 
 // Toast notification
-window.showToast = function showToast(message, type = 'success') {
+let toastTimer = null;
+window.showToast = function showToast(message, type = 'success', duration = 3000) {
     const toast = document.getElementById('toast');
     if (!toast) return;
     toast.textContent = message;
     toast.className = 'toast show ' + type;
-    setTimeout(() => { toast.className = 'toast'; }, 3000);
+    // A newer toast must not be hidden by the previous one's timer.
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.className = 'toast'; }, duration);
 };
 
 // Confirm before dangerous actions

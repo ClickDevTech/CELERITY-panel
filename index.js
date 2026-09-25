@@ -21,6 +21,7 @@ const requireAuth = require('./src/middleware/auth');
 const { requireScope } = requireAuth;
 const { i18nMiddleware, LANGUAGE_OPTIONS, normalizeLanguage } = require('./src/middleware/i18n');
 const { countRequest } = require('./src/middleware/rpsCounter');
+const { sanitizeJsonErrors, errorHandler } = require('./src/middleware/errorSanitizer');
 const syncService = require('./src/services/syncService');
 const expireScheduler = require('./src/services/expireScheduler');
 const cacheService = require('./src/services/cacheService');
@@ -147,17 +148,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
     maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
 }));
 
-// Sanitize error details from 500 responses in production
-app.use((req, res, next) => {
-    const originalJson = res.json.bind(res);
-    res.json = function(body) {
-        if (res.statusCode >= 500 && process.env.NODE_ENV !== 'development') {
-            body = { error: 'Internal Server Error' };
-        }
-        return originalJson(body);
-    };
-    next();
-});
+app.use(sanitizeJsonErrors);
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -469,16 +460,7 @@ app.use((req, res) => {
     }
 });
 
-// Error handler
-app.use((err, req, res, next) => {
-    logger.error(`[Error] ${err.message}`);
-    const msg = process.env.NODE_ENV !== 'development' ? 'Internal Server Error' : err.message;
-    if (req.path.startsWith('/api')) {
-        res.status(500).json({ error: msg });
-    } else {
-        res.status(500).send('Internal Server Error');
-    }
-});
+app.use(errorHandler);
 
 // ==================== START SERVER ====================
 

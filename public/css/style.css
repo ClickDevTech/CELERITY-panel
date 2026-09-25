@@ -1588,6 +1588,12 @@ html {
     color: var(--success);
 }
 
+.toast.warning {
+    border-color: var(--warning);
+    background: linear-gradient(135deg, var(--warning-bg) 0%, rgba(234, 179, 8, 0.05) 100%);
+    color: var(--warning);
+}
+
 /* Forms */
 .form-group {
     margin-bottom: 20px;

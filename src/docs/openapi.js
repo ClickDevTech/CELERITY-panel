@@ -941,7 +941,7 @@ Common status codes: \`400\` invalid input, \`401\` unauthenticated, \`403\` mis
 
 Many validation and not-found messages are returned in Russian (e.g. \`userId обязателен\`, \`Пользователь не найден\`). The \`error\` field shape is always the same.
 
-**Production note:** when \`NODE_ENV !== 'development'\` the panel sanitizes all \`5xx\` responses to \`{ "error": "Internal Server Error" }\` regardless of the original message. The \`5xx\` examples in this reference reflect development output; production callers should treat all \`5xx\` bodies as opaque.
+**Production note:** when \`NODE_ENV !== 'development'\` the panel replaces every \`5xx\` body sent to an API key or an unauthenticated caller with \`{ "error": "Internal Server Error", "requestId": "a1b2c3d4" }\`. The original error is written to the panel log under the same \`requestId\`; quote it when reporting a problem. Requests made from a signed-in admin session receive the original body. The \`5xx\` examples in this reference reflect the unmasked output.
 
 ## Non-API endpoints
 
