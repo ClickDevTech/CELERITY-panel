@@ -29,6 +29,7 @@ const {
     validateXrayXhttp,
 } = require('../../utils/xhttpOptions');
 const {
+    FRONT_HIDDEN_SELECT,
     applyFrontPatch,
     captureFrontRollbackState,
 } = require('../../services/edgeFront/frontConfig');
@@ -566,13 +567,10 @@ async function manageNode(args, emit) {
 
             // findByIdAndUpdate skips pre('validate') hooks, so re-implement
             // type-aware invariants here. Mirror the behaviour of routes/nodes.js PUT.
-            // +siteHtml: the front subdocument is written whole, so the decoy
-            // page has to be carried over instead of being dropped by the $set.
+            // The front subdocument is written whole, so the decoy page has to be
+            // carried over instead of being dropped by the $set.
             const existing = await HyNode.findById(id)
-                .select(
-                    'type ip domain port virtual cdn xray name flag active groups '
-                    + '+xray.front.siteHtml +xray.front.rollbackSnapshot'
-                )
+                .select(FRONT_HIDDEN_SELECT)
                 .lean();
             if (!existing) return { error: `Node '${id}' not found`, code: 404 };
 

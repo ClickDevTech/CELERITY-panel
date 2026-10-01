@@ -22,6 +22,12 @@ function validateFront(xray, node) {
     });
 }
 
+// Hidden front fields a node update must load to carry them over when the
+// front subdocument is written whole. Never combine with an inclusive
+// projection that lists `xray`: MongoDB rejects a parent and its child in one
+// projection ("Path collision at xray.front.siteHtml").
+const FRONT_HIDDEN_SELECT = '+xray.front.siteHtml +xray.front.rollbackSnapshot';
+
 // Persisted until the remote cutover succeeds. The remote transaction restores
 // the previous Xray/Caddy runtime; this snapshot makes MongoDB match it again.
 function captureFrontRollbackState(node) {
@@ -101,6 +107,7 @@ function applyFrontPatch(xray, node, previousFront, rollbackState = null) {
 }
 
 module.exports = {
+    FRONT_HIDDEN_SELECT,
     validateFront,
     captureFrontRollbackState,
     attachFrontRollbackState,

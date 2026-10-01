@@ -24,6 +24,7 @@ const {
 } = require('../utils/cdnConfig');
 const { validateXrayXhttp } = require('../utils/xhttpOptions');
 const {
+    FRONT_HIDDEN_SELECT,
     applyFrontPatch,
     captureFrontRollbackState,
 } = require('../services/edgeFront/frontConfig');
@@ -472,13 +473,10 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         // findByIdAndUpdate bypasses pre('validate') hooks even with runValidators,
         // so enforce type-specific invariants explicitly here. We need the existing
         // doc to know the resulting type when only one of {type,virtual} is sent.
-        // +siteHtml: the front subdocument is written whole, so the decoy page
-        // has to be carried over instead of being dropped by the $set.
+        // The front subdocument is written whole, so the decoy page has to be
+        // carried over instead of being dropped by the $set.
         const existing = await HyNode.findById(req.params.id)
-            .select(
-                'type ip domain port virtual cdn xray name flag active groups '
-                + '+xray.front.siteHtml +xray.front.rollbackSnapshot'
-            )
+            .select(FRONT_HIDDEN_SELECT)
             .lean();
         if (!existing) {
             return res.status(404).json({ error: 'Node not found' });
