@@ -599,11 +599,12 @@ fi
             `mkdir -p ${releaseSiteRoot} ${BACKUP_PREFIX}`,
             'Front directory setup'
         );
-        await nodeSetup.uploadFile(conn, releaseCaddyfile, `${releaseDir}/Caddyfile`);
-        await nodeSetup.uploadFile(conn, desired.site, `${releaseSiteRoot}/index.html`);
+        await nodeSetup.uploadFile(conn, releaseCaddyfile, `${releaseDir}/Caddyfile`, 0o644);
+        await nodeSetup.uploadFile(conn, desired.site, `${releaseSiteRoot}/index.html`, 0o644);
         if (desired.tls) {
-            await nodeSetup.uploadFile(conn, desired.tls.cert, releaseCertPath);
-            await nodeSetup.uploadFile(conn, desired.tls.key, releaseKeyPath);
+            // Owner-only until the chown below hands them to the caddy group.
+            await nodeSetup.uploadFile(conn, desired.tls.cert, releaseCertPath, 0o600);
+            await nodeSetup.uploadFile(conn, desired.tls.key, releaseKeyPath, 0o600);
         }
         await execRequired(conn, `
 chown -R caddy:caddy ${shellQuote(releaseDir)}

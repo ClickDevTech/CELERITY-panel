@@ -42,6 +42,14 @@ function normalizeHopInterval(hopInterval) {
     return `${normalized}s`;
 }
 
+// Which Hysteria entries a node publishes in subscriptions: both the single
+// port (TLS) and the port-range (Hopping) entry, or only one of them.
+const HY_SUBSCRIPTION_VARIANTS = ['both', 'tls', 'hopping'];
+
+function normalizeSubscriptionVariants(value) {
+    return HY_SUBSCRIPTION_VARIANTS.includes(value) ? value : 'both';
+}
+
 async function getSettings() {
     const cached = await cache.getSettings();
     if (cached) return cached;
@@ -146,4 +154,6 @@ module.exports = {
     invalidateUsersBulkCache,
     parseDurationSeconds,
     normalizeHopInterval,
+    HY_SUBSCRIPTION_VARIANTS,
+    normalizeSubscriptionVariants,
 };

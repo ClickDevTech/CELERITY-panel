@@ -100,6 +100,17 @@
             </div>
         </div>
 
+        <div class="form-group">
+            <div class="nf-label-row">
+                <label for="frontLogLevel"><%= t('nodes.frontLogLevel') %></label>
+                <%- include('field-help', { textKey: 'nodes.frontLogLevelHint', scope: 'server', t }) %>
+            </div>
+            <select id="frontLogLevel" name="xray.front.logLevel" style="max-width:200px;">
+                <option value="WARN" <%= front.logLevel !== 'ERROR' ? 'selected' : '' %>>WARN</option>
+                <option value="ERROR" <%= front.logLevel === 'ERROR' ? 'selected' : '' %>>ERROR</option>
+            </select>
+        </div>
+
         <% if (node?._id) { %>
         <div class="nf-actions">
             <button type="button" class="btn btn-primary" id="frontApplyBtn" onclick="applyFront()">

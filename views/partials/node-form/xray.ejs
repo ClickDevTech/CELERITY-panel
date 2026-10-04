@@ -665,6 +665,16 @@
                        value="<%= node?.xray?.listen || '0.0.0.0' %>"
                        maxlength="45" spellcheck="false" placeholder="0.0.0.0">
             </div>
+
+            <div class="form-group" style="max-width:280px;">
+                <div class="nf-label-row">
+                    <label for="xrayConnIdle"><%= t('nodes.xrayConnIdle') %></label>
+                    <%- include('field-help', { textKey: 'nodes.xrayConnIdleHelp', scope: 'server', t }) %>
+                </div>
+                <input type="number" id="xrayConnIdle" name="xray.connIdle"
+                       value="<%= node?.xray?.connIdle || 300 %>"
+                       min="10" max="86400" step="1" placeholder="300">
+            </div>
         </div>
     </details>
 

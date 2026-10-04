@@ -831,6 +831,17 @@ function buildVlessInbound(inbound, users, node) {
     };
 }
 
+const XRAY_DEFAULT_CONN_IDLE = 300;
+
+// Empty for the Xray default, so nodes that never set it keep a byte-identical
+// config and are not restarted by a panel upgrade.
+function buildConnIdlePolicy(value) {
+    const connIdle = Number(value);
+    if (!Number.isInteger(connIdle) || connIdle < 10 || connIdle > 86400) return {};
+    if (connIdle === XRAY_DEFAULT_CONN_IDLE) return {};
+    return { connIdle };
+}
+
 /**
  * Generate Xray JSON config for a node with all its users
  * @param {Object} node - Node document (with xray sub-object)
@@ -896,6 +907,7 @@ function generateXrayConfig(node, users) {
         policy: {
             levels: {
                 '0': {
+                    ...buildConnIdlePolicy(xray.connIdle),
                     statsUserUplink: true,
                     statsUserDownlink: true,
                 },

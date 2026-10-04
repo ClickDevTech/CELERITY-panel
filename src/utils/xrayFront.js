@@ -28,6 +28,9 @@ const XRAY_FRONT_PORT_BASE = 8443;
 const XRAY_FRONT_LOOPBACK = '127.0.0.1';
 // inboundIds entry standing for the main inbound; extras carry their own id.
 const MAIN_INBOUND_ID = 'main';
+// Caddy log levels the front may run with. WARN is the Caddy default.
+const XRAY_FRONT_LOG_LEVELS = ['WARN', 'ERROR'];
+const XRAY_FRONT_DEFAULT_LOG_LEVEL = 'WARN';
 
 function isLoopbackAddress(value) {
     const address = String(value || '').trim().toLowerCase();
@@ -154,8 +157,10 @@ function buildFrontRoutes(xray = {}, nodePort = 443) {
             upstreamHost: inbound.transport === 'ws'
                 ? String(inbound.wsHost || '').trim()
                 : (inbound.transport === 'xhttp' ? String(inbound.xhttpHost || '').trim() : ''),
-            // WebSocket upgrades over HTTP/1.1; the rest are HTTP/2 cleartext.
-            h2c: inbound.transport !== 'ws',
+            // gRPC requires HTTP/2 cleartext. WebSocket upgrades over HTTP/1.1,
+            // and so does XHTTP: a pooled h2c hop stalls under the request
+            // cancellation storms packet-up produces behind a CDN.
+            h2c: inbound.transport === 'grpc',
         });
     }
     return routes;
@@ -281,12 +286,19 @@ function normalizeXrayFront(raw = {}) {
     const omitted = raw.publicPort === undefined || raw.publicPort === '';
     const publicPort = parseInt(raw.publicPort, 10);
 
-    return {
+    const front = {
         enabled: raw.enabled === true || raw.enabled === 'true' || raw.enabled === 'on',
         publicPort: omitted ? 443 : publicPort,
         siteMode: raw.siteMode === 'custom' ? 'custom' : 'nginx',
         inboundIds: [...new Set(normalizeStringList(raw.inboundIds))],
     };
+    // Omitted keeps the stored level on partial REST/MCP patches. The value is
+    // written into the Caddyfile, so only whitelisted levels pass.
+    if (raw.logLevel !== undefined) {
+        const level = String(raw.logLevel || '').toUpperCase();
+        front.logLevel = XRAY_FRONT_LOG_LEVELS.includes(level) ? level : XRAY_FRONT_DEFAULT_LOG_LEVEL;
+    }
+    return front;
 }
 
 // Returns the first error, or null. `context` carries { sameVps, acmeEmail },
@@ -397,6 +409,8 @@ function validateXrayFront(xray = {}, node = {}, context = {}) {
 
 module.exports = {
     XRAY_FRONT_ALPN,
+    XRAY_FRONT_LOG_LEVELS,
+    XRAY_FRONT_DEFAULT_LOG_LEVEL,
     MAIN_INBOUND_ID,
     isLoopbackAddress,
     isInboundFronted,

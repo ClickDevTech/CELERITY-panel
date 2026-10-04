@@ -232,6 +232,9 @@ const xrayFrontSchema = new mongoose.Schema({
     // Owned by Caddy, not by any inbound.
     publicPort: { type: Number, default: 443, min: 1, max: 65535 },
     siteMode: { type: String, enum: ['nginx', 'custom'], default: 'nginx' },
+    // Caddy global log level. ERROR silences the per-request warnings CDN
+    // cancellations produce, at the cost of hiding other warnings too.
+    logLevel: { type: String, enum: ['WARN', 'ERROR'], default: 'WARN' },
     // select:false — up to 256 KB no hot path needs.
     siteHtml: { type: Buffer, default: null, select: false },
     // 'main' for the main inbound, otherwise extraInbounds[].id.
@@ -339,6 +342,17 @@ const xrayConfigSchema = new mongoose.Schema({
 
     // gRPC API port for user management (local, not exposed)
     apiPort: { type: Number, default: 61000 },
+
+    // Xray policy connIdle, seconds. 300 is the Xray default and is not written
+    // to the config; lower values free stale sessions sooner but also drop
+    // long-lived quiet connections (SSH, push channels).
+    connIdle: {
+        type: Number,
+        default: 300,
+        min: 10,
+        max: 86400,
+        validate: { validator: Number.isInteger, message: 'connIdle must be an integer' },
+    },
 
     // Inbound tag used in config and API calls
     inboundTag: { type: String, default: 'vless-in' },
@@ -472,6 +486,9 @@ const hyNodeSchema = new mongoose.Schema({
     port: { type: Number, default: 443 },
     portRange: { type: String, default: '20000-50000' },
     hopInterval: { type: String, default: '' },
+    // Subscription entries to publish: TLS (single port), Hopping (portRange),
+    // or both. Subscription-only; the node itself is not reconfigured.
+    subscriptionVariants: { type: String, enum: ['both', 'tls', 'hopping'], default: 'both' },
     portConfigs: { type: [portConfigSchema], default: [] },
     obfs: {
         type: { type: String, enum: ['', 'salamander', 'gecko'], default: '' },

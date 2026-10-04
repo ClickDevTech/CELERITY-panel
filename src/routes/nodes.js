@@ -11,7 +11,7 @@ const ServerGroup = require('../models/serverGroupModel');
 const cryptoService = require('../services/cryptoService');
 const logger = require('../utils/logger');
 const { requireScope } = require('../middleware/auth');
-const { invalidateNodesCache } = require('../utils/helpers');
+const { invalidateNodesCache, normalizeSubscriptionVariants } = require('../utils/helpers');
 const nodeSetup = require('../services/nodeSetup');
 const syncService = require('../services/syncService');
 const { isServerlessNode, checkCascadeMembership } = require('../utils/nodeTypes');
@@ -276,7 +276,7 @@ router.post('/:id/disable', requireScope('nodes:write'), (req, res) => setNodeAc
 router.post('/', requireScope('nodes:write'), async (req, res) => {
     try {
         const {
-            name, ip, domain, sni, port, portRange, statsPort,
+            name, ip, domain, sni, port, portRange, subscriptionVariants, statsPort,
             groups, ssh, paths, settings, rankingCoefficient,
             type, xray, virtual, cdn, cascadeRole, country, comment,
             hopInterval, acme, masquerade, bandwidth,
@@ -369,6 +369,7 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
             sni: isServerlessNode(nodeType) ? '' : (sni || ''),
             port: frontNode.port,
             portRange: portRange || '20000-50000',
+            subscriptionVariants: normalizeSubscriptionVariants(subscriptionVariants),
             statsPort: statsPort || 9999,
             statsSecret,
             groups: groups || [],
@@ -441,7 +442,7 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
 router.put('/:id', requireScope('nodes:write'), async (req, res) => {
     try {
         const allowedUpdates = [
-            'name', 'ip', 'domain', 'sni', 'port', 'portRange', 'statsPort',
+            'name', 'ip', 'domain', 'sni', 'port', 'portRange', 'subscriptionVariants', 'statsPort',
             'groups', 'ssh', 'paths', 'settings', 'active', 'rankingCoefficient',
             'type', 'xray', 'virtual', 'cdn', 'cascadeRole', 'country', 'comment',
             'hopInterval', 'acme', 'masquerade', 'bandwidth',
@@ -459,6 +460,8 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
                     updates[key] = typeof req.body[key] === 'string'
                         ? req.body[key].trim().slice(0, 500)
                         : '';
+                } else if (key === 'subscriptionVariants') {
+                    updates[key] = normalizeSubscriptionVariants(req.body[key]);
                 } else {
                     updates[key] = req.body[key];
                 }

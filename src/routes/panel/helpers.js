@@ -359,6 +359,12 @@ function parseXrayFormFields(body) {
     xray.xhttpSeqPlacement = _pickEnum(body['xray.xhttpSeqPlacement'], XRAY_XHTTP_PLACEMENT_VALUES, '');
     xray.xhttpSeqKey = String(body['xray.xhttpSeqKey'] || '').trim().slice(0, 64);
     if (body['xray.apiPort']) xray.apiPort = parseInt(body['xray.apiPort']) || 61000;
+    if (body['xray.connIdle'] !== undefined) {
+        const connIdle = Number(body['xray.connIdle']);
+        xray.connIdle = Number.isInteger(connIdle) && connIdle >= 10 && connIdle <= 86400
+            ? connIdle
+            : 300;
+    }
 
     if (body['xray.fallbackDest'] !== undefined) {
         xray.fallbackDest = String(body['xray.fallbackDest']).trim().slice(0, 253);
@@ -407,6 +413,7 @@ function parseXrayFront(body) {
         enabled: body['xray.front.enabled'],
         publicPort: body['xray.front.publicPort'],
         siteMode: body['xray.front.siteMode'],
+        logLevel: body['xray.front.logLevel'],
         inboundIds: body['xray.front.inboundIds'],
     });
 }

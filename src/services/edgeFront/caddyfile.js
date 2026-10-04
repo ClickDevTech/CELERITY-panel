@@ -79,6 +79,17 @@ function buildRouteBlock(route, index) {
         lines.push(`\t\treverse_proxy ${upstream} {`);
         lines.push('\t\t\theader_up X-Real-IP {remote_host}');
         lines.push('\t\t}');
+    } else if (route.transport === 'xhttp') {
+        // Streamed bodies must not be buffered, and every in-flight packet-up
+        // request holds its own HTTP/1.1 connection, so keep a deep idle pool.
+        lines.push(`\t\treverse_proxy ${upstream} {`);
+        if (upstreamHost) lines.push(`\t\t\theader_up Host ${upstreamHost}`);
+        lines.push('\t\t\tflush_interval -1');
+        lines.push('\t\t\ttransport http {');
+        lines.push('\t\t\t\tkeepalive 60s');
+        lines.push('\t\t\t\tkeepalive_idle_conns_per_host 256');
+        lines.push('\t\t\t}');
+        lines.push('\t\t}');
     } else if (upstreamHost) {
         lines.push(`\t\treverse_proxy ${upstream} {`);
         lines.push(`\t\t\theader_up Host ${upstreamHost}`);
@@ -134,6 +145,10 @@ function buildCaddyfile(node, {
             throw err;
         }
         global.push(`\temail ${assertSafeToken(email, 'ACME email')}`);
+    }
+    // Omitted at the default level so existing fronts keep their fingerprint.
+    if (front.logLevel === 'ERROR') {
+        global.push('\tlog {', '\t\tlevel ERROR', '\t}');
     }
     // No h3: UDP/443 stays free for Hysteria, so it must not be advertised.
     global.push('\tservers {', '\t\tprotocols h1 h2', '\t}', '}');

@@ -520,14 +520,27 @@ echo "STATE:$STATE"
 `);
 }
 
-function uploadFile(conn, content, remotePath) {
+// Without an explicit mode the result depends on the remote sftp-server umask,
+// which leaves 0666 files on some hosts. The open() mode only applies to new
+// files, so chmod afterwards fixes files left world-writable earlier.
+function uploadFile(conn, content, remotePath, mode = 0o644) {
     return new Promise((resolve, reject) => {
         conn.sftp((err, sftp) => {
             if (err) return reject(err);
-            
-            const writeStream = sftp.createWriteStream(remotePath);
-            writeStream.on('close', () => resolve());
-            writeStream.on('error', (err) => reject(err));
+
+            let settled = false;
+            const finish = (error) => {
+                if (settled) return;
+                settled = true;
+                sftp.end();
+                if (error) reject(error);
+                else resolve();
+            };
+            const writeStream = sftp.createWriteStream(remotePath, { mode });
+            writeStream.on('close', () => {
+                if (!settled) sftp.chmod(remotePath, mode, finish);
+            });
+            writeStream.on('error', finish);
             writeStream.write(content);
             writeStream.end();
         });
@@ -633,8 +646,8 @@ async function setupNode(node, options = {}) {
             
             if (panelCerts) {
                 // Upload certificates to node
-                await uploadFile(conn, panelCerts.cert, '/etc/hysteria/cert.pem');
-                await uploadFile(conn, panelCerts.key, '/etc/hysteria/key.pem');
+                await uploadFile(conn, panelCerts.cert, '/etc/hysteria/cert.pem', 0o644);
+                await uploadFile(conn, panelCerts.key, '/etc/hysteria/key.pem', 0o600);
                 
                 // Set correct permissions
                 await execSSH(conn, `
@@ -717,7 +730,7 @@ echo "Note: Make sure DNS for ${node.domain} points to this server's IP!"
         
         log('Uploading config...');
         const hysteriaConfig = configGenerator.generateNodeConfig(node, authUrl, { authInsecure, useTlsFiles });
-        await uploadFile(conn, hysteriaConfig, '/etc/hysteria/config.yaml');
+        await uploadFile(conn, hysteriaConfig, '/etc/hysteria/config.yaml', 0o644);
         log('Config uploaded to /etc/hysteria/config.yaml');
         logs.push('--- Config content ---');
         logs.push(hysteriaConfig);
@@ -1115,7 +1128,8 @@ async function setupXrayNode(node, options = {}) {
         }
         const configPath = '/usr/local/etc/xray/config.json';
 
-        await uploadFile(conn, configContent, configPath);
+        // Xray runs as nobody and must still read its config.
+        await uploadFile(conn, configContent, configPath, 0o644);
         log(`Config uploaded to ${configPath} (${users.length} users)`);
         logs.push('--- Config preview ---');
         logs.push(configContent.substring(0, 500) + (configContent.length > 500 ? '\n...' : ''));
@@ -1231,7 +1245,7 @@ echo "Done: Firewall configured"
         if (restartService) {
             log('Installing systemd service and starting Xray...');
             const serviceContent = configGenerator.generateXraySystemdService();
-            await uploadFile(conn, serviceContent, '/etc/systemd/system/xray.service');
+            await uploadFile(conn, serviceContent, '/etc/systemd/system/xray.service', 0o644);
             const restartResult = await execSSH(conn, `
 echo "=== Starting Xray service ==="
 systemctl daemon-reload
@@ -1452,7 +1466,7 @@ ls -la /usr/local/bin/cc-agent
     // Step 2: Write config
     log('Writing agent config...');
     await execSSH(conn, 'mkdir -p /etc/cc-agent /var/lib/cc-agent');
-    await uploadFile(conn, configJson, '/etc/cc-agent/config.json');
+    await uploadFile(conn, configJson, '/etc/cc-agent/config.json', 0o600);
     await execSSH(conn, 'chmod 600 /etc/cc-agent/config.json');
     log('Config written');
 
@@ -1487,7 +1501,7 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 `;
-    await uploadFile(conn, serviceUnit, '/etc/systemd/system/cc-agent.service');
+    await uploadFile(conn, serviceUnit, '/etc/systemd/system/cc-agent.service', 0o644);
     log('Service unit installed');
 
     // Step 5: Firewall + start service

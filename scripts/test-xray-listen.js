@@ -13,7 +13,7 @@ require.cache[totpServicePath] = { exports: {} };
 
 const HyNode = require('../src/models/hyNodeModel');
 const configGenerator = require('../src/services/configGenerator');
-const { isLoopbackAddress } = require('../src/services/nodeSetup');
+const { isLoopbackAddress, uploadFile } = require('../src/services/nodeSetup');
 const {
     parseXrayFormFields,
     validateXrayFormFields,
@@ -118,6 +118,24 @@ assert.strictEqual(xhttpInbound.streamSettings.xhttpSettings.extra.xPaddingHeade
 assert.strictEqual(xhttpInbound.streamSettings.xhttpSettings.extra.sessionIDTable, 'Base62');
 assert.strictEqual(xhttpInbound.streamSettings.xhttpSettings.extra.sessionIDLength, '16-32');
 
+// connIdle: the Xray default is not written, so existing configs stay identical.
+assert.deepStrictEqual(generated.policy.levels['0'], { statsUserUplink: true, statsUserDownlink: true });
+const idleNode = node.toObject();
+idleNode.xray.connIdle = 120;
+const idleConfig = JSON.parse(configGenerator.generateXrayConfig(idleNode, []));
+assert.strictEqual(idleConfig.policy.levels['0'].connIdle, 120);
+assert.strictEqual(idleConfig.policy.levels['0'].statsUserUplink, true);
+idleNode.xray.connIdle = 5;
+assert.ok(!('connIdle' in JSON.parse(configGenerator.generateXrayConfig(idleNode, [])).policy.levels['0']),
+    'out-of-range values never reach the config');
+assert.ok(new HyNode({ name: 'idle', type: 'xray', ip: '192.0.2.12', xray: { connIdle: 5 } })
+    .validateSync()?.errors?.['xray.connIdle']);
+assert.ok(new HyNode({ name: 'idle', type: 'xray', ip: '192.0.2.12', xray: { connIdle: 60.5 } })
+    .validateSync()?.errors?.['xray.connIdle']);
+assert.strictEqual(parseXrayFormFields({ 'xray.connIdle': '120' }).connIdle, 120);
+assert.strictEqual(parseXrayFormFields({ 'xray.connIdle': '' }).connIdle, 300);
+assert.strictEqual(parseXrayFormFields({ 'xray.connIdle': '1e9' }).connIdle, 300);
+
 assert.strictEqual(isLoopbackAddress('127.0.0.42'), true);
 assert.strictEqual(isLoopbackAddress('::1'), true);
 assert.strictEqual(isLoopbackAddress('0:0:0:0:0:0:0:1'), true);
@@ -134,11 +152,46 @@ const selfCdnNode = new HyNode({
     },
 });
 
+// uploadFile must not leave modes to the remote sftp-server umask.
+function fakeSftpConn(calls) {
+    const { EventEmitter } = require('events');
+    return {
+        sftp(cb) {
+            cb(null, {
+                createWriteStream(path, options) {
+                    calls.push(['open', path, options.mode]);
+                    const stream = new EventEmitter();
+                    stream.write = () => true;
+                    stream.end = () => setImmediate(() => stream.emit('close'));
+                    return stream;
+                },
+                chmod(path, mode, done) {
+                    calls.push(['chmod', path, mode]);
+                    setImmediate(done);
+                },
+                end() { calls.push(['end']); },
+            });
+        },
+    };
+}
+
 (async () => {
     await assert.rejects(
         selfCdnNode.validate(),
         /CDN origin cannot be the CDN node itself/
     );
+
+    const calls = [];
+    await uploadFile(fakeSftpConn(calls), 'unit', '/etc/systemd/system/xray.service');
+    await uploadFile(fakeSftpConn(calls), 'secret', '/etc/cc-agent/config.json', 0o600);
+    assert.deepStrictEqual(calls, [
+        ['open', '/etc/systemd/system/xray.service', 0o644],
+        ['chmod', '/etc/systemd/system/xray.service', 0o644],
+        ['end'],
+        ['open', '/etc/cc-agent/config.json', 0o600],
+        ['chmod', '/etc/cc-agent/config.json', 0o600],
+        ['end'],
+    ]);
     console.log('xray listen tests passed');
 })().catch((error) => {
     console.error(error);

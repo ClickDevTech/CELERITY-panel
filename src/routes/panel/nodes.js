@@ -23,7 +23,7 @@ const cache = require('../../services/cacheService');
 const cascadeService = require('../../services/cascadeService');
 const statsService = require('../../services/statsService');
 const uaStatsService = require('../../services/uaStatsService');
-const { getActiveGroups, invalidateNodesCache } = require('../../utils/helpers');
+const { getActiveGroups, invalidateNodesCache, normalizeSubscriptionVariants } = require('../../utils/helpers');
 const { buildNodeUiMeta } = require('../../utils/nodeUi');
 const { isServerlessNode, checkCascadeMembership } = require('../../utils/nodeTypes');
 const nodeSetupLock = require('../../utils/nodeSetupLock');
@@ -597,6 +597,7 @@ router.post('/nodes', async (req, res) => {
             flag: req.body.flag || '',
             port: parseInt(req.body.port) || 443,
             portRange: req.body.portRange || '20000-50000',
+            subscriptionVariants: normalizeSubscriptionVariants(req.body.subscriptionVariants),
             statsPort: parseInt(req.body.statsPort) || 9999,
             statsSecret,
             groups,
@@ -1117,6 +1118,9 @@ router.post('/nodes/:id', async (req, res) => {
 
         if (req.body.statsSecret) {
             updates.statsSecret = req.body.statsSecret;
+        }
+        if (req.body.subscriptionVariants !== undefined) {
+            updates.subscriptionVariants = normalizeSubscriptionVariants(req.body.subscriptionVariants);
         }
 
         if (nodeType === 'xray') {

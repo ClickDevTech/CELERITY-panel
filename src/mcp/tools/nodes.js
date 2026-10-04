@@ -135,6 +135,7 @@ const xrayFrontZ = z.object({
     enabled: z.boolean().optional(),
     publicPort: z.number().int().min(1).max(65535).optional().describe('Port clients connect to; Caddy listens here instead of the inbounds (default 443)'),
     siteMode: z.enum(['nginx', 'custom']).optional().describe('Decoy site on /: built-in nginx welcome page, or HTML uploaded via the panel'),
+    logLevel: z.enum(['WARN', 'ERROR']).optional().describe('Caddy log level (default WARN). ERROR silences per-request warnings from CDN cancellations but hides other warnings too'),
     inboundIds: z.array(z.string()).optional().describe('"main" for the main inbound, otherwise extraInbounds[].id'),
 });
 
@@ -145,6 +146,7 @@ const xrayConfigZ = z.object({
     manualCert: z.string().optional(),
     manualKey: z.string().optional(),
     apiPort: z.number().optional(),
+    connIdle: z.number().int().min(10).max(86400).optional().describe('Xray policy connIdle in seconds (default 300). Lower frees stale sessions sooner but drops long quiet connections'),
     inboundTag: z.string().optional(),
     agentPort: z.number().optional(),
     agentToken: z.string().optional(),
@@ -163,6 +165,7 @@ const manageNodeSchema = z.object({
         sni: z.string().optional(),
         port: z.number().optional(),
         portRange: z.string().optional(),
+        subscriptionVariants: z.enum(['both', 'tls', 'hopping']).optional().describe('Hysteria entries published in subscriptions: TLS and Hopping (default), only TLS, or only Hopping. Hopping-only without portRange falls back to TLS'),
         type: z.enum(['hysteria', 'xray', 'virtual', 'cdn']).optional().describe('Node type. "virtual" is a client-side load balancer; "cdn" publishes one Xray inbound through a domain and optional pinned edge addresses'),
         groups: z.array(z.string()).optional(),
         active: z.boolean().optional(),
@@ -507,7 +510,7 @@ async function manageNode(args, emit) {
             }
 
             const hy2Keys = [
-                'hopInterval', 'acme', 'masquerade', 'bandwidth',
+                'hopInterval', 'subscriptionVariants', 'acme', 'masquerade', 'bandwidth',
                 'ignoreClientBandwidth', 'speedTest', 'disableUDP',
                 'udpIdleTimeout', 'sniff', 'quic', 'resolver', 'acl', 'aclRules', 'useTlsFiles',
             ];
@@ -537,7 +540,7 @@ async function manageNode(args, emit) {
                 'name', 'ip', 'domain', 'sni', 'port', 'portRange', 'statsPort', 'groups', 'ssh', 'paths',
                 'settings', 'active', 'rankingCoefficient', 'country', 'comment', 'cascadeRole', 'type',
                 'virtual', 'cdn',
-                'hopInterval', 'acme', 'masquerade', 'bandwidth',
+                'hopInterval', 'subscriptionVariants', 'acme', 'masquerade', 'bandwidth',
                 'ignoreClientBandwidth', 'speedTest', 'disableUDP',
                 'udpIdleTimeout', 'sniff', 'quic', 'resolver', 'acl', 'aclRules', 'useTlsFiles',
                 'initScript',

@@ -93,7 +93,7 @@ async function buildManifest(probe, subscriptionToken) {
     const baseUrl = resolveBaseUrl(settings);
 
     const nodes = await HyNode.find({ active: true })
-        .select('name flag type ip domain port portRange portConfigs sni obfs hopInterval xray virtual cdn groups')
+        .select('name flag type ip domain port portRange portConfigs subscriptionVariants sni obfs hopInterval xray virtual cdn groups')
         .lean();
 
     const byId = new Map(nodes.map((n) => [String(n._id), n]));

@@ -368,7 +368,7 @@ router.get('/probes/api/:id/history', async (req, res) => {
         // it silently describe nothing.
         const nodes = nodeIds.size
             ? await HyNode.find({ _id: { $in: [...nodeIds] } })
-                .select('name flag type ip domain port portRange portConfigs sni obfs hopInterval xray virtual cdn groups')
+                .select('name flag type ip domain port portRange portConfigs subscriptionVariants sni obfs hopInterval xray virtual cdn groups')
                 .lean()
             : [];
         const originIds = nodes

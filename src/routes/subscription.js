@@ -72,7 +72,7 @@ function isBrowser(req) {
 
 async function getUserByToken(token) {
     const user = await HyUser.findOne({ subscriptionToken: token })
-        .populate('nodes', 'active name type status onlineUsers maxOnlineUsers rankingCoefficient domain sni ip port portRange hopInterval portConfigs obfs flag xray cascadeRole groups virtual cdn')
+        .populate('nodes', 'active name type status onlineUsers maxOnlineUsers rankingCoefficient domain sni ip port portRange hopInterval subscriptionVariants portConfigs obfs flag xray cascadeRole groups virtual cdn')
         .populate('groups', '_id name subscriptionTitle maxDevices');
     
     return user;
@@ -133,7 +133,7 @@ async function getActiveNodesWithCache() {
 
     // Include type, xray, obfs, and cascadeRole fields needed for URI generation and filtering
     const nodes = await HyNode.find({ active: true })
-        .select('name type flag ip domain sni port portRange hopInterval portConfigs obfs active status onlineUsers maxOnlineUsers rankingCoefficient groups xray cascadeRole virtual cdn')
+        .select('name type flag ip domain sni port portRange hopInterval subscriptionVariants portConfigs obfs active status onlineUsers maxOnlineUsers rankingCoefficient groups xray cascadeRole virtual cdn')
         .lean();
     await cache.setActiveNodes(nodes);
     return nodes;
@@ -380,11 +380,15 @@ function getNodeConfigs(node) {
             });
         });
     } else {
-        configs.push({ name: 'TLS', host, port: node.port || 443, portRange: '', hopInterval, sni, hasCert, obfs, obfsPassword });
+        const variants = node.subscriptionVariants || 'both';
+        const tls = { name: 'TLS', host, port: node.port || 443, portRange: '', hopInterval, sni, hasCert, obfs, obfsPassword };
+        if (variants !== 'hopping') configs.push(tls);
         // Port 80 removed (used for ACME)
-        if (node.portRange) {
+        if (node.portRange && variants !== 'tls') {
             configs.push({ name: 'Hopping', host, port: node.port || 443, portRange: node.portRange, hopInterval, sni, hasCert, obfs, obfsPassword });
         }
+        // Hopping-only without a range would drop the node from subscriptions.
+        if (configs.length === 0) configs.push(tls);
     }
     
     return configs;
