@@ -600,10 +600,11 @@ class SyncService {
                 // Apply cascade settings (reverse-portal + forward-chain + forward-hop inbounds)
                 try {
                     const CascadeLink = require('../models/cascadeLinkModel');
+                    const cascadeService = require('./cascadeService');
                     const allPortalLinks = await CascadeLink.find({ portalNode: node._id, active: true }).populate('bridgeNode');
-                    const forwardHopLinks = await CascadeLink.find({ bridgeNode: node._id, mode: 'forward', active: true });
+                    const hopCandidates = await CascadeLink.find({ bridgeNode: node._id, mode: 'forward', active: true });
 
-                    if (allPortalLinks.length > 0 || forwardHopLinks.length > 0) {
+                    if (allPortalLinks.length > 0 || hopCandidates.length > 0) {
                         const configObj = JSON.parse(configContent);
                         // Cascade routing applies to ALL client-facing inbounds
                         // (main + extras), so traffic from any inbound goes
@@ -615,8 +616,11 @@ class SyncService {
                                 .filter(Boolean),
                         ];
 
-                        const reverseLinks = allPortalLinks.filter(l => l.mode !== 'forward');
-                        const forwardLinks = await this._getForwardChainLinks(node._id);
+                        const { reverseLinks, forwardLinks, forwardHopLinks } = await cascadeService.filterLinksForNodeXray(node, {
+                            reverseLinks: allPortalLinks.filter(l => l.mode !== 'forward'),
+                            forwardLinks: await this._getForwardChainLinks(node._id),
+                            forwardHopLinks: hopCandidates,
+                        });
 
                         if (reverseLinks.length > 0) {
                             configGenerator.applyReversePortal(configObj, reverseLinks, inboundTags);

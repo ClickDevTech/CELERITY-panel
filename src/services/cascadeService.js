@@ -13,6 +13,12 @@ const NodeSSH = require('./nodeSSH');
 const cache = require('./cacheService');
 const logger = require('../utils/logger');
 const webhook = require('./webhookService');
+const {
+    MIN_KCP_XRAY_VERSION,
+    isKcpTransport,
+    tunnelSocketProtocol,
+    findHysteriaUdpConflict,
+} = require('../utils/cascadeTransport');
 
 const TOPOLOGY_CACHE_KEY = 'c3:cascade:topology';
 const TOPOLOGY_CACHE_TTL = 15;
@@ -53,29 +59,31 @@ class CascadeService {
         }
 
         try {
+            const versionCache = new Map();
+            await this._assertTransportSupport(link, [portalNode, bridgeNode], versionCache);
+
             if (link.mode === 'forward') {
+                // The portal config carries outbounds for every downstream hop.
+                const chainLinks = await this._getForwardChainLinks(portalNode._id);
+                for (const hop of chainLinks) {
+                    await this._assertTransportSupport(hop, [portalNode], versionCache);
+                }
                 await this._deployForwardLink(link, portalNode, bridgeNode);
             } else {
                 await this._deployReverseLink(link, portalNode, bridgeNode);
             }
 
-            const tunnelPort = link.tunnelPort || 10086;
             await new Promise(r => setTimeout(r, 3000));
 
             // For forward: check bridge; for reverse: check portal
             const checkNode = link.mode === 'forward' ? bridgeNode : portalNode;
-            const [healthy, latencyMs] = await Promise.all([
-                link.mode === 'forward'
-                    ? this._measureTcpLatency(bridgeNode.ip, tunnelPort).then(ms => ms !== null)
-                    : this._checkTunnel(portalNode, tunnelPort),
-                this._measureTcpLatency(checkNode.ip, tunnelPort),
-            ]);
+            const { healthy, latencyMs, note } = await this._probeLink(link, checkNode);
 
             const newStatus = healthy ? 'online' : 'deployed';
             await CascadeLink.updateOne({ _id: linkId }, {
                 $set: {
                     status:          newStatus,
-                    lastError:       '',
+                    lastError:       note || '',
                     lastHealthCheck: new Date(),
                     latencyMs:       latencyMs,
                 },
@@ -101,7 +109,7 @@ class CascadeService {
     async _deployReverseLink(link, portalNode, bridgeNode) {
         await this._deployPortalConfig(portalNode);
         await this._deployBridgeConfig(link, bridgeNode, portalNode);
-        await this._openFirewallPort(portalNode, link.tunnelPort || 10086);
+        await this._openFirewallPort(portalNode, link);
     }
 
     /**
@@ -110,7 +118,7 @@ class CascadeService {
      */
     async _deployForwardLink(link, portalNode, bridgeNode) {
         await this._deployForwardHopConfig(bridgeNode, [link]);
-        await this._openFirewallPort(bridgeNode, link.tunnelPort || 10086);
+        await this._openFirewallPort(bridgeNode, link);
         await this._deployPortalConfig(portalNode);
     }
 
@@ -212,6 +220,23 @@ class CascadeService {
             return { success: false, deployed: 0, errors: ['Mixed reverse/forward links in one chain are not supported'] };
         }
         const chainMode = modes.values().next().value;
+
+        // Forward-chain heads carry outbounds for every downstream hop, so with
+        // mKCP anywhere in a forward chain every node must support it.
+        const versionCache = new Map();
+        for (const link of orderedLinks) {
+            const nodes = chainMode === 'forward' ? orderedNodes : [link.portalNode, link.bridgeNode];
+            try {
+                await this._assertTransportSupport(link, nodes, versionCache);
+            } catch (err) {
+                await CascadeLink.updateOne({ _id: link._id }, {
+                    $set: { status: 'error', lastError: err.message },
+                });
+                await this._invalidateTopologyCache();
+                return { success: false, deployed: 0, errors: [`${link.name}: ${err.message}`] };
+            }
+        }
+
         const deployOrder = chainMode === 'forward' ? [...orderedNodes].reverse() : orderedNodes;
         logger.info(`[Cascade] Chain mode: ${chainMode}, deploy order: ${deployOrder.map(n => n.name).join(' → ')}`);
 
@@ -374,7 +399,7 @@ class CascadeService {
                 // Deploy all forward-hop inbounds at once to avoid overwriting
                 await this._deployForwardHopConfig(node, asBridgeLinks);
                 for (const link of asBridgeLinks) {
-                    await this._openFirewallPort(node, link.tunnelPort || 10086);
+                    await this._openFirewallPort(node, link);
                 }
             }
         } else {
@@ -382,14 +407,14 @@ class CascadeService {
             if (isPortal && !isBridge) {
                 await this._deployPortalConfig(node);
                 for (const link of asPortalLinks) {
-                    await this._openFirewallPort(node, link.tunnelPort || 10086);
+                    await this._openFirewallPort(node, link);
                 }
             } else if (isBridge && isPortal) {
                 const upstreamLink = asBridgeLinks[0];
                 const upstreamPortal = await HyNode.findById(upstreamLink.portalNode);
                 await this._deployRelayNode(node, upstreamLink, upstreamPortal, asPortalLinks);
                 for (const link of asPortalLinks) {
-                    await this._openFirewallPort(node, link.tunnelPort || 10086);
+                    await this._openFirewallPort(node, link);
                 }
             } else if (isBridge && !isPortal) {
                 const upstreamLink = asBridgeLinks[0];
@@ -528,6 +553,7 @@ class CascadeService {
      * Health-check a single cascade link.
      * Reverse: verify ESTABLISHED connections on Portal's tunnel port.
      * Forward: verify TCP connectivity to Bridge's tunnel port.
+     * mKCP: see _probeLink.
      */
     async healthCheckLink(link) {
         const isForward = link.mode === 'forward';
@@ -535,24 +561,19 @@ class CascadeService {
         const checkNode = await HyNode.findById(checkNodeId);
         if (!checkNode) return false;
 
-        const tunnelPort = link.tunnelPort || 10086;
-
         try {
-            const [healthy, latencyMs] = await Promise.all([
-                isForward
-                    ? this._measureTcpLatency(checkNode.ip, tunnelPort).then(ms => ms !== null)
-                    : this._checkTunnel(checkNode, tunnelPort),
-                this._measureTcpLatency(checkNode.ip, tunnelPort),
-            ]);
+            const { healthy, latencyMs, note, failure } = await this._probeLink(link, checkNode);
 
             const prevStatus = link.status;
             const newStatus  = healthy ? 'online' : 'offline';
+            const failureText = failure
+                || (isForward ? 'Bridge unreachable on tunnel port' : 'No ESTABLISHED tunnel connections');
 
             await CascadeLink.updateOne({ _id: link._id }, {
                 $set: {
                     status:          newStatus,
                     lastHealthCheck: new Date(),
-                    lastError:       healthy ? '' : (isForward ? 'Bridge unreachable on tunnel port' : 'No ESTABLISHED tunnel connections'),
+                    lastError:       healthy ? (note || '') : failureText,
                     latencyMs:       latencyMs,
                 },
             });
@@ -836,8 +857,17 @@ class CascadeService {
             active: true,
         }).populate('bridgeNode')).filter(l => !excludeSet.has(String(l._id)));
 
-        const reverseLinks = allPortalLinks.filter(l => l.mode !== 'forward');
-        const forwardLinks = await this._getForwardChainLinks(portalNode._id, excludeSet);
+        const forwardHopCandidates = (await CascadeLink.find({
+            bridgeNode: portalNode._id,
+            mode: 'forward',
+            active: true,
+        })).filter(l => !excludeSet.has(String(l._id)));
+
+        const { reverseLinks, forwardLinks, forwardHopLinks } = await this.filterLinksForNodeXray(portalNode, {
+            reverseLinks: allPortalLinks.filter(l => l.mode !== 'forward'),
+            forwardLinks: await this._getForwardChainLinks(portalNode._id, excludeSet),
+            forwardHopLinks: forwardHopCandidates,
+        });
 
         // Cascade routing applies to ALL client-facing inbounds (main + extras).
         const inboundTags = [
@@ -854,11 +884,6 @@ class CascadeService {
             configGenerator.applyForwardChain(config, forwardLinks, inboundTags);
         }
 
-        const forwardHopLinks = (await CascadeLink.find({
-            bridgeNode: portalNode._id,
-            mode: 'forward',
-            active: true,
-        })).filter(l => !excludeSet.has(String(l._id)));
         if (forwardHopLinks.length > 0) {
             configGenerator.applyForwardHopInbound(config, forwardHopLinks);
         }
@@ -969,27 +994,223 @@ class CascadeService {
     }
 
     /**
-     * Open the tunnel port in the firewall on the Portal node.
+     * Open the link's tunnel port (tcp or udp, depending on transport) in the
+     * firewall of the listening node.
      */
-    async _openFirewallPort(node, port) {
+    async _openFirewallPort(node, link) {
         if (!node.ssh?.password && !node.ssh?.privateKey) return;
+
+        // Both values reach a shell: keep them strictly numeric / whitelisted.
+        const port = parseInt(link.tunnelPort, 10) || 10086;
+        if (port < 1 || port > 65535) return;
+        const proto = tunnelSocketProtocol(link) === 'udp' ? 'udp' : 'tcp';
 
         const ssh = new NodeSSH(node);
         try {
             await ssh.connect();
             await ssh.exec(`
                 if command -v ufw &>/dev/null; then
-                    ufw allow ${port}/tcp 2>/dev/null
+                    ufw allow ${port}/${proto} 2>/dev/null
                 elif command -v firewall-cmd &>/dev/null; then
-                    firewall-cmd --permanent --add-port=${port}/tcp 2>/dev/null
+                    firewall-cmd --permanent --add-port=${port}/${proto} 2>/dev/null
                     firewall-cmd --reload 2>/dev/null
                 fi
             `);
         } catch (err) {
-            logger.warn(`[Cascade] Firewall open port ${port}: ${err.message}`);
+            logger.warn(`[Cascade] Firewall open port ${port}/${proto}: ${err.message}`);
         } finally {
             ssh.disconnect();
         }
+    }
+
+    /**
+     * Probe tunnel health on the listening node.
+     * TCP transports: reverse counts ESTABLISHED sockets on the portal, forward
+     * dials the bridge port.
+     * mKCP has no socket state visible to `ss` and cannot be dialed with a TCP
+     * handshake. Reverse mode requires the UDP listener plus a replied conntrack
+     * flow to it, since the bridge keeps the tunnel up permanently. Forward mode
+     * only checks the listener: the portal dials it on demand, so an idle link
+     * legitimately has no flow. Latency is not measured for mKCP.
+     * @returns {Promise<{healthy: boolean, latencyMs: number|null, note?: string, failure?: string}>}
+     */
+    async _probeLink(link, checkNode) {
+        const tunnelPort = link.tunnelPort || 10086;
+
+        if (isKcpTransport(link.tunnelTransport)) {
+            const { listening, flows } = await this._checkUdpTunnel(checkNode, tunnelPort);
+            if (!listening) {
+                return { healthy: false, latencyMs: null, failure: 'Tunnel UDP port is not listening' };
+            }
+            if (link.mode === 'forward') return { healthy: true, latencyMs: null };
+            if (flows === null) {
+                return {
+                    healthy: true,
+                    latencyMs: null,
+                    note: `conntrack is unavailable on ${checkNode.name}; only the UDP listener was checked`,
+                };
+            }
+            if (flows === 0) {
+                return { healthy: false, latencyMs: null, failure: 'No mKCP traffic from the bridge on the tunnel port' };
+            }
+            return { healthy: true, latencyMs: null };
+        }
+
+        const [healthy, latencyMs] = await Promise.all([
+            link.mode === 'forward'
+                ? this._measureTcpLatency(checkNode.ip, tunnelPort).then(ms => ms !== null)
+                : this._checkTunnel(checkNode, tunnelPort),
+            this._measureTcpLatency(checkNode.ip, tunnelPort),
+        ]);
+        return { healthy, latencyMs };
+    }
+
+    /**
+     * Inspect a UDP tunnel port in one SSH round-trip.
+     * `flows` counts replied conntrack entries whose original destination is
+     * this host on `port` (inbound flows only, so the node's own outgoing
+     * tunnels to a remote port with the same number are not counted), or is
+     * null when conntrack data is not available on the node.
+     * @returns {Promise<{listening: boolean, flows: number|null}>}
+     */
+    async _checkUdpTunnel(node, port) {
+        const none = { listening: false, flows: null };
+        if (!node.ssh?.password && !node.ssh?.privateKey) return none;
+        const safePort = parseInt(port, 10);
+        if (!(safePort >= 1 && safePort <= 65535)) return none;
+
+        const countFlows = `awk -v p=${safePort} -v locals="$LOCAL" '
+            BEGIN { n = split(locals, a, "\\n"); for (i = 1; i <= n; i++) own[a[i]] = 1 }
+            ($1 == "udp" || $3 == "udp") && !/UNREPLIED/ {
+                dst = ""; dport = ""
+                for (i = 1; i <= NF; i++) {
+                    if (dst == "" && $i ~ /^dst=/) dst = substr($i, 5)
+                    if (dport == "" && $i ~ /^dport=/) dport = substr($i, 7)
+                }
+                if (dport == p && (dst in own)) c++
+            }
+            END { print c + 0 }'`;
+
+        const ssh = new NodeSSH(node);
+        try {
+            await ssh.connect();
+            const result = await ssh.exec(`
+                L=$(ss -ulnH '( sport = :${safePort} )' 2>/dev/null | wc -l)
+                LOCAL=$(ip -o addr show 2>/dev/null | awk '{ split($4, a, "/"); print a[1] }')
+                if [ -r /proc/net/nf_conntrack ]; then
+                    F=$(${countFlows} /proc/net/nf_conntrack)
+                elif CT=$(conntrack -L -p udp 2>/dev/null); then
+                    F=$(printf '%s\\n' "$CT" | ${countFlows})
+                else
+                    F=-1
+                fi
+                echo "$L $F"
+            `);
+            const [listenCount, flowCount] = String(result.stdout || '').trim().split(/\s+/).map(v => parseInt(v, 10));
+            return {
+                listening: listenCount > 0,
+                flows: Number.isInteger(flowCount) && flowCount >= 0 ? flowCount : null,
+            };
+        } catch {
+            return none;
+        } finally {
+            ssh.disconnect();
+        }
+    }
+
+    /**
+     * Refuse to deploy a transport the node's Xray core cannot parse, instead of
+     * shipping a config that makes Xray fail to start.
+     * @param {Object} link
+     * @param {Array<Object>} nodes - nodes on both ends of the link
+     * @param {Map} [versionCache] - nodeId -> detected version, reused across links
+     */
+    async _assertTransportSupport(link, nodes, versionCache = new Map()) {
+        if (!isKcpTransport(link.tunnelTransport)) return;
+
+        const xrayVersionService = require('./xrayVersionService');
+        for (const ref of nodes) {
+            const node = ref?._id && ref.ssh !== undefined ? ref : await HyNode.findById(ref?._id || ref);
+            if (!node) continue;
+            const key = String(node._id);
+            if (!versionCache.has(key)) {
+                versionCache.set(key, await xrayVersionService.detectInstalledVersion(node));
+            }
+            const reason = this._kcpVersionError(node, versionCache.get(key));
+            if (reason) throw new Error(reason);
+        }
+    }
+
+    /**
+     * @returns {string|null} why the node's Xray cannot run mKCP, or null if it can
+     */
+    _kcpVersionError(node, version) {
+        const xrayVersionService = require('./xrayVersionService');
+        const normalized = xrayVersionService.normalizeVersion(version || '');
+        if (!normalized) {
+            return `Cannot detect Xray version on ${node.name}; mKCP requires Xray >= ${MIN_KCP_XRAY_VERSION}`;
+        }
+        if (xrayVersionService.compareVersions(normalized, MIN_KCP_XRAY_VERSION) < 0) {
+            return `mKCP requires Xray >= ${MIN_KCP_XRAY_VERSION}, ${node.name} runs ${normalized}`;
+        }
+        return null;
+    }
+
+    /**
+     * Reject an mKCP tunnel port that a Hysteria node on the listener's IP
+     * already serves or redirects (port hopping) at the NAT level.
+     * @param {Object} listenNode - node with `ip`: bridge for forward, portal for reverse
+     * @returns {Promise<string|null>}
+     */
+    async findKcpPortConflict(listenNode, port) {
+        const safePort = parseInt(port, 10);
+        if (!listenNode?.ip || !(safePort >= 1 && safePort <= 65535)) return null;
+        const hysteriaNodes = await HyNode.find({
+            ip: listenNode.ip,
+            type: { $in: ['hysteria', null] },
+        }).select('name port portRange portConfigs').lean();
+        return findHysteriaUdpConflict(safePort, hysteriaNodes);
+    }
+
+    /**
+     * Drop mKCP links the node's Xray core cannot parse before they reach its
+     * main config: one rejected config blocks every later sync of the node.
+     * Uses the stored version (no SSH) so it stays cheap on every sync.
+     * A forward chain is dropped whole, since its head carries outbounds for
+     * every hop and a partial chain would route traffic into a dead end.
+     * Dropped links are marked as errors so the operator sees the reason.
+     * @param {Object} node - HyNode document
+     * @param {{reverseLinks?: Array, forwardLinks?: Array, forwardHopLinks?: Array}} groups
+     * @returns {Promise<{reverseLinks: Array, forwardLinks: Array, forwardHopLinks: Array}>}
+     */
+    async filterLinksForNodeXray(node, { reverseLinks = [], forwardLinks = [], forwardHopLinks = [] }) {
+        const groups = { reverseLinks, forwardLinks, forwardHopLinks };
+        const usesKcp = l => isKcpTransport(l.tunnelTransport);
+        if (![...reverseLinks, ...forwardLinks, ...forwardHopLinks].some(usesKcp)) return groups;
+
+        const stored = await HyNode.findById(node._id).select('xrayVersion').lean();
+        const reason = this._kcpVersionError(node, stored?.xrayVersion || node.xrayVersion);
+        if (!reason) return groups;
+
+        const chainHasKcp = forwardLinks.some(usesKcp);
+        const dropped = [
+            ...reverseLinks.filter(usesKcp),
+            ...forwardHopLinks.filter(usesKcp),
+            ...(chainHasKcp ? forwardLinks : []),
+        ];
+
+        logger.warn(`[Cascade] ${node.name}: skipped ${dropped.length} link(s): ${reason}`);
+        const result = await CascadeLink.updateMany(
+            { _id: { $in: dropped.map(l => l._id) }, status: { $ne: 'error' } },
+            { $set: { status: 'error', lastError: reason } }
+        );
+        if (result.modifiedCount > 0) await this._invalidateTopologyCache();
+
+        return {
+            reverseLinks: reverseLinks.filter(l => !usesKcp(l)),
+            forwardLinks: chainHasKcp ? [] : forwardLinks,
+            forwardHopLinks: forwardHopLinks.filter(l => !usesKcp(l)),
+        };
     }
 
     /**

@@ -9,6 +9,7 @@ const logger = require('../utils/logger');
 const appConfig = require('../../config');
 const { isValidXhttpRange } = require('../utils/xhttpOptions');
 const { isServerlessNode } = require('../utils/nodeTypes');
+const { KCP_DEFAULTS, normalizeTransport } = require('../utils/cascadeTransport');
 
 // Canonical on-node path for the Xray access log when the opt-in access-logs
 // module is enabled. The cc-agent tails exactly this file.
@@ -1425,9 +1426,11 @@ function generateRelayConfig(upstreamLink, upstreamPortal, downstreamLinks) {
 
 /**
  * Build streamSettings for the cascade tunnel connection between Portal and Bridge.
- * Supports tcp/ws/grpc/xhttp transports and none/tls/reality security.
+ * Supports tcp/ws/grpc/xhttp/kcp transports and none/tls/reality security.
  * Note: Xray-core 25.x+ renamed splithttp to xhttp; old DB rows storing
  * 'splithttp' are normalized to 'xhttp' here for forward compatibility.
+ * mKCP uses finalmask "mkcp-legacy" (Xray >= 26.6.1): kcpSettings.header/seed
+ * no longer exist in the core.
  *
  * @param {Object} link - CascadeLink document
  * @param {Object} [opts] - Options
@@ -1435,8 +1438,7 @@ function generateRelayConfig(upstreamLink, upstreamPortal, downstreamLinks) {
  * @returns {Object} streamSettings
  */
 function buildCascadeTunnelStreamSettings(link, opts = {}) {
-    const rawTransport = link.tunnelTransport || 'tcp';
-    const transport = rawTransport === 'splithttp' ? 'xhttp' : rawTransport;
+    const transport = normalizeTransport(link.tunnelTransport);
     const security = link.tunnelSecurity || 'none';
     const realityServerNames = link.realitySni?.length ? link.realitySni : ['www.google.com'];
     const realityServerName = realityServerNames[0] || 'www.google.com';
@@ -1524,6 +1526,24 @@ function buildCascadeTunnelStreamSettings(link, opts = {}) {
             host: link.xhttpHost || '',
             mode: link.xhttpMode || 'auto',
         };
+    } else if (transport === 'kcp') {
+        if (!link.kcpPassword) {
+            throw new Error(`cascade link "${link?.name || link?._id}" uses mKCP without kcpPassword`);
+        }
+        stream.kcpSettings = {
+            mtu: link.kcpMtu || KCP_DEFAULTS.mtu,
+            tti: link.kcpTti || KCP_DEFAULTS.tti,
+            uplinkCapacity: link.kcpUplinkCapacity || KCP_DEFAULTS.uplinkCapacity,
+            downlinkCapacity: link.kcpDownlinkCapacity || KCP_DEFAULTS.downlinkCapacity,
+        };
+        // The first finalmask entry is the innermost layer: encrypt first, then
+        // wrap with the optional packet-header camouflage visible on the wire.
+        const udpMasks = [{ type: 'mkcp-legacy', settings: { header: '', value: link.kcpPassword } }];
+        const header = link.kcpHeader || KCP_DEFAULTS.header;
+        if (header !== 'none') {
+            udpMasks.push({ type: 'mkcp-legacy', settings: { header, value: '' } });
+        }
+        stream.finalmask = { udp: udpMasks };
     }
 
     return stream;

@@ -10,6 +10,15 @@ const cascadeService = require('../../services/cascadeService');
 const cache = require('../../services/cacheService');
 const logger = require('../../utils/logger');
 const { isServerlessNode } = require('../../utils/nodeTypes');
+const {
+    CASCADE_TRANSPORTS,
+    KCP_HEADERS,
+    KCP_LIMITS,
+    isKcpTransport,
+    validateTransportSecurity,
+    sanitizeKcpInput,
+    generateKcpPassword,
+} = require('../../utils/cascadeTransport');
 
 async function invalidateCascadeCache() {
     await cache.invalidateAllSubscriptions();
@@ -36,7 +45,14 @@ const manageCascadeSchema = z.object({
         tunnelPort: z.number().int().min(1).max(65535).optional(),
         tunnelProtocol: z.enum(['vless', 'vmess']).optional(),
         tunnelSecurity: z.enum(['none', 'tls', 'reality']).optional(),
-        tunnelTransport: z.enum(['tcp', 'ws', 'grpc', 'splithttp']).optional(),
+        tunnelTransport: z.enum(CASCADE_TRANSPORTS).optional(),
+        kcpMtu: z.number().int().min(KCP_LIMITS.mtu.min).max(KCP_LIMITS.mtu.max).optional(),
+        kcpTti: z.number().int().min(KCP_LIMITS.tti.min).max(KCP_LIMITS.tti.max).optional(),
+        kcpUplinkCapacity: z.number().int().min(KCP_LIMITS.capacity.min).max(KCP_LIMITS.capacity.max).optional()
+            .describe('mKCP uplink capacity, MB/s'),
+        kcpDownlinkCapacity: z.number().int().min(KCP_LIMITS.capacity.min).max(KCP_LIMITS.capacity.max).optional()
+            .describe('mKCP downlink capacity, MB/s'),
+        kcpHeader: z.enum(KCP_HEADERS).optional().describe('mKCP packet-header camouflage'),
         mode: z.enum(['reverse', 'forward']).optional(),
         priority: z.number().int().optional(),
     }).optional(),
@@ -102,15 +118,23 @@ async function manageCascade(args, emit) {
             const sec = data.tunnelSecurity || 'none';
             const trans = data.tunnelTransport || 'tcp';
 
-            if (sec === 'reality' && trans === 'ws') {
-                return { error: 'REALITY is not compatible with WebSocket transport', code: 400 };
-            }
+            const transportError = validateTransportSecurity(trans, sec);
+            if (transportError) return { error: transportError, code: 400 };
+            const kcpInput = sanitizeKcpInput(data);
+            if (kcpInput.error) return { error: kcpInput.error, code: 400 };
 
             const portCheckField = linkMode === 'forward' ? 'bridgeNode' : 'portalNode';
             const portCheckId = linkMode === 'forward' ? data.bridgeNodeId : data.portalNodeId;
             const conflict = await CascadeLink.findOne({ [portCheckField]: portCheckId, tunnelPort: port, active: true });
             if (conflict) {
                 return { error: `Port ${port} is already used by link "${conflict.name}"`, code: 409 };
+            }
+            if (isKcpTransport(trans)) {
+                const udpConflict = await cascadeService.findKcpPortConflict(
+                    linkMode === 'forward' ? bridgeNode : portalNode,
+                    port
+                );
+                if (udpConflict) return { error: udpConflict, code: 409 };
             }
 
             const crypto = require('crypto');
@@ -135,6 +159,8 @@ async function manageCascade(args, emit) {
                 xhttpMode: 'auto',
                 muxEnabled: false,
                 muxConcurrency: 8,
+                ...kcpInput.fields,
+                ...(isKcpTransport(trans) ? { kcpPassword: generateKcpPassword() } : {}),
             });
 
             await invalidateCascadeCache();
@@ -153,6 +179,34 @@ async function manageCascade(args, emit) {
             const updates = {};
             for (const k of allowed) {
                 if (data[k] !== undefined) updates[k] = data[k];
+            }
+            const current = await CascadeLink.findById(id)
+                .select('mode portalNode bridgeNode tunnelPort tunnelTransport tunnelSecurity kcpPassword').lean();
+            if (!current) return { error: `Cascade link '${id}' not found`, code: 404 };
+            const effectiveTrans = updates.tunnelTransport || current.tunnelTransport || 'tcp';
+            const transportError = validateTransportSecurity(
+                effectiveTrans,
+                updates.tunnelSecurity || current.tunnelSecurity || 'none'
+            );
+            if (transportError) return { error: transportError, code: 400 };
+            const kcpInput = sanitizeKcpInput(data);
+            if (kcpInput.error) return { error: kcpInput.error, code: 400 };
+            Object.assign(updates, kcpInput.fields);
+            if (isKcpTransport(effectiveTrans) && !current.kcpPassword) {
+                updates.kcpPassword = generateKcpPassword();
+            }
+            const listenerChanged = updates.tunnelPort !== undefined || updates.mode !== undefined ||
+                updates.tunnelTransport !== undefined;
+            if (isKcpTransport(effectiveTrans) && listenerChanged) {
+                const effectiveMode = updates.mode || current.mode || 'reverse';
+                const listenNode = await HyNode.findById(
+                    effectiveMode === 'forward' ? current.bridgeNode : current.portalNode
+                ).select('ip').lean();
+                const udpConflict = await cascadeService.findKcpPortConflict(
+                    listenNode,
+                    updates.tunnelPort !== undefined ? updates.tunnelPort : current.tunnelPort
+                );
+                if (udpConflict) return { error: udpConflict, code: 409 };
             }
             const link = await CascadeLink.findByIdAndUpdate(id, { $set: updates }, { new: true })
                 .populate('portalNode', 'name ip status')

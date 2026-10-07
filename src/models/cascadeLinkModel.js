@@ -6,6 +6,12 @@
  */
 
 const mongoose = require('mongoose');
+const {
+    CASCADE_TRANSPORTS,
+    KCP_HEADERS,
+    KCP_LIMITS,
+    KCP_DEFAULTS,
+} = require('../utils/cascadeTransport');
 
 const cascadeLinkSchema = new mongoose.Schema({
     name: { type: String, required: true },
@@ -22,7 +28,7 @@ const cascadeLinkSchema = new mongoose.Schema({
     tunnelDomain: { type: String, default: 'reverse.tunnel.internal' },
     tunnelProtocol: { type: String, enum: ['vless', 'vmess'], default: 'vless' },
     tunnelSecurity: { type: String, enum: ['none', 'tls', 'reality'], default: 'none' },
-    tunnelTransport: { type: String, enum: ['tcp', 'ws', 'grpc', 'xhttp', 'splithttp'], default: 'tcp' },
+    tunnelTransport: { type: String, enum: CASCADE_TRANSPORTS, default: 'tcp' },
 
     // TCP settings
     tcpFastOpen: { type: Boolean, default: true },
@@ -40,6 +46,19 @@ const cascadeLinkSchema = new mongoose.Schema({
     xhttpPath: { type: String, default: '/cascade' },
     xhttpHost: { type: String, default: '' },
     xhttpMode: { type: String, enum: ['auto', 'packet-up', 'stream-up', 'stream-one'], default: 'auto' },
+
+    // mKCP (UDP) settings; capacities are in MB/s, as Xray expects
+    kcpMtu: { type: Number, min: KCP_LIMITS.mtu.min, max: KCP_LIMITS.mtu.max, default: KCP_DEFAULTS.mtu },
+    kcpTti: { type: Number, min: KCP_LIMITS.tti.min, max: KCP_LIMITS.tti.max, default: KCP_DEFAULTS.tti },
+    kcpUplinkCapacity: {
+        type: Number, min: KCP_LIMITS.capacity.min, max: KCP_LIMITS.capacity.max, default: KCP_DEFAULTS.uplinkCapacity,
+    },
+    kcpDownlinkCapacity: {
+        type: Number, min: KCP_LIMITS.capacity.min, max: KCP_LIMITS.capacity.max, default: KCP_DEFAULTS.downlinkCapacity,
+    },
+    // AES-128-GCM password for finalmask; generated server-side, never accepted from clients
+    kcpPassword: { type: String, default: '' },
+    kcpHeader: { type: String, enum: KCP_HEADERS, default: 'none' },
 
     // REALITY security settings (used when tunnelSecurity = 'reality')
     realityDest: { type: String, default: '' },

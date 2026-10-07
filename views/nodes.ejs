@@ -516,7 +516,8 @@ function nodeMetaFor(node) {
                             <option value="tcp">TCP</option>
                             <option value="ws">WebSocket</option>
                             <option value="grpc">gRPC</option>
-                            <option value="splithttp">SplitHTTP</option>
+                            <option value="xhttp">XHTTP (SplitHTTP)</option>
+                            <option value="kcp">mKCP (UDP)</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -567,6 +568,42 @@ function nodeMetaFor(node) {
                                 <option value="random">Random</option>
                             </select>
                         </div>
+                    </div>
+                </div>
+
+                <!-- mKCP Settings (hidden by default) -->
+                <div class="form-section" id="kcpSection" style="display:none">
+                    <div class="form-section-title"><i class="ti ti-bolt"></i> mKCP (UDP)</div>
+                    <div class="form-hint" style="margin-bottom:8px"><%= t('network.kcpHint') %></div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label><%= t('network.kcpUplinkCapacity') %></label>
+                            <input type="number" name="kcpUplinkCapacity" class="form-input" value="100" min="1" max="1000">
+                        </div>
+                        <div class="form-group">
+                            <label><%= t('network.kcpDownlinkCapacity') %></label>
+                            <input type="number" name="kcpDownlinkCapacity" class="form-input" value="100" min="1" max="1000">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>MTU</label>
+                            <input type="number" name="kcpMtu" class="form-input" value="1350" min="576" max="1460">
+                        </div>
+                        <div class="form-group">
+                            <label>TTI (ms)</label>
+                            <input type="number" name="kcpTti" class="form-input" value="20" min="10" max="100">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label><%= t('network.kcpHeader') %></label>
+                        <select name="kcpHeader" class="form-input">
+                            <option value="none"><%= t('network.kcpHeaderNone') %></option>
+                            <option value="wechat">WeChat Video</option>
+                            <option value="srtp">SRTP</option>
+                            <option value="dtls">DTLS 1.2</option>
+                            <option value="wireguard">WireGuard</option>
+                        </select>
                     </div>
                 </div>
 

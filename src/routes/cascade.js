@@ -14,6 +14,13 @@ const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
 const { requireScope } = require('../middleware/auth');
 const { isServerlessNode } = require('../utils/nodeTypes');
+const {
+    KCP_INPUT_FIELDS,
+    isKcpTransport,
+    validateTransportSecurity,
+    sanitizeKcpInput,
+    generateKcpPassword,
+} = require('../utils/cascadeTransport');
 
 async function invalidateCascadeCache() {
     await cache.invalidateAllSubscriptions();
@@ -184,11 +191,15 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
             return res.status(400).json({ error: 'tunnelPort must be between 1 and 65535' });
         }
 
-        // REALITY is only supported on tcp, grpc, splithttp — not ws
         const sec = tunnelSecurity || 'none';
         const trans = tunnelTransport || 'tcp';
-        if (sec === 'reality' && trans === 'ws') {
-            return res.status(400).json({ error: 'REALITY security is not compatible with WebSocket transport. Use TCP, gRPC, or SplitHTTP.' });
+        const transportError = validateTransportSecurity(trans, sec);
+        if (transportError) {
+            return res.status(400).json({ error: transportError });
+        }
+        const kcpInput = sanitizeKcpInput(req.body);
+        if (kcpInput.error) {
+            return res.status(400).json({ error: kcpInput.error });
         }
 
         const [portalNode, bridgeNode] = await Promise.all([
@@ -218,6 +229,13 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
                 error: `Port ${port} is already used by link "${existingLink.name}" on the ${sideLabel} node`,
             });
         }
+        if (isKcpTransport(trans)) {
+            const conflict = await cascadeService.findKcpPortConflict(
+                linkMode === 'forward' ? bridgeNode : portalNode,
+                port
+            );
+            if (conflict) return res.status(400).json({ error: conflict });
+        }
 
         const linkData = {
             name,
@@ -228,8 +246,8 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
             tunnelPort: port,
             tunnelDomain: tunnelDomain || 'reverse.tunnel.internal',
             tunnelProtocol: tunnelProtocol || 'vless',
-            tunnelSecurity: tunnelSecurity || 'none',
-            tunnelTransport: tunnelTransport || 'tcp',
+            tunnelSecurity: sec,
+            tunnelTransport: trans,
             tcpFastOpen: tcpFastOpen !== false,
             tcpKeepAlive: parseInt(tcpKeepAlive) || 100,
             tcpNoDelay: tcpNoDelay !== false,
@@ -242,7 +260,11 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
             muxEnabled: !!muxEnabled,
             muxConcurrency: parseInt(muxConcurrency) || 8,
             priority: parseInt(priority) || 100,
+            ...kcpInput.fields,
         };
+        if (isKcpTransport(trans)) {
+            linkData.kcpPassword = generateKcpPassword();
+        }
 
         // REALITY fields with auto-generated x25519 keys + shortId when omitted
         if (sec === 'reality') {
@@ -289,7 +311,11 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
         // Auto-sync the full chain either when explicitly requested or when
         // this new link extends an already existing chain.
         if (req.body.autoDeploy || connectedLinksCount > 0) {
-            cascadeService.deployChain(portalNodeId).catch(err => {
+            cascadeService.deployChain(portalNodeId).then(result => {
+                if (!result.success) {
+                    logger.warn(`[Cascade API] Auto chain sync failed: ${result.errors.join('; ')}`);
+                }
+            }).catch(err => {
                 logger.warn(`[Cascade API] Auto chain sync failed: ${err.message}`);
             });
         }
@@ -334,6 +360,7 @@ router.put('/links/:id', requireScope('nodes:write'), async (req, res) => {
             updates.mode !== undefined ||
             updates.tunnelSecurity !== undefined ||
             updates.tunnelTransport !== undefined ||
+            KCP_INPUT_FIELDS.some(key => req.body[key] !== undefined) ||
             updates.realityDest !== undefined ||
             updates.realityFingerprint !== undefined ||
             updates.realityPrivateKey !== undefined ||
@@ -371,13 +398,38 @@ router.put('/links/:id', requireScope('nodes:write'), async (req, res) => {
             }
         }
 
-        // Validate REALITY + transport compatibility
-        if (updates.tunnelSecurity === 'reality' || updates.tunnelTransport) {
-            const effectiveSec = updates.tunnelSecurity || currentLink?.tunnelSecurity || 'none';
-            const effectiveTrans = updates.tunnelTransport || currentLink?.tunnelTransport || 'tcp';
-            if (effectiveSec === 'reality' && effectiveTrans === 'ws') {
-                return res.status(400).json({ error: 'REALITY security is not compatible with WebSocket transport' });
+        const effectiveTrans = updates.tunnelTransport || currentLink?.tunnelTransport || 'tcp';
+        if (updates.tunnelSecurity !== undefined || updates.tunnelTransport !== undefined) {
+            const transportError = validateTransportSecurity(
+                effectiveTrans,
+                updates.tunnelSecurity || currentLink?.tunnelSecurity || 'none'
+            );
+            if (transportError) {
+                return res.status(400).json({ error: transportError });
             }
+        }
+
+        const kcpInput = sanitizeKcpInput(req.body);
+        if (kcpInput.error) {
+            return res.status(400).json({ error: kcpInput.error });
+        }
+        Object.assign(updates, kcpInput.fields);
+        if (isKcpTransport(effectiveTrans) && currentLink && !currentLink.kcpPassword) {
+            updates.kcpPassword = generateKcpPassword();
+        }
+
+        const listenerChanged = updates.tunnelPort !== undefined || updates.mode !== undefined ||
+            updates.tunnelTransport !== undefined;
+        if (isKcpTransport(effectiveTrans) && currentLink && listenerChanged) {
+            const effectiveMode = updates.mode || currentLink.mode || 'reverse';
+            const listenNode = await HyNode.findById(
+                effectiveMode === 'forward' ? currentLink.bridgeNode : currentLink.portalNode
+            ).select('ip').lean();
+            const conflict = await cascadeService.findKcpPortConflict(
+                listenNode,
+                updates.tunnelPort !== undefined ? updates.tunnelPort : currentLink.tunnelPort
+            );
+            if (conflict) return res.status(400).json({ error: conflict });
         }
 
         // Geo-routing settings
@@ -424,7 +476,11 @@ router.put('/links/:id', requireScope('nodes:write'), async (req, res) => {
 
         // Auto-redeploy chain if link was deployed and settings changed
         if (req.body.autoRedeploy && ['deployed', 'online', 'offline'].includes(link.status)) {
-            cascadeService.deployChain(link.portalNode._id || link.portalNode).catch(err => {
+            cascadeService.deployChain(link.portalNode._id || link.portalNode).then(result => {
+                if (!result.success) {
+                    logger.warn(`[Cascade API] Auto-redeploy failed: ${result.errors.join('; ')}`);
+                }
+            }).catch(err => {
                 logger.warn(`[Cascade API] Auto-redeploy failed: ${err.message}`);
             });
         }
