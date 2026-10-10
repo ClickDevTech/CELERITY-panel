@@ -1031,6 +1031,10 @@ function validateHysteriaFormFields(fields) {
 // ─── IP Whitelist ────────────────────────────────────────────────────────────
 
 function parseIpWhitelist() {
+    // Prefer pre-parsed list from validated config (config.js), fallback to raw string
+    if (Array.isArray(config.PANEL_IP_WHITELIST_LIST)) {
+        return config.PANEL_IP_WHITELIST_LIST.length ? config.PANEL_IP_WHITELIST_LIST : null;
+    }
     const whitelist = config.PANEL_IP_WHITELIST || '';
     if (!whitelist.trim()) return null;
     return whitelist.split(',').map(ip => ip.trim()).filter(Boolean);
