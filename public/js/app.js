@@ -1,4 +1,4 @@
-// C³ CELERITY Panel - shared frontend utilities (v2)
+// VamPanel - shared frontend utilities (v2)
 (function () {
     'use strict';
 
@@ -161,7 +161,45 @@
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') setMobileMenu(false);
         });
+
+        initTilt();
     });
+
+    // Re-run tilt binding for dynamically added cards
+    window.VamTilt = initTilt;
+
+    // ---------- Parallax tilt for [data-tilt] + .stat-card ----------
+    // Subtle 3D tilt following the pointer. Disabled on touch, coarse
+    // pointers and prefers-reduced-motion.
+    function initTilt() {
+        var fine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
+        var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!fine || calm) return;
+        var MAX = 5; // degrees
+        document.querySelectorAll('.stat-card, [data-tilt]').forEach(function (el) {
+            if (el.hasAttribute('data-tilt-init')) return;
+            el.setAttribute('data-tilt-init', '1');
+            var raf = 0;
+            el.addEventListener('pointermove', function (e) {
+                if (e.pointerType && e.pointerType !== 'mouse') return;
+                cancelAnimationFrame(raf);
+                raf = requestAnimationFrame(function () {
+                    var r = el.getBoundingClientRect();
+                    var px = (e.clientX - r.left) / r.width - 0.5;
+                    var py = (e.clientY - r.top) / r.height - 0.5;
+                    el.classList.add('is-moving');
+                    el.style.transform =
+                        'perspective(900px) rotateX(' + (-py * MAX).toFixed(2) +
+                        'deg) rotateY(' + (px * MAX).toFixed(2) + 'deg) translateY(-2px)';
+                });
+            });
+            el.addEventListener('pointerleave', function () {
+                cancelAnimationFrame(raf);
+                el.classList.remove('is-moving');
+                el.style.transform = '';
+            });
+        });
+    }
 
     // ---------- Public API (backwards compatible) ----------
     window.formatBytes = formatBytes;
@@ -172,5 +210,5 @@
     window.toggleMobileMenu = toggleMobileMenu;
     window.toggleSidebarCollapse = toggleSidebarCollapse;
 
-    console.log('C3 CELERITY Panel loaded');
+    console.log('VamPanel loaded');
 })();

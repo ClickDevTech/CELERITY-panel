@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= typeof t !== 'undefined' ? t('auth.loginTitle') : 'Panel Login' %> | C³ CELERITY</title>
+    <title><%= typeof t !== 'undefined' ? t('auth.loginTitle') : 'Panel Login' %> | VamPanel</title>
     <%- include('partials/favicon') %>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -13,9 +13,9 @@
     <div class="login-container">
         <div class="login-box">
             <div class="login-header">
-                <span class="logo-icon large">⚡</span>
-                <h1>C³ CELERITY</h1>
-                <a href="https://t.me/First_VPN_Click_bot" target="_blank" style="background: linear-gradient(135deg, var(--accent) 0%, #a855f7 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-decoration: none;">by Click Connect</a>
+                <span class="logo-mark large">V</span>
+                <h1>VamPanel</h1>
+                <span class="login-brand">vpn panel</span>
             </div>
             
             <!-- Language Switcher -->
@@ -113,7 +113,7 @@
     })();
     </script>
     <% if (typeof appVersion !== 'undefined' && appVersion) { %>
-    <a href="https://github.com/ClickDevTech/CELERITY-panel/releases" target="_blank" rel="noopener" class="login-footer">v<%= appVersion %></a>
+    <a href="https://github.com/shalavochkk/CELERITY-panel/releases" target="_blank" rel="noopener" class="login-footer">v<%= appVersion %></a>
     <% } %>
 </body>
 </html>

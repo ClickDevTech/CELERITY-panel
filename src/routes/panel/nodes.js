@@ -107,6 +107,14 @@ const cdnResolveLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+// Quick-add is a heavy SSH install — strict limit like other setup actions.
+const quickAddLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
 async function reauthenticateXrayVersionChange(req, res) {
     const password = String(req.body?.currentPassword || '');
     const token = String(req.body?.totpToken || '');
@@ -664,6 +672,92 @@ router.post('/nodes', async (req, res) => {
     } catch (error) {
         logger.error(`[Panel] Create node error: ${error.message}`);
         sendNodeFormResult(req, res, '/panel/nodes/add', error.message, 500);
+    }
+});
+
+// POST /panel/nodes/quick-add — one-click Hysteria node: IP + SSH password in,
+// installed node out. Creates the node with sane defaults and runs the full
+// SSH auto-setup synchronously (can take a few minutes — keep the page open).
+router.post('/nodes/quick-add', quickAddLimiter, async (req, res) => {
+    let lockKey = null;
+    try {
+        req.setTimeout(10 * 60 * 1000);
+        const body = req.body || {};
+        const ip = String(body.ip || '').trim();
+        const password = String(body.password || '');
+        const username = String(body.username || 'root').trim() || 'root';
+        const sshPort = parseInt(body.sshPort, 10) || 22;
+        const name = String(body.name || '').trim() || `Hysteria ${ip}`;
+
+        const isIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(ip);
+        if (!ip || (!isIpv4 && !isValidHostname(ip))) {
+            return res.status(400).json({ success: false, error: 'Enter a valid server IP or hostname' });
+        }
+        if (!password) {
+            return res.status(400).json({ success: false, error: 'SSH password is required' });
+        }
+        if (sshPort < 1 || sshPort > 65535) {
+            return res.status(400).json({ success: false, error: 'Invalid SSH port' });
+        }
+
+        const existing = await HyNode.findOne({ ip, type: 'hysteria' });
+        if (existing) {
+            return res.status(409).json({ success: false, error: `A hysteria node with IP ${ip} already exists` });
+        }
+
+        const node = await HyNode.create({
+            name,
+            ip,
+            type: 'hysteria',
+            port: 443,
+            portRange: '20000-50000',
+            statsPort: 9999,
+            statsSecret: cryptoService.generateNodeSecret(),
+            groups: [],
+            active: true,
+            rankingCoefficient: 1,
+            obfs: { type: '', password: '' },
+            ssh: { port: sshPort, username, password: cryptoService.encrypt(password), privateKey: '' },
+        });
+        logger.info(`[Panel] Quick-add created hysteria node ${name} (${ip})`);
+        await invalidateNodesCache();
+
+        lockKey = String(node._id);
+        if (!nodeSetupLock.acquire(lockKey, 'Node quick-add setup')) {
+            return res.status(202).json({
+                success: true,
+                queued: true,
+                nodeId: node._id,
+                message: 'Node created, setup is already running for this node',
+                logs: [],
+            });
+        }
+
+        const skipHopping = isSameVpsAsPanel(node);
+        const result = await nodeSetup.setupNode(node, {
+            installHysteria: true,
+            setupPortHopping: !skipHopping,
+            restartService: true,
+        });
+
+        if (result.success) {
+            await HyNode.findByIdAndUpdate(node._id, {
+                $set: { status: 'online', lastSync: new Date(), lastError: '', healthFailures: 0 },
+            });
+            await invalidateNodesCache();
+            return res.json({ success: true, nodeId: node._id, logs: result.logs || [] });
+        }
+
+        await HyNode.findByIdAndUpdate(node._id, {
+            $set: { status: 'error', lastError: result.error, healthFailures: 0 },
+        });
+        await invalidateNodesCache();
+        return res.status(500).json({ success: false, nodeId: node._id, error: result.error, logs: result.logs || [] });
+    } catch (error) {
+        logger.error(`[Panel] Quick-add error: ${error.message}`);
+        return res.status(500).json({ success: false, error: error.message, logs: [`Exception: ${error.message}`] });
+    } finally {
+        if (lockKey) nodeSetupLock.release(lockKey);
     }
 });
 

@@ -6675,3 +6675,280 @@ input:focus, select:focus, textarea:focus {
         display: none;
     }
 }
+
+/* ==========================================================================
+ * VamPanel Mono — black & white glass theme with motion blur + parallax
+ * Overrides every color accent with a grayscale ramp. Status is carried by
+ * icons + text, never by hue alone.
+ * ========================================================================== */
+:root {
+    --accent: #f4f4f5;
+    --accent-hover: #ffffff;
+    --accent-glow: rgba(255, 255, 255, 0.28);
+    --accent-rgb: 244, 244, 245;
+    --accent-gradient-end: #8e8e93;
+    --accent-hover-gradient-end: #d4d4d8;
+
+    --success: #fafafa;
+    --success-hover: #ffffff;
+    --success-bg: rgba(255, 255, 255, 0.14);
+    --warning: #d4d4d4;
+    --warning-hover: #e4e4e7;
+    --warning-bg: rgba(255, 255, 255, 0.1);
+    --danger: #a1a1aa;
+    --danger-hover: #d4d4d8;
+    --danger-bg: rgba(255, 255, 255, 0.08);
+
+    --info: #e4e4e7;
+    --info-bg: rgba(255, 255, 255, 0.12);
+}
+
+/* --- Logo mark --- */
+.logo-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #ffffff, #a1a1aa);
+    color: #09090b;
+    font-weight: 800;
+    font-size: 20px;
+    letter-spacing: 0;
+    box-shadow: 0 0 24px rgba(255, 255, 255, 0.25);
+    animation: vam-float 5s ease-in-out infinite;
+}
+.logo-mark.large {
+    width: 52px;
+    height: 52px;
+    font-size: 28px;
+    border-radius: 16px;
+}
+.mobile-logo .logo-mark {
+    width: 28px;
+    height: 28px;
+    font-size: 15px;
+    border-radius: 9px;
+    animation: none;
+}
+.onboarding-header .logo-mark {
+    width: 48px;
+    height: 48px;
+    font-size: 26px;
+}
+@keyframes vam-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+.logo-text {
+    background: linear-gradient(135deg, #ffffff 20%, #a1a1aa 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+}
+.login-brand {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+/* --- Aurora background: slow drifting monochrome blur --- */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(560px 380px at 12% -6%, rgba(255, 255, 255, 0.09), transparent 65%),
+        radial-gradient(640px 420px at 88% 8%, rgba(255, 255, 255, 0.06), transparent 65%),
+        radial-gradient(700px 500px at 50% 110%, rgba(255, 255, 255, 0.05), transparent 65%);
+    filter: blur(40px);
+    animation: vam-aurora 22s ease-in-out infinite alternate;
+}
+@keyframes vam-aurora {
+    from { transform: translate3d(-2%, -1%, 0) scale(1); }
+    to { transform: translate3d(2%, 2%, 0) scale(1.06); }
+}
+.app,
+.login-container,
+.onboarding-shell {
+    position: relative;
+    z-index: 1;
+}
+
+/* --- Glass surfaces --- */
+.sidebar {
+    background: rgba(13, 13, 15, 0.72);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+.card,
+.stat-card {
+    background: rgba(22, 22, 25, 0.62);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+}
+.topbar {
+    background: rgba(10, 10, 12, 0.68);
+}
+
+/* --- Primary button: inverted mono --- */
+.btn-primary {
+    background: #f4f4f5;
+    border-color: #f4f4f5;
+    color: #09090b;
+    box-shadow: 0 2px 18px rgba(255, 255, 255, 0.22);
+}
+.btn-primary:hover {
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #09090b;
+    box-shadow: 0 4px 28px rgba(255, 255, 255, 0.35);
+}
+.btn-danger {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    color: #fafafa;
+}
+.btn-danger:hover {
+    background: #fafafa;
+    color: #09090b;
+    border-color: #fafafa;
+}
+
+/* --- Stat icon chips: grayscale --- */
+.stat-users .stat-icon {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.08));
+    color: #ffffff;
+}
+.stat-nodes .stat-icon {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.05));
+    color: #e4e4e7;
+}
+.stat-online .stat-icon {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.1));
+    color: #ffffff;
+    box-shadow: 0 0 18px rgba(255, 255, 255, 0.18);
+}
+.stat-traffic .stat-icon {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04));
+    color: #d4d4d8;
+}
+
+/* --- Status dots: monochrome, shape + text carry meaning --- */
+.status-dot.online,
+.status-indicator.status-online .status-dot {
+    background: #ffffff;
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.9);
+}
+.status-indicator.status-offline .status-dot {
+    background: #52525b;
+    box-shadow: none;
+}
+.status-indicator.status-error .status-dot {
+    background: transparent;
+    border: 2px solid #fafafa;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+}
+.status-indicator.status-syncing .status-dot {
+    background: #a1a1aa;
+    animation: pulse 1s infinite;
+}
+.nav-menu a.active {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04));
+}
+.nav-menu a.active::before {
+    background: linear-gradient(180deg, #ffffff, #71717a);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.5);
+}
+
+/* --- Sheen sweep on cards (motion feel) --- */
+.stat-card,
+.card.hover-sheen {
+    position: relative;
+}
+.stat-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.09) 50%, transparent 60%);
+    transform: translateX(-120%);
+    transition: transform 0.7s ease;
+    pointer-events: none;
+}
+.stat-card:hover::before {
+    transform: translateX(120%);
+}
+
+/* --- Parallax tilt (JS adds transform; CSS provides stage) --- */
+.stats-grid,
+.dashboard-main {
+    perspective: 1100px;
+}
+[data-tilt] {
+    transform-style: preserve-3d;
+    will-change: transform;
+    transition: transform 0.18s ease-out, box-shadow 0.2s ease, border-color 0.15s ease;
+}
+[data-tilt].is-moving {
+    transition: transform 0.06s linear;
+}
+
+/* --- Page enter --- */
+.main-content {
+    animation: vam-enter 0.32s ease;
+}
+@keyframes vam-enter {
+    from { opacity: 0; transform: translateY(10px); filter: blur(3px); }
+    to { opacity: 1; transform: none; filter: none; }
+}
+
+/* --- Reusable form controls (usable outside .form-group, e.g. modals) --- */
+.form-label {
+    display: block;
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+.form-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 14px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.form-input:focus {
+    border-color: #ffffff;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18);
+    outline: none;
+}
+
+/* --- Quick-add log output --- */
+.qa-log {
+    max-height: 260px;
+    overflow-y: auto;
+    background: #09090b;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #d4d4d8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-top: 12px;
+}
+.qa-log:empty {
+    display: none;
+}
