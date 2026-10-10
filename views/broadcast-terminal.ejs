@@ -17,7 +17,7 @@
         body {
             background:
                 radial-gradient(1200px 600px at 100% -10%, rgba(124, 58, 237, 0.10), transparent 60%),
-                radial-gradient(900px 500px at -10% 110%, rgba(99, 102, 241, 0.10), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(255, 255, 255, 0.10), transparent 60%),
                 var(--bg-primary);
             min-height: 100vh;
             display: flex;
@@ -95,9 +95,9 @@
             justify-content: center;
             border-radius: var(--radius-sm);
             font-size: 16px;
-            background: linear-gradient(135deg, rgba(99,102,241,0.22), rgba(168,85,247,0.16));
-            color: #c7d2fe;
-            border: 1px solid rgba(99, 102, 241, 0.25);
+            background: linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.16));
+            color: #e4e4e7;
+            border: 1px solid rgba(255, 255, 255, 0.25);
         }
 
         .broadcast-tabs {
@@ -129,7 +129,7 @@
         .broadcast-tab.active {
             color: #fff;
             background: linear-gradient(135deg, var(--accent), #7c3aed);
-            box-shadow: 0 8px 26px rgba(99,102,241,0.28);
+            box-shadow: 0 8px 26px rgba(255,255,255,0.28);
         }
 
         .header-right {
@@ -157,10 +157,10 @@
             height: 8px;
             border-radius: 50%;
             background: var(--danger);
-            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18);
         }
-        .status-dot.connected  { background: var(--success); box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18); }
-        .status-dot.connecting { background: var(--warning); box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.18); animation: pulse 1.2s infinite; }
+        .status-dot.connected  { background: var(--success); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18); }
+        .status-dot.connecting { background: var(--warning); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18); animation: pulse 1.2s infinite; }
 
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -170,11 +170,11 @@
         /* ── Broadcast-only button variant ───────────────────────────────── */
         .btn-ghost-danger {
             background: transparent;
-            border-color: rgba(239, 68, 68, 0.4);
-            color: #fca5a5;
+            border-color: rgba(255, 255, 255, 0.4);
+            color: #d4d4d8;
         }
         .btn-ghost-danger:hover {
-            background: rgba(239, 68, 68, 0.12);
+            background: rgba(255, 255, 255, 0.12);
             border-color: var(--danger);
             color: #fff;
         }
@@ -252,9 +252,9 @@
             gap: 4px;
             padding: 2px 8px;
             border-radius: 999px;
-            background: rgba(99, 102, 241, 0.15);
-            border: 1px solid rgba(99, 102, 241, 0.3);
-            color: #c7d2fe;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #e4e4e7;
             font-size: 11px;
             font-weight: 600;
             text-transform: none;
@@ -301,15 +301,15 @@
         .node-chip .chip-name { font-weight: 500; }
 
         .node-chip.selected {
-            border-color: rgba(99, 102, 241, 0.55);
-            background: rgba(99, 102, 241, 0.16);
-            color: #c7d2fe;
-            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.10);
+            border-color: rgba(255, 255, 255, 0.55);
+            background: rgba(255, 255, 255, 0.16);
+            color: #e4e4e7;
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.10);
         }
-        .node-chip.error    { border-color: rgba(239, 68, 68, 0.55); color: #fca5a5; }
-        .node-chip.running  { border-color: rgba(234, 179, 8, 0.55); color: #fde68a; }
-        .node-chip.done-ok  { border-color: rgba(34, 197, 94, 0.55); color: #86efac; }
-        .node-chip.done-fail{ border-color: rgba(239, 68, 68, 0.55); color: #fca5a5; }
+        .node-chip.error    { border-color: rgba(255, 255, 255, 0.55); color: #d4d4d8; }
+        .node-chip.running  { border-color: rgba(255, 255, 255, 0.55); color: #e4e4e7; }
+        .node-chip.done-ok  { border-color: rgba(255, 255, 255, 0.55); color: #e4e4e7; }
+        .node-chip.done-fail{ border-color: rgba(255, 255, 255, 0.55); color: #d4d4d8; }
 
         .chip-dot {
             width: 6px;
@@ -318,7 +318,7 @@
             background: var(--text-muted);
             flex-shrink: 0;
         }
-        .node-chip.selected   .chip-dot { background: #a5b4fc; }
+        .node-chip.selected   .chip-dot { background: #d4d4d8; }
         .node-chip.running    .chip-dot { background: var(--warning); animation: pulse 1.2s infinite; }
         .node-chip.done-ok    .chip-dot { background: var(--success); }
         .node-chip.done-fail  .chip-dot,
@@ -350,8 +350,8 @@
         }
         .command-input:focus {
             background: rgba(10, 10, 11, 0.8);
-            border-color: rgba(99, 102, 241, 0.55);
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18);
+            border-color: rgba(255, 255, 255, 0.55);
+            box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
         }
         .command-input::placeholder { color: var(--text-muted); }
         .command-input:disabled     { opacity: 0.55; cursor: not-allowed; }
@@ -449,8 +449,8 @@
 
         .cron-field:focus,
         .cron-editor:focus {
-            border-color: rgba(99, 102, 241, 0.55);
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18);
+            border-color: rgba(255, 255, 255, 0.55);
+            box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.18);
         }
 
         .cron-actions {
@@ -484,8 +484,8 @@
             font-size: 12.5px;
         }
 
-        .cron-result-row.ok { border-color: rgba(34,197,94,0.45); }
-        .cron-result-row.fail { border-color: rgba(239,68,68,0.45); }
+        .cron-result-row.ok { border-color: rgba(255,255,255,0.45); }
+        .cron-result-row.fail { border-color: rgba(255,255,255,0.45); }
         .cron-result-node { color: var(--text-primary); font-weight: 600; }
         .cron-result-message { color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; word-break: break-word; }
 
@@ -522,7 +522,7 @@
             font-size: 44px;
             color: var(--text-muted);
             opacity: 0.7;
-            background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(168,85,247,0.08));
+            background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.08));
             border: 1px solid var(--glass-border);
             width: 80px;
             height: 80px;
@@ -592,13 +592,13 @@
             letter-spacing: 0.01em;
             font-family: 'JetBrains Mono', monospace;
         }
-        .badge-connecting { border-color: rgba(234,179,8,0.5);  color: #fde68a; background: rgba(234,179,8,0.10); }
+        .badge-connecting { border-color: rgba(255,255,255,0.5);  color: #e4e4e7; background: rgba(255,255,255,0.10); }
         .badge-connected  { border-color: var(--glass-border);  color: var(--text-secondary); background: rgba(255,255,255,0.04); }
-        .badge-running    { border-color: rgba(234,179,8,0.5);  color: #fde68a; background: rgba(234,179,8,0.10); }
-        .badge-ok         { border-color: rgba(34,197,94,0.5);  color: #86efac; background: rgba(34,197,94,0.10); }
-        .badge-fail       { border-color: rgba(239,68,68,0.5);  color: #fca5a5; background: rgba(239,68,68,0.10); }
-        .badge-error      { border-color: rgba(239,68,68,0.5);  color: #fca5a5; background: rgba(239,68,68,0.10); }
-        .badge-timeout    { border-color: rgba(255,123,114,0.5);color: #fecaca; background: rgba(239,68,68,0.10); }
+        .badge-running    { border-color: rgba(255,255,255,0.5);  color: #e4e4e7; background: rgba(255,255,255,0.10); }
+        .badge-ok         { border-color: rgba(255,255,255,0.5);  color: #e4e4e7; background: rgba(255,255,255,0.10); }
+        .badge-fail       { border-color: rgba(255,255,255,0.5);  color: #d4d4d8; background: rgba(255,255,255,0.10); }
+        .badge-error      { border-color: rgba(255,255,255,0.5);  color: #d4d4d8; background: rgba(255,255,255,0.10); }
+        .badge-timeout    { border-color: rgba(255,255,255,0.5);color: #e4e4e7; background: rgba(255,255,255,0.10); }
 
         .node-card-toggle {
             color: var(--text-muted);
@@ -635,7 +635,7 @@
             color: var(--text-muted);
             opacity: 0.5;
         }
-        .node-output .stderr { color: #fca5a5; }
+        .node-output .stderr { color: #d4d4d8; }
 
         .node-footer {
             display: flex;
@@ -668,10 +668,10 @@
             font-weight: 500;
         }
         .summary-stat strong { font-weight: 700; color: var(--text-primary); }
-        .summary-stat.ok      { border-color: rgba(34,197,94,0.4);  background: rgba(34,197,94,0.08); }
-        .summary-stat.ok strong{ color: #86efac; }
-        .summary-stat.fail    { border-color: rgba(239,68,68,0.4);  background: rgba(239,68,68,0.08); }
-        .summary-stat.fail strong{ color: #fca5a5; }
+        .summary-stat.ok      { border-color: rgba(255,255,255,0.4);  background: rgba(255,255,255,0.08); }
+        .summary-stat.ok strong{ color: #e4e4e7; }
+        .summary-stat.fail    { border-color: rgba(255,255,255,0.4);  background: rgba(255,255,255,0.08); }
+        .summary-stat.fail strong{ color: #d4d4d8; }
 
         /* ── Overlay ─────────────────────────────────────────────────────── */
         .overlay {
@@ -711,13 +711,13 @@
         @keyframes spin { to { transform: rotate(360deg); } }
 
         .error-box {
-            background: rgba(239, 68, 68, 0.10);
-            border: 1px solid rgba(239, 68, 68, 0.4);
+            background: rgba(255, 255, 255, 0.10);
+            border: 1px solid rgba(255, 255, 255, 0.4);
             border-radius: var(--radius-sm);
             padding: 16px;
-            color: #fca5a5;
+            color: #d4d4d8;
         }
-        .error-box h2 { font-size: 14.5px; margin-bottom: 6px; color: #fca5a5; display: inline-flex; align-items: center; gap: 8px; }
+        .error-box h2 { font-size: 14.5px; margin-bottom: 6px; color: #d4d4d8; display: inline-flex; align-items: center; gap: 8px; }
         .error-box p  { color: var(--text-secondary); font-size: 13px; }
 
         /* ── Scrollbar ───────────────────────────────────────────────────── */

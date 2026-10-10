@@ -11,7 +11,7 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
-            background: #0d1117;
+            background: #0a0a0b;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             height: 100vh;
             display: flex;
@@ -19,8 +19,8 @@
         }
         
         .header {
-            background: #161b22;
-            border-bottom: 1px solid #30363d;
+            background: #111113;
+            border-bottom: 1px solid #27272a;
             padding: 12px 20px;
             display: flex;
             align-items: center;
@@ -34,7 +34,7 @@
         }
         
         .header h1 {
-            color: #c9d1d9;
+            color: #e4e4e7;
             font-size: 16px;
             font-weight: 500;
             display: flex;
@@ -49,18 +49,18 @@
             align-items: center;
             gap: 6px;
             font-size: 12px;
-            color: #8b949e;
+            color: #71717a;
         }
-        
+
         .status-dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #f85149;
+            background: #a1a1aa;
         }
-        
-        .status-dot.connected { background: #3fb950; }
-        .status-dot.connecting { background: #d29922; animation: pulse 1s infinite; }
+
+        .status-dot.connected { background: #fafafa; box-shadow: 0 0 10px rgba(255,255,255,.8); }
+        .status-dot.connecting { background: #d4d4d8; animation: pulse 1s infinite; }
         
         @keyframes pulse {
             0%, 100% { opacity: 1; }
@@ -74,18 +74,18 @@
         
         .btn {
             padding: 6px 12px;
-            border: 1px solid #30363d;
+            border: 1px solid #3f3f46;
             border-radius: 6px;
-            background: #21262d;
-            color: #c9d1d9;
+            background: #18181b;
+            color: #e4e4e7;
             font-size: 12px;
             cursor: pointer;
             transition: all 0.15s;
         }
         
-        .btn:hover { background: #30363d; }
-        .btn-danger { border-color: #f85149; color: #f85149; }
-        .btn-danger:hover { background: #f8514922; }
+        .btn:hover { background: #27272a; }
+        .btn-danger { border-color: #a1a1aa; color: #e4e4e7; }
+        .btn-danger:hover { background: #fafafa; color: #09090b; }
         
         .terminal-container {
             flex: 1;
@@ -114,7 +114,7 @@
         
         .overlay-content {
             text-align: center;
-            color: #c9d1d9;
+            color: #e4e4e7;
         }
         
         .overlay-content h2 {
@@ -123,15 +123,15 @@
         }
         
         .overlay-content p {
-            color: #8b949e;
+            color: #71717a;
             font-size: 14px;
         }
         
         .spinner {
             width: 40px;
             height: 40px;
-            border: 3px solid #30363d;
-            border-top-color: #58a6ff;
+            border: 3px solid #3f3f46;
+            border-top-color: #fafafa;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin: 0 auto 15px;
@@ -142,11 +142,11 @@
         }
         
         .error-message {
-            background: #f8514922;
-            border: 1px solid #f85149;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid #a1a1aa;
             border-radius: 6px;
             padding: 15px;
-            color: #f85149;
+            color: #f4f4f5;
             max-width: 400px;
         }
     </style>
@@ -211,27 +211,27 @@
                 fontSize: 14,
                 fontFamily: 'Menlo, Monaco, "Courier New", monospace',
                 theme: {
-                    background: '#0d1117',
-                    foreground: '#c9d1d9',
-                    cursor: '#58a6ff',
-                    cursorAccent: '#0d1117',
-                    selection: '#264f78',
-                    black: '#484f58',
-                    red: '#ff7b72',
-                    green: '#3fb950',
-                    yellow: '#d29922',
-                    blue: '#58a6ff',
-                    magenta: '#bc8cff',
-                    cyan: '#39c5cf',
-                    white: '#b1bac4',
-                    brightBlack: '#6e7681',
-                    brightRed: '#ffa198',
-                    brightGreen: '#56d364',
-                    brightYellow: '#e3b341',
-                    brightBlue: '#79c0ff',
-                    brightMagenta: '#d2a8ff',
-                    brightCyan: '#56d4dd',
-                    brightWhite: '#f0f6fc',
+                    background: '#0a0a0b',
+                    foreground: '#e4e4e7',
+                    cursor: '#fafafa',
+                    cursorAccent: '#0a0a0b',
+                    selection: 'rgba(255,255,255,0.25)',
+                    black: '#3f3f46',
+                    red: '#d4d4d8',
+                    green: '#f4f4f5',
+                    yellow: '#a1a1aa',
+                    blue: '#e4e4e7',
+                    magenta: '#c9c9ce',
+                    cyan: '#d4d4d8',
+                    white: '#e4e4e7',
+                    brightBlack: '#71717a',
+                    brightRed: '#f4f4f5',
+                    brightGreen: '#ffffff',
+                    brightYellow: '#d4d4d8',
+                    brightBlue: '#ffffff',
+                    brightMagenta: '#e4e4e7',
+                    brightCyan: '#f4f4f5',
+                    brightWhite: '#ffffff',
                 }
             });
             

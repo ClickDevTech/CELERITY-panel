@@ -365,6 +365,8 @@
     "setupRunning": "Выполняется настройка... Это может занять 1-2 минуты.",
     "terminal": "SSH Терминал",
     "broadcastTerminal": "Broadcast",
+    "autoSetupAfterCreate": "Настроить автоматически после создания",
+    "autoSetupAfterCreateHint": "Панель сама зайдет как root с паролем выше и установит Hysteria/Xray, сертификаты и фаервол. Займет несколько минут — нода станет онлайн когда закончит.",
     "quickAdd": "Быстрое добавление",
     "quickAddHint": "Впишите IP сервера и пароль root — VamPanel сам установит Hysteria 2, сертификаты и port hopping. Это займет 1–3 минуты, не закрывайте окно.",
     "quickAddIp": "IP сервера",

@@ -57,5 +57,15 @@
         </button>
         <span id="generateSshKeyStatus" style="margin-left: 10px; font-size: 13px;"></span>
     </div>
+    <% } else { %>
+    <div class="form-group" data-types="hysteria xray">
+        <label class="checkbox-label" for="autoSetupCheck" style="align-items:flex-start;gap:10px;">
+            <input type="checkbox" id="autoSetupCheck" name="autoSetup" checked style="margin-top:3px;">
+            <span>
+                <strong><%= t('nodes.autoSetupAfterCreate') %></strong><br>
+                <small class="hint"><%= t('nodes.autoSetupAfterCreateHint') %></small>
+            </span>
+        </label>
+    </div>
     <% } %>
 </div>

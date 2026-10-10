@@ -154,8 +154,15 @@
         if (collapseBtn) collapseBtn.addEventListener('click', toggleSidebarCollapse);
 
         document.querySelectorAll('.nav-menu a').forEach(function (link) {
-            link.addEventListener('click', function () {
+            link.addEventListener('click', function (e) {
                 if (window.innerWidth <= 768) setMobileMenu(false);
+                // Smooth page-leave: fade/slide/blur out, then navigate.
+                var href = link.getAttribute('href');
+                if (href && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.defaultPrevented) {
+                    e.preventDefault();
+                    document.body.classList.add('page-leave');
+                    setTimeout(function () { window.location.href = href; }, 150);
+                }
             });
         });
         document.addEventListener('keydown', function (e) {
@@ -175,7 +182,7 @@
         var fine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
         var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (!fine || calm) return;
-        var MAX = 5; // degrees
+        var MAX = 3; // degrees — subtle
         document.querySelectorAll('.stat-card, [data-tilt]').forEach(function (el) {
             if (el.hasAttribute('data-tilt-init')) return;
             el.setAttribute('data-tilt-init', '1');

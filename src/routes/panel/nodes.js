@@ -107,14 +107,6 @@ const cdnResolveLimiter = rateLimit({
     legacyHeaders: false,
 });
 
-// Quick-add is a heavy SSH install — strict limit like other setup actions.
-const quickAddLimiter = rateLimit({
-    windowMs: 10 * 60 * 1000,
-    max: 5,
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-
 async function reauthenticateXrayVersionChange(req, res) {
     const password = String(req.body?.currentPassword || '');
     const token = String(req.body?.totpToken || '');
@@ -668,6 +660,17 @@ router.post('/nodes', async (req, res) => {
         logger.info(`[Panel] Created ${nodeType} node ${name} (${isServerlessNode(nodeType) ? nodeType : ip})`);
         // Invalidate active-nodes, subscription, and dashboard caches so changes are reflected immediately
         await invalidateNodesCache();
+        // "Setup automatically" checkbox: install in the background (root@ip
+        // + password from the form), the node page picks up the status.
+        if (req.body.autoSetup === 'on' && (nodeType === 'hysteria' || nodeType === 'xray')
+            && (newNode.ssh?.password || newNode.ssh?.privateKey)) {
+            const bgId = String(newNode._id);
+            setImmediate(() => {
+                runAutoSetupInBackground(bgId).catch((e) => {
+                    logger.error(`[Panel] Background auto-setup failed: ${e.message}`);
+                });
+            });
+        }
         sendNodeFormResult(req, res, `/panel/nodes/${newNode._id}`);
     } catch (error) {
         logger.error(`[Panel] Create node error: ${error.message}`);
@@ -675,91 +678,57 @@ router.post('/nodes', async (req, res) => {
     }
 });
 
-// POST /panel/nodes/quick-add — one-click Hysteria node: IP + SSH password in,
-// installed node out. Creates the node with sane defaults and runs the full
-// SSH auto-setup synchronously (can take a few minutes — keep the page open).
-router.post('/nodes/quick-add', quickAddLimiter, async (req, res) => {
+// Background auto-setup after node creation (the "setup automatically"
+// checkbox). Mirrors POST /nodes/:id/setup but never blocks the response.
+async function runAutoSetupInBackground(nodeId) {
     let lockKey = null;
     try {
-        req.setTimeout(10 * 60 * 1000);
-        const body = req.body || {};
-        const ip = String(body.ip || '').trim();
-        const password = String(body.password || '');
-        const username = String(body.username || 'root').trim() || 'root';
-        const sshPort = parseInt(body.sshPort, 10) || 22;
-        const name = String(body.name || '').trim() || `Hysteria ${ip}`;
-
-        const isIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(ip);
-        if (!ip || (!isIpv4 && !isValidHostname(ip))) {
-            return res.status(400).json({ success: false, error: 'Enter a valid server IP or hostname' });
-        }
-        if (!password) {
-            return res.status(400).json({ success: false, error: 'SSH password is required' });
-        }
-        if (sshPort < 1 || sshPort > 65535) {
-            return res.status(400).json({ success: false, error: 'Invalid SSH port' });
-        }
-
-        const existing = await HyNode.findOne({ ip, type: 'hysteria' });
-        if (existing) {
-            return res.status(409).json({ success: false, error: `A hysteria node with IP ${ip} already exists` });
-        }
-
-        const node = await HyNode.create({
-            name,
-            ip,
-            type: 'hysteria',
-            port: 443,
-            portRange: '20000-50000',
-            statsPort: 9999,
-            statsSecret: cryptoService.generateNodeSecret(),
-            groups: [],
-            active: true,
-            rankingCoefficient: 1,
-            obfs: { type: '', password: '' },
-            ssh: { port: sshPort, username, password: cryptoService.encrypt(password), privateKey: '' },
-        });
-        logger.info(`[Panel] Quick-add created hysteria node ${name} (${ip})`);
-        await invalidateNodesCache();
-
+        const node = await HyNode.findById(nodeId);
+        if (!node || isServerlessNode(node)) return;
+        if (!node.ssh?.password && !node.ssh?.privateKey) return;
         lockKey = String(node._id);
-        if (!nodeSetupLock.acquire(lockKey, 'Node quick-add setup')) {
-            return res.status(202).json({
-                success: true,
-                queued: true,
-                nodeId: node._id,
-                message: 'Node created, setup is already running for this node',
-                logs: [],
+        if (!nodeSetupLock.acquire(lockKey, 'Node auto-setup')) {
+            logger.warn(`[Panel] Auto-setup skipped for ${node.name}: setup already running`);
+            return;
+        }
+        logger.info(`[Panel] Auto-setup started for node ${node.name} (${node.ip})`);
+        let result;
+        if (node.type === 'xray' && node.cascadeRole === 'bridge') {
+            result = await nodeSetup.setupXrayNode(node, { restartService: false, exitOnly: true });
+        } else if (node.type === 'xray') {
+            result = await nodeSetup.setupXrayNodeWithAgent(node, { restartService: true });
+        } else {
+            const skipHopping = isSameVpsAsPanel(node);
+            result = await nodeSetup.setupNode(node, {
+                installHysteria: true,
+                setupPortHopping: !skipHopping,
+                restartService: true,
             });
         }
-
-        const skipHopping = isSameVpsAsPanel(node);
-        const result = await nodeSetup.setupNode(node, {
-            installHysteria: true,
-            setupPortHopping: !skipHopping,
-            restartService: true,
-        });
-
         if (result.success) {
-            await HyNode.findByIdAndUpdate(node._id, {
-                $set: { status: 'online', lastSync: new Date(), lastError: '', healthFailures: 0 },
+            const updateFields = { status: 'online', lastSync: new Date(), lastError: '', healthFailures: 0 };
+            if (node.type !== 'xray') updateFields.useTlsFiles = result.useTlsFiles;
+            if (node.cascadeRole === 'bridge') updateFields.status = 'offline';
+            await HyNode.findByIdAndUpdate(nodeId, { $set: updateFields });
+            logger.info(`[Panel] Auto-setup finished for node ${node.name}`);
+        } else {
+            await HyNode.findByIdAndUpdate(nodeId, {
+                $set: { status: 'error', lastError: result.error, healthFailures: 0 },
             });
-            await invalidateNodesCache();
-            return res.json({ success: true, nodeId: node._id, logs: result.logs || [] });
+            logger.warn(`[Panel] Auto-setup failed for node ${node.name}: ${result.error}`);
         }
-
-        await HyNode.findByIdAndUpdate(node._id, {
-            $set: { status: 'error', lastError: result.error, healthFailures: 0 },
-        });
         await invalidateNodesCache();
-        return res.status(500).json({ success: false, nodeId: node._id, error: result.error, logs: result.logs || [] });
     } catch (error) {
-        logger.error(`[Panel] Quick-add error: ${error.message}`);
-        return res.status(500).json({ success: false, error: error.message, logs: [`Exception: ${error.message}`] });
+        logger.error(`[Panel] Auto-setup error: ${error.message}`);
+        try {
+            await HyNode.findByIdAndUpdate(nodeId, {
+                $set: { status: 'error', lastError: error.message, healthFailures: 0 },
+            });
+        } catch (_e) { /* ignore */ }
     } finally {
         if (lockKey) nodeSetupLock.release(lockKey);
     }
-});
+}
 
 // POST /panel/nodes/scan-sni - Stream TLS 1.3+H2 scan results as SSE
 router.post('/nodes/scan-sni', sniScanLimiter, async (req, res) => {

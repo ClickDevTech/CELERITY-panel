@@ -74,7 +74,6 @@ function nodeMetaFor(node) {
     </div>
     <div class="page-header-right" id="listActions">
         <a href="/panel/broadcast" target="_blank" class="btn"><i class="ti ti-broadcast"></i> <%= t('nodes.broadcastTerminal') %></a>
-        <button type="button" class="btn" onclick="openQuickAdd()"><i class="ti ti-bolt"></i> <%= t('nodes.quickAdd') %></button>
         <a href="/panel/nodes/add" class="btn btn-primary"><i class="ti ti-server-2"></i> <%= t('nodes.addNode') %></a>
     </div>
     <div class="page-header-right" id="networkActions" style="display:none">
@@ -1473,88 +1472,4 @@ if (_restoreNetworkView) {
     if (tableWrapper) tableWrapper.insertAdjacentElement('beforebegin', hint);
     <% } %>
 })();
-</script>
-
-<!-- Quick-add Hysteria node: IP + SSH password -> full auto-setup -->
-<div class="c3-modal-overlay" id="quickAddOverlay" style="display:none">
-    <div class="c3-modal" role="dialog" aria-modal="true" aria-label="<%= t('nodes.quickAdd') %>">
-        <div class="c3-modal-header"><i class="ti ti-bolt"></i> <%= t('nodes.quickAdd') %></div>
-        <div class="c3-modal-body">
-            <p style="margin-bottom:12px"><%= t('nodes.quickAddHint') %></p>
-            <label class="form-label" for="qaIp"><%= t('nodes.quickAddIp') %></label>
-            <input class="form-input" id="qaIp" placeholder="185.10.10.5" autocomplete="off" style="width:100%;margin-bottom:10px">
-            <div style="display:flex;gap:8px;margin-bottom:10px">
-                <div style="flex:1">
-                    <label class="form-label" for="qaUser"><%= t('nodes.quickAddUser') %></label>
-                    <input class="form-input" id="qaUser" value="root" autocomplete="off" style="width:100%">
-                </div>
-                <div style="width:96px">
-                    <label class="form-label" for="qaPort">SSH</label>
-                    <input class="form-input" id="qaPort" value="22" inputmode="numeric" autocomplete="off" style="width:100%">
-                </div>
-            </div>
-            <label class="form-label" for="qaPassword"><%= t('nodes.quickAddPassword') %></label>
-            <input class="form-input" id="qaPassword" type="password" autocomplete="new-password" style="width:100%">
-            <label class="form-label" for="qaName" style="margin-top:10px"><%= t('common.name') %> (<%= t('common.optional') %>)</label>
-            <input class="form-input" id="qaName" autocomplete="off" style="width:100%">
-            <pre class="qa-log" id="qaLog"></pre>
-        </div>
-        <div class="c3-modal-footer">
-            <button class="btn" id="qaCancel"><%= t('common.cancel') %></button>
-            <button class="btn btn-primary" id="qaStart"><i class="ti ti-bolt"></i> <%= t('nodes.quickAddStart') %></button>
-        </div>
-    </div>
-</div>
-<script>
-function openQuickAdd() {
-    document.getElementById('quickAddOverlay').style.display = 'flex';
-    setTimeout(() => document.getElementById('qaIp').focus(), 50);
-}
-function closeQuickAdd() {
-    if (window._qaRunning) return;
-    document.getElementById('quickAddOverlay').style.display = 'none';
-}
-document.getElementById('quickAddOverlay').addEventListener('click', (e) => {
-    if (e.target.id === 'quickAddOverlay') closeQuickAdd();
-});
-document.getElementById('qaCancel').addEventListener('click', closeQuickAdd);
-document.getElementById('qaStart').addEventListener('click', async () => {
-    const ip = document.getElementById('qaIp').value.trim();
-    const username = document.getElementById('qaUser').value.trim() || 'root';
-    const sshPort = document.getElementById('qaPort').value.trim() || '22';
-    const password = document.getElementById('qaPassword').value;
-    const name = document.getElementById('qaName').value.trim();
-    const log = document.getElementById('qaLog');
-    const btn = document.getElementById('qaStart');
-    if (!ip || !password) {
-        showToast(i18n.qaFillRequired || 'Enter IP and SSH password', 'error');
-        return;
-    }
-    window._qaRunning = true;
-    btn.classList.add('is-loading');
-    btn.disabled = true;
-    log.textContent = (i18n.qaRunning || 'Installing Hysteria on {ip} — keep this window open…').replace('{ip}', ip);
-    try {
-        const res = await window.celerityFetch('/panel/nodes/quick-add', {
-            method: 'POST',
-            body: { ip, username, sshPort, password, name },
-        });
-        const data = await res.json();
-        if (data.logs && data.logs.length) log.textContent = data.logs.join('\n');
-        else if (!data.success) log.textContent = data.error || 'Error';
-        if (res.ok && data.success) {
-            log.textContent += '\n\n✓ ' + (i18n.qaDone || 'Node is online');
-            showToast(i18n.qaDone || 'Node is online');
-            setTimeout(() => { window.location.href = '/panel/nodes/' + data.nodeId; }, 1500);
-        } else {
-            showToast(data.error || 'Error', 'error');
-        }
-    } catch (e) {
-        log.textContent += '\n\n✗ ' + (e.message || 'Error');
-        showToast(e.message || 'Error', 'error');
-    }
-    window._qaRunning = false;
-    btn.classList.remove('is-loading');
-    btn.disabled = false;
-});
 </script>
