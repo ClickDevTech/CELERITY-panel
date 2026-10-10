@@ -3375,6 +3375,21 @@ async function serveSubscription(req, res, ctx) {
 
     const settings = await getSettings();
 
+    // Per-link budget: one aggressive client (or leaked link) must not eat
+    // the whole global subscription allowance. Fail-open without Redis (or
+    // when the cache backend predates this check).
+    const tokenLimit = settings?.rateLimit?.subscriptionPerTokenPerMinute || 30;
+    let tokenRl = { allowed: true, count: 0, limit: tokenLimit };
+    try {
+        if (typeof cache.checkSubscriptionTokenRateLimit === 'function') {
+            tokenRl = await cache.checkSubscriptionTokenRateLimit(cacheToken, tokenLimit);
+        }
+    } catch { /* fail open */ }
+    if (!tokenRl.allowed) {
+        logger.warn(`[Sub] Per-token rate limit: ${cacheToken.substring(0, 8)}... (${tokenRl.count}/${tokenRl.limit})`);
+        return res.status(429).set('Retry-After', '60').type('text/plain').send('# Too many requests');
+    }
+
     const { extraHeaders: hwidHeaders, aborted: hwidAborted } = await runHwidSubscriptionGate(req, res, user, settings, format);
     if (hwidAborted) return;
 
@@ -3675,6 +3690,16 @@ module.exports.serveSubscription = serveSubscription;
 module.exports.serveInfo = serveInfo;
 module.exports.validateUser = validateUser;
 module.exports.rejectOrSoftBlock = rejectOrSoftBlock;
+// Exposed for contract tests (UA x format matrix): the generators are pure
+// (user, nodes, routing, opts) and must stay that way — no req/res/globals.
+// Split roadmap: extract builders/{uri,clash,singbox,v2ray,xray,html}.js once
+// the contract suite pins their output (see scripts/test-subscription-*).
+module.exports.generateSubscriptionData = generateSubscriptionData;
+module.exports.generateURIList = generateURIList;
+module.exports.generateClashYAML = generateClashYAML;
+module.exports.generateSingboxJSON = generateSingboxJSON;
+module.exports.generateV2rayJSON = generateV2rayJSON;
+module.exports.generateXrayJSON = generateXrayJSON;
 // Exposed for the diagnostic probe manifest. The probe matches subscription
 // outbounds to nodes by tag, so the panel must predict those tags with the
 // very same code that generates the subscription.

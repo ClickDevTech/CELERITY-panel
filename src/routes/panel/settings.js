@@ -173,8 +173,12 @@ router.post('/settings', async (req, res) => {
         setIfPresent('cache.userTTL', v => parseInt(v) || 900);
         setIfPresent('cache.onlineSessionsTTL', v => parseInt(v) || 10);
         setIfPresent('cache.activeNodesTTL', v => parseInt(v) || 30);
+        setIfPresent('cache.settingsTTL', v => parseInt(v) || 60);
+        setIfPresent('cache.trafficStatsTTL', v => parseInt(v) || 300);
+        setIfPresent('cache.groupsTTL', v => parseInt(v) || 300);
+        setIfPresent('cache.dashboardCountsTTL', v => parseInt(v) || 60);
         setIfPresent('rateLimit.subscriptionPerMinute', v => parseInt(v) || 100);
-        setBool('sshPool.enabled');
+        setIfPresent('rateLimit.subscriptionPerTokenPerMinute', v => parseInt(v) || 30);        setBool('sshPool.enabled');
         setIfPresent('sshPool.maxIdleTime', v => parseInt(v) || 120);
         setIfPresent('sshPool.connectTimeout', v => parseInt(v) || 15);
         setIfPresent('sshPool.keepAliveInterval', v => parseInt(v) || 30);

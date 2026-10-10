@@ -51,7 +51,31 @@ app.set('trust proxy', 1);
 // ==================== MIDDLEWARE ====================
 
 app.use(helmet({
-    contentSecurityPolicy: false,
+    // All JS/CSS/fonts are self-hosted under /vendor, /fonts, /css, /js —
+    // no CDN remains except Scalar's own font host (optional /api/docs page).
+    // Inline scripts/styles stay allowed ('unsafe-inline'): the EJS pages use
+    // them throughout; the policy still kills external injection, framing,
+    // plugins and cross-origin form posts. Nonce migration is the follow-up.
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            // Inline handlers (onclick=…) are used across EJS pages; blocking
+            // them would silently kill half the UI. Nonce migration later.
+            scriptSrcAttr: ["'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            fontSrc: ["'self'", 'https://fonts.scalar.com'],
+            imgSrc: ["'self'", 'data:', 'blob:'],
+            connectSrc: ["'self'", 'ws:', 'wss:'],
+            frameAncestors: ["'none'"],
+            baseUri: ["'self'"],
+            formAction: ["'self'"],
+            objectSrc: ["'none'"],
+            // NO upgrade-insecure-requests: local HTTP installs (USE_CADDY)
+            // serve ws:// terminal/log sockets that must not be upgraded.
+            upgradeInsecureRequests: null,
+        },
+    },
     crossOriginEmbedderPolicy: false,
 }));
 
@@ -440,7 +464,7 @@ if (config.API_DOCS_ENABLED) {
       data-url="${specUrl}"
       data-configuration='{"theme":"purple","layout":"modern"}'
     ></script>
-    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+    <script src="/vendor/scalar-standalone.js"></script>
   </body>
 </html>`);
     });

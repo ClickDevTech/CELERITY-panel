@@ -6,12 +6,10 @@
     <meta name="theme-color" content="#0a0a0b">
     <title><%= title %> | VamPanel</title>
     <%- include('partials/favicon') %>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,100..900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/fonts/fonts.css?v=1">
     <link rel="stylesheet" href="/css/style.min.css?v=7">
-    <link rel="preload" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/fonts/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+    <link rel="preload" href="/vendor/tabler/fonts/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/vendor/tabler/tabler-icons.min.css">
 </head>
 <body>
     <a class="skip-link" href="#mainContent"><%= t('common.skipToContent') || 'Skip to content' %></a>
