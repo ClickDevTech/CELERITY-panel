@@ -1434,6 +1434,8 @@
     "subHappProviderIdHint": "Optional 8-character code from happ-proxy.com. Unlocks statistics and feedback button.",
     "subUpdateInterval": "Update Interval (hours)",
     "subUpdateIntervalHint": "How often clients auto-refresh the subscription. Sent as the Profile-Update-Interval response header. Range: 1–168 hours.",
+    "subHoppingEnabled": "Port hopping in subscriptions",
+    "subHoppingEnabledHint": "Off: links carry only the single main-port entry. On: Hopping entries are added. Override per request with ?hopping=0/1.",
     "subButtons": "Buttons on subscription page",
     "subButtonsHint": "Use {url} in the URL field to insert the subscription link (e.g. hiddify://import/{url}). For Shadowrocket use sub://{url_b64}. For query params use {url_encoded}. Icons: tabler.io/icons (e.g. ti-download).",
     "subAddButton": "Add button",

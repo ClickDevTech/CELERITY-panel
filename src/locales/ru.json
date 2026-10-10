@@ -1434,6 +1434,8 @@
     "subHappProviderIdHint": "Опциональный 8-символьный код из happ-proxy.com. Открывает статистику и кнопку обратной связи.",
     "subUpdateInterval": "Интервал обновления (часы)",
     "subUpdateIntervalHint": "Как часто клиенты автоматически обновляют подписку. Передаётся в заголовке Profile-Update-Interval. Диапазон: 1–168 часов.",
+    "subHoppingEnabled": "Port hopping в подписках",
+    "subHoppingEnabledHint": "Выкл: ссылка дает только одну запись на главный порт. Вкл: добавляются Hopping-записи. Можно переопределить параметром ?hopping=0/1.",
     "subButtons": "Кнопки на странице подписки",
     "subButtonsHint": "Используйте {url} в поле URL для подстановки ссылки подписки (например: hiddify://import/{url}). Для Shadowrocket: sub://{url_b64}. Для query-параметров: {url_encoded}. Иконки: tabler.io/icons (например: ti-download).",
     "subAddButton": "Добавить кнопку",

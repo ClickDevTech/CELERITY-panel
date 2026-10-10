@@ -88,6 +88,10 @@ const settingsSchema = new mongoose.Schema({
         supportUrl:     { type: String, default: '' },
         webPageUrl:     { type: String, default: '' },
         happProviderId: { type: String, default: '' },
+        // Port-hopping entries in subscriptions. OFF by default: links carry
+        // only the single main-port entry; hopping stays available per node
+        // (subscriptionVariants) and per request (?hopping=1) when enabled.
+        hoppingEnabled: { type: Boolean, default: false },
         logoUrl:        { type: String, default: '' },
         pageTitle:      { type: String, default: '' },
         // Instruction shown under the title on the public subscription page.

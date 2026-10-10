@@ -38,7 +38,7 @@
                         </div>
                     </div>
                     <div class="col-4" style="display: flex; align-items: center; justify-content: center;">
-                        <div style="width: 100%; min-height: 130px; display: flex; align-items: center; justify-content: center; padding: 18px; border-radius: var(--radius); background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(168,85,247,0.06)); border: 1px dashed var(--glass-border-strong);">
+                        <div style="width: 100%; min-height: 130px; display: flex; align-items: center; justify-content: center; padding: 18px; border-radius: var(--radius); background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03)); border: 1px dashed var(--glass-border-strong);">
                             <div id="logoPreview" style="<%= settings?.subscription?.logoUrl ? '' : 'display:none;' %>">
                                 <img id="logoPreviewImg"
                                      src="<%= settings?.subscription?.logoUrl || '' %>"
@@ -85,6 +85,16 @@
                                value="<%= settings?.subscription?.updateInterval ?? 12 %>"
                                min="1" max="168" step="1">
                         <small class="hint"><%= t('settings.subUpdateIntervalHint') || 'Как часто клиенты автоматически обновляют подписку (в часах). Отправляется в заголовке Profile-Update-Interval.' %></small>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label" for="subHoppingEnabled" style="align-items:flex-start;gap:10px;margin-top:26px;">
+                            <input type="checkbox" id="subHoppingEnabled" name="subscription.hoppingEnabled" value="on"
+                                   <%= settings?.subscription?.hoppingEnabled ? 'checked' : '' %> style="margin-top:3px;">
+                            <span>
+                                <strong><%= t('settings.subHoppingEnabled') || 'Port hopping в подписках' %></strong><br>
+                                <small class="hint"><%= t('settings.subHoppingEnabledHint') || 'Выкл: ссылка дает только одну запись на главный порт. Вкл: добавляются Hopping-записи. Можно переопределить параметром ?hopping=0/1.' %></small>
+                            </span>
+                        </label>
                     </div>
                 </div>
 

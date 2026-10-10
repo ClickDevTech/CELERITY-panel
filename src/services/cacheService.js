@@ -27,8 +27,11 @@ const DEFAULT_TTL = {
 };
 
 // Key prefixes
+// SUB carries a version (v2 = hopping-aware keyspace + fresh userinfo on HIT).
+// Old v1 entries are simply orphaned and expire by TTL; both invalidate
+// patterns below (`sub:{token}:*`, `sub:*`) match across versions.
 const PREFIX = {
-    SUB: 'sub:',             // sub:{token}:{format}
+    SUB: 'sub:v2:',             // sub:v2:{token}:{format}
     QR: 'qr:',               // qr:{baseUrl}
     USER: 'user:',           // user:{userId}
     DEVICES: 'devices:',     // devices:{userId} - Hash with device IPs

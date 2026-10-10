@@ -121,6 +121,10 @@ app.use((req, res, next) => {
 app.use(cookieParser());
 app.use(i18nMiddleware);
 
+// Unauthenticated liveness probe (monitoring). Mounted early so it answers
+// even when downstream middleware is unhappy.
+app.use('/healthz', require('./src/routes/health'));
+
 const { version: appVersion } = require('./package.json');
 app.use((req, res, next) => {
     res.locals.appVersion = appVersion;
@@ -325,6 +329,10 @@ module.exports = { reloadSettings };
 app.use('/api/files', subscriptionLimiter);
 app.use('/api/info', subscriptionLimiter);
 app.use('/api', subscriptionRoutes);
+
+// Admin audit trail: mutating /api + /panel requests (reads and hot machine
+// endpoints excluded inside the middleware). Identity resolves on finish.
+app.use(['/api', '/panel'], require('./src/middleware/audit'));
 
 // Marzban legacy-link compatibility — middleware no-ops when disabled in
 // settings. Mounted BEFORE panel/static handlers but AFTER /api so it never

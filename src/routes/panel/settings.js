@@ -161,6 +161,9 @@ router.post('/settings', async (req, res) => {
         // is a System tab submit. For checkboxes inside that form an absent
         // key means "unchecked", so force-apply booleans on this branch.
         const systemTabSubmit = req.body['cache.subscriptionTTL'] !== undefined;
+        // Set inside the _subscriptionSettings branch when the hopping toggle
+        // was part of the submitted card (see below).
+        let hoppingChanged = false;
         if (systemTabSubmit) {
             updates['loadBalancing.enabled']        = req.body['loadBalancing.enabled']        === 'on';
             updates['loadBalancing.hideOverloaded'] = req.body['loadBalancing.hideOverloaded'] === 'on';
@@ -236,6 +239,16 @@ router.post('/settings', async (req, res) => {
                 const n = parseInt(v, 10);
                 return Number.isNaN(n) ? 12 : Math.min(168, Math.max(1, n));
             });
+
+            // Port-hopping entries in subscriptions (VamPanel default: off —
+            // links carry only the single main-port entry). Present checkbox
+            // means the card was submitted; absent in another card's form must
+            // not wipe it — hence the explicit key check, not setIfPresent.
+            if (req.body['subscription.hoppingEnabled'] !== undefined) {
+                const next = req.body['subscription.hoppingEnabled'] === 'on';
+                updates['subscription.hoppingEnabled'] = next;
+                hoppingChanged = true;
+            }
 
             if (req.body['subscription.buttonsJson'] !== undefined) {
                 let parsedButtons = [];
@@ -493,6 +506,10 @@ router.post('/settings', async (req, res) => {
         // Drop subscription cache so load-balancing toggles take effect now,
         // not after subscriptionTTL (up to 1 h).
         if (systemTabSubmit) {
+            await cache.invalidateAllSubscriptions();
+        }
+        // Same for the hopping toggle: published entries change shape.
+        if (hoppingChanged) {
             await cache.invalidateAllSubscriptions();
         }
 
