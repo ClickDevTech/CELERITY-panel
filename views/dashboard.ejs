@@ -65,8 +65,13 @@
             <tbody>
                 <% if (nodes.length === 0) { %>
                 <tr>
-                            <td colspan="6" class="text-center text-muted">
-                                <a href="/panel/nodes/add" class="btn btn-primary btn-sm mt-2"><%= t('dashboard.addNode') %></a>
+                            <td colspan="6">
+                                <div class="empty-state">
+                                    <div class="empty-state-icon"><i class="ti ti-server-off"></i></div>
+                                    <h3><%= t('dashboard.noNodes') %></h3>
+                                    <p><%= t('dashboard.noNodesHint') || 'Add your first node to start monitoring traffic.' %></p>
+                                    <a href="/panel/nodes/add" class="btn btn-primary btn-sm"><i class="ti ti-plus"></i> <%= t('dashboard.addNode') %></a>
+                                </div>
                             </td>
                 </tr>
                 <% } %>
@@ -123,9 +128,11 @@
                 <!-- Mobile Cards -->
                 <div class="mobile-nodes-list">
                     <% if (nodes.length === 0) { %>
-                        <div style="text-align: center; padding: 40px 20px;">
-                            <p style="color: var(--text-muted); margin-bottom: 16px;"><%= t('dashboard.noNodes') %></p>
-                            <a href="/panel/nodes/add" class="btn btn-primary btn-sm"><%= t('dashboard.addNode') %></a>
+                        <div class="empty-state">
+                            <div class="empty-state-icon"><i class="ti ti-server-off"></i></div>
+                            <h3><%= t('dashboard.noNodes') %></h3>
+                            <p><%= t('dashboard.noNodesHint') || 'Add your first node to start monitoring traffic.' %></p>
+                            <a href="/panel/nodes/add" class="btn btn-primary btn-sm"><i class="ti ti-plus"></i> <%= t('dashboard.addNode') %></a>
                         </div>
                     <% } %>
                     <% nodes.forEach(function(node, idx) { %>
