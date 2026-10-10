@@ -224,29 +224,33 @@
         });
     }
 
-    // ---------- Dynamic Island: click toggle (hover handled by CSS) ----------
+    // ---------- Dynamic Island: whole pill toggles (hover handled by CSS) ----------
     function initIsland() {
         var island = document.getElementById('island');
-        var burger = document.getElementById('islandBurger');
-        if (!island || !burger) return;
-        burger.addEventListener('click', function (e) {
-            e.stopPropagation();
-            var open = island.classList.toggle('open');
-            burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (!island) return;
+        function setOpen(open) {
+            island.classList.toggle('open', open);
+            island.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+        island.addEventListener('click', function (e) {
+            if (e.target.closest && e.target.closest('a')) return; // let links navigate
+            setOpen(!island.classList.contains('open'));
+        });
+        island.addEventListener('keydown', function (e) {
+            if (e.target.closest && e.target.closest('a')) return;
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setOpen(!island.classList.contains('open'));
+            }
         });
         document.addEventListener('click', function (e) {
             if (!island.classList.contains('open')) return;
-            if (!island.contains(e.target)) {
-                island.classList.remove('open');
-                burger.setAttribute('aria-expanded', 'false');
-            }
+            if (!island.contains(e.target)) setOpen(false);
         });
         island.querySelectorAll('.island-link').forEach(function (link) {
-            link.addEventListener('click', function () {
-                island.classList.remove('open');
-                burger.setAttribute('aria-expanded', 'false');
-            });
+            link.addEventListener('click', function () { setOpen(false); });
         });
+        window.VamIsland = { setOpen: setOpen };
     }
 
     // ---------- Fog parallax: background drifts against the cursor ----------

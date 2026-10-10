@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,100..900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.min.css?v=5">
+    <link rel="stylesheet" href="/css/style.min.css?v=6">
     <link rel="preload" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/fonts/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 </head>
@@ -20,12 +20,7 @@
     <div class="app">
         <main class="content" id="mainContent">
             <div class="island-wrap">
-                <nav class="island" id="island" aria-label="Main">
-                    <button class="island-burger" id="islandBurger" aria-expanded="false" aria-controls="islandNav" aria-label="Menu">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                    </button>
+                <nav class="island" id="island" aria-label="Main" tabindex="0" aria-expanded="false">
                     <span class="island-word">VAMPANEL</span>
                     <span class="island-dot online" title="<%= t('common.online') %>"></span>
                     <div class="island-nav" id="islandNav">
@@ -78,6 +73,6 @@
     <div class="toast-stack" id="toastStack" aria-live="polite"></div>
     <div id="toast" class="toast" role="status"></div>
 
-    <script defer src="/js/app.js?v=5"></script>
+    <script defer src="/js/app.js?v=6"></script>
 </body>
 </html>
