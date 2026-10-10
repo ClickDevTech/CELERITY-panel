@@ -7242,38 +7242,27 @@ body::before {
     flex-shrink: 0;
     animation: pulse 2s infinite;
 }
-/* Collapsed: only wordmark + dot visible; click anywhere toggles */
+/* Collapsed: only wordmark + dot visible; JS toggles .open (hover-intent + pin) */
 .island-nav {
     display: flex;
     align-items: center;
     gap: 2px;
     max-width: 0;
     opacity: 0;
+    visibility: hidden;
     overflow: hidden;
     white-space: nowrap;
-    transition: max-width 0.5s cubic-bezier(0.22, 0.9, 0.28, 1), opacity 0.35s ease 0.05s;
-}
-@media (hover: hover) {
-    .island:hover .island-nav,
-    .island.open .island-nav,
-    .island:focus-within .island-nav {
-        max-width: 720px;
-        opacity: 1;
-    }
-    .island:hover,
-    .island.open,
-    .island:focus-within {
-        border-radius: 26px;
-        max-width: 760px;
-    }
+    transition: max-width 0.55s cubic-bezier(0.22, 0.9, 0.28, 1), opacity 0.4s ease, visibility 0s linear 0.55s;
 }
 .island.open .island-nav {
-    max-width: 720px;
+    max-width: 820px;
     opacity: 1;
+    visibility: visible;
+    transition: max-width 0.6s cubic-bezier(0.22, 0.9, 0.28, 1), opacity 0.4s ease 0.08s, visibility 0s;
 }
 .island.open {
     border-radius: 26px;
-    max-width: 760px;
+    max-width: 880px;
 }
 .island-link {
     display: inline-flex;
@@ -7365,15 +7354,11 @@ body .icon-pick-cell:hover {
     font-size: 15px;
 }
 @media (hover: hover) {
-    .island:hover,
-    .island.open,
-    .island:focus-within {
+    .island.open {
         border-radius: 26px;
         max-width: 880px;
     }
-    .island:hover .island-nav,
-    .island.open .island-nav,
-    .island:focus-within .island-nav {
+    .island.open .island-nav {
         max-width: 820px;
         opacity: 1;
     }
@@ -7386,26 +7371,24 @@ body .icon-pick-cell:hover {
     max-width: 820px;
     opacity: 1;
 }
-/* Staggered link entrance — fade + rise */
+/* Staggered link entrance — fade + rise (open only; hover no longer snaps) */
 .island .island-link {
     opacity: 0;
-    transform: translateY(6px);
-    transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.22, 0.9, 0.28, 1), background 0.15s ease, color 0.15s ease;
+    transform: translateY(8px);
+    transition: opacity 0.35s ease, transform 0.45s cubic-bezier(0.22, 0.9, 0.28, 1), background 0.15s ease, color 0.15s ease;
 }
-.island:hover .island-link,
-.island.open .island-link,
-.island:focus-within .island-link {
+.island.open .island-link {
     opacity: 1;
     transform: none;
 }
-.island:hover .island-link:nth-child(1), .island.open .island-link:nth-child(1), .island:focus-within .island-link:nth-child(1) { transition-delay: 0.03s; }
-.island:hover .island-link:nth-child(2), .island.open .island-link:nth-child(2), .island:focus-within .island-link:nth-child(2) { transition-delay: 0.06s; }
-.island:hover .island-link:nth-child(3), .island.open .island-link:nth-child(3), .island:focus-within .island-link:nth-child(3) { transition-delay: 0.09s; }
-.island:hover .island-link:nth-child(4), .island.open .island-link:nth-child(4), .island:focus-within .island-link:nth-child(4) { transition-delay: 0.12s; }
-.island:hover .island-link:nth-child(5), .island.open .island-link:nth-child(5), .island:focus-within .island-link:nth-child(5) { transition-delay: 0.15s; }
-.island:hover .island-link:nth-child(6), .island.open .island-link:nth-child(6), .island:focus-within .island-link:nth-child(6) { transition-delay: 0.18s; }
-.island:hover .island-link:nth-child(7), .island.open .island-link:nth-child(7), .island:focus-within .island-link:nth-child(7) { transition-delay: 0.21s; }
-.island:hover .island-link:nth-child(8), .island.open .island-link:nth-child(8), .island:focus-within .island-link:nth-child(8) { transition-delay: 0.24s; }
+.island.open .island-link:nth-child(1) { transition-delay: 0.05s; }
+.island.open .island-link:nth-child(2) { transition-delay: 0.09s; }
+.island.open .island-link:nth-child(3) { transition-delay: 0.13s; }
+.island.open .island-link:nth-child(4) { transition-delay: 0.17s; }
+.island.open .island-link:nth-child(5) { transition-delay: 0.21s; }
+.island.open .island-link:nth-child(6) { transition-delay: 0.25s; }
+.island.open .island-link:nth-child(7) { transition-delay: 0.29s; }
+.island.open .island-link:nth-child(8) { transition-delay: 0.33s; }
 @media (max-width: 1100px) {
     .island-nav {
         overflow-x: auto;
@@ -7420,6 +7403,24 @@ body .icon-pick-cell:hover {
 }
 .vam-fog {
     transition: none;
+}
+
+/* --- Cross-document View Transitions: island hops without hard reload feel --- */
+@view-transition {
+    navigation: auto;
+}
+::view-transition-old(root) {
+    animation: vam-vt-out 0.28s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+::view-transition-new(root) {
+    animation: vam-vt-in 0.42s cubic-bezier(0.22, 0.9, 0.28, 1) backwards;
+}
+@keyframes vam-vt-out {
+    to { opacity: 0; transform: translateX(-26px) scale(0.99); filter: blur(7px); }
+}
+@keyframes vam-vt-in {
+    from { opacity: 0; transform: translateX(30px) scale(0.99); filter: blur(7px); }
+    to { opacity: 1; transform: none; filter: none; }
 }
 
 /* --- Empty states: always readable, button always dark-on-light --- */

@@ -224,31 +224,67 @@
         });
     }
 
-    // ---------- Dynamic Island: whole pill toggles (hover handled by CSS) ----------
+    // ---------- Dynamic Island: hover-intent + pin, never snaps shut ----------
+    // Mouse: opens on enter, closes 900ms after leave (re-enter cancels).
+    // Click/keyboard: pins open until link, outside click or Esc.
     function initIsland() {
         var island = document.getElementById('island');
         if (!island) return;
-        function setOpen(open) {
+        var closeTimer = null;
+        var pinned = false;
+        function setOpen(open, pin) {
+            if (typeof pin === 'boolean') pinned = pin;
             island.classList.toggle('open', open);
             island.setAttribute('aria-expanded', open ? 'true' : 'false');
         }
+        function cancelClose() {
+            if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+        }
+        function scheduleClose(ms) {
+            cancelClose();
+            if (pinned) return;
+            closeTimer = setTimeout(function () { setOpen(false); }, ms == null ? 900 : ms);
+        }
+        var canHover = window.matchMedia && window.matchMedia('(hover: hover)').matches;
+        if (canHover) {
+            island.addEventListener('pointerenter', function (e) {
+                if (e.pointerType && e.pointerType !== 'mouse') return;
+                cancelClose();
+                setOpen(true);
+            });
+            island.addEventListener('pointerleave', function (e) {
+                if (e.pointerType && e.pointerType !== 'mouse') return;
+                scheduleClose(900);
+            });
+        }
+        function togglePin() {
+            cancelClose();
+            if (!island.classList.contains('open')) setOpen(true, true);
+            else if (pinned) setOpen(false, false);
+            else setOpen(true, true);
+        }
         island.addEventListener('click', function (e) {
             if (e.target.closest && e.target.closest('a')) return; // let links navigate
-            setOpen(!island.classList.contains('open'));
+            togglePin();
         });
         island.addEventListener('keydown', function (e) {
             if (e.target.closest && e.target.closest('a')) return;
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                setOpen(!island.classList.contains('open'));
+                togglePin();
             }
         });
         document.addEventListener('click', function (e) {
             if (!island.classList.contains('open')) return;
-            if (!island.contains(e.target)) setOpen(false);
+            if (!island.contains(e.target)) { pinned = false; cancelClose(); setOpen(false); }
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && island.classList.contains('open')) {
+                pinned = false; cancelClose(); setOpen(false);
+            }
         });
         island.querySelectorAll('.island-link').forEach(function (link) {
-            link.addEventListener('click', function () { setOpen(false); });
+            link.addEventListener('click', function () { pinned = false; cancelClose(); setOpen(false); });
         });
         window.VamIsland = { setOpen: setOpen };
     }
