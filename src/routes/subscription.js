@@ -34,41 +34,18 @@ const {
     frontClientAlpn,
     frontPublicHost,
 } = require('../utils/xrayFront');
+const {
+    detectFormat,
+    isHappUa,
+    isIncyUa,
+    isXrayProfileClient,
+    isBrowser,
+    normalizeFormatParam,
+    computeEtag,
+    refreshSubscriptionUserinfo,
+} = require('../utils/subscriptionFormat');
 
 // ==================== HELPERS ====================
-
-function detectFormat(userAgent) {
-    const ua = (userAgent || '').toLowerCase();
-    // Shadowrocket expects base64-encoded URI list
-    if (/shadowrocket/.test(ua)) return 'shadowrocket';
-    // HAPP / Incy (Xray-core based) — plain URI list, upgraded to xray-json when
-    // a virtual node is present (see generateSubscriptionData).
-    if (/happ/.test(ua)) return 'uri';
-    if (/incy/.test(ua)) return 'uri';
-    // sing-box based clients — checked BEFORE clash because Hiddify UA contains "ClashMeta"
-    // Example: "HiddifyNext/4.0.5 (android) like ClashMeta v2ray sing-box"
-    if (/hiddify|hiddifynext|sing-?box|nekobox|nekoray|neko|sfi|sfa|sfm|sft|karing/.test(ua)) return 'singbox';
-    if (/clash|stash|surge|loon/.test(ua)) return 'clash';
-    return 'uri';
-}
-
-// HAPP and Incy: Xray-core clients sharing our xray-json profile array and the
-// ://routing/onadd/{base64} routing deep-link (only the URL scheme differs).
-function isHappUa(userAgent) {
-    return /happ/i.test(userAgent || '');
-}
-function isIncyUa(userAgent) {
-    return /incy/i.test(userAgent || '');
-}
-function isXrayProfileClient(userAgent) {
-    return isHappUa(userAgent) || isIncyUa(userAgent);
-}
-
-function isBrowser(req) {
-    const accept = req.headers.accept || '';
-    const ua = (req.headers['user-agent'] || '').toLowerCase();
-    return accept.includes('text/html') && /mozilla|chrome|safari|edge|opera/.test(ua);
-}
 
 async function getUserByToken(token) {
     const user = await HyUser.findOne({ subscriptionToken: token })
@@ -3179,7 +3156,7 @@ function sendFakeSubscription(res, user, format, userAgent, settings, remark, fa
         expireAt: user.expireAt,
     };
     res.set('Cache-Control', 'no-store');
-    sendCachedSubscription(res, data, format, userAgent, settings, extraHeaders);
+    sendCachedSubscription(req, res, data, format, userAgent, settings, extraHeaders);
 }
 
 // Default fake-location names per invalid reason, used only when the admin
@@ -3231,7 +3208,7 @@ async function rejectOrSoftBlock(req, res, user, validation, ctx = {}) {
             .send(html);
     }
 
-    const format = req.query.format || detectFormat(userAgent);
+    const format = normalizeFormatParam(req.query.format) || detectFormat(userAgent);
     const extraHeaders = {};
     if (/happ/i.test(userAgent) && announce) {
         extraHeaders['announce'] = encodeAnnounceHeader(announce);
@@ -3361,7 +3338,9 @@ async function serveSubscription(req, res, ctx) {
     const { user, cacheToken, baseUrl } = ctx;
     const userAgent = req.headers['user-agent'] || 'unknown';
 
-    let format = req.query.format;
+    // Explicit ?format wins when known; junk values fall back to UA detection
+    // instead of exploding the cache keyspace.
+    let format = normalizeFormatParam(req.query.format);
     const browser = isBrowser(req);
 
     // Browser without ?format — render HTML and bypass cache (no shared state
@@ -3402,7 +3381,10 @@ async function serveSubscription(req, res, ctx) {
     const cached = await cache.getSubscription(cacheToken, cacheFormat);
     if (cached) {
         logger.debug(`[Sub] Cache HIT: ${cacheToken}:${cacheFormat}`);
-        return sendCachedSubscription(res, cached, format, userAgent, settings, hwidHeaders);
+        // Content keeps its TTL, but traffic/expiry/titles come from the
+        // freshly loaded user — Subscription-Userinfo never goes stale.
+        refreshSubscriptionUserinfo(cached, user, getSubscriptionTitle(user));
+        return sendCachedSubscription(req, res, cached, format, userAgent, settings, hwidHeaders);
     }
 
     logger.debug(`[Sub] Cache MISS: token=${cacheToken.substring(0,8)}..., format=${cacheFormat}`);
@@ -3417,7 +3399,7 @@ async function serveSubscription(req, res, ctx) {
 
     const subscriptionData = generateSubscriptionData(user, nodes, format, userAgent, settings?.subscription?.happProviderId || '', settings?.routing);
     await cache.setSubscription(cacheToken, cacheFormat, subscriptionData);
-    return sendCachedSubscription(res, subscriptionData, format, userAgent, settings, hwidHeaders);
+    return sendCachedSubscription(req, res, subscriptionData, format, userAgent, settings, hwidHeaders);
 }
 
 /**
@@ -3541,7 +3523,7 @@ function generateSubscriptionData(user, nodes, format, userAgent, happProviderId
 /**
  * Send cached subscription response
  */
-function sendCachedSubscription(res, data, format, userAgent, settings, hwidExtraHeaders = null) {
+function sendCachedSubscription(req, res, data, format, userAgent, settings, hwidExtraHeaders = null) {
     // contentFormat reflects what's actually in `data.content` and may differ
     // from the requested `format` when we transparently upgrade the response
     // (HAPP UA + virtual node → xray-json). Falls back to `format` for legacy
@@ -3640,6 +3622,16 @@ function sendCachedSubscription(res, data, format, userAgent, settings, hwidExtr
         for (const [k, v] of Object.entries(hwidExtraHeaders)) {
             if (v != null && v !== '') headers[k] = v;
         }
+    }
+
+    // ETag over the final body (after HAPP prepends): byte-identical content
+    // answers 304 so clients skip re-download. A stale client header set is
+    // harmless — the next 200 refreshes Subscription-Userinfo.
+    const etag = data.etag || computeEtag(content);
+    headers['ETag'] = etag;
+    const ifNoneMatch = req?.headers?.['if-none-match'];
+    if (ifNoneMatch && ifNoneMatch.split(',').map((s) => s.trim()).includes(etag)) {
+        return res.status(304).set({ ETag: etag }).end();
     }
 
     res.set(headers);

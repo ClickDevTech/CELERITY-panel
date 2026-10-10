@@ -160,6 +160,83 @@ Object.assign(locals, {
 
 <%- include('partials/node-form/management') %>
 
+<%# Live background auto-setup progress (the "setup automatically" checkbox).
+   Hidden unless a setup task exists; polls GET setup-task while running. %>
+<div class="card mt-2" id="setupProgressCard" style="display:none">
+    <div class="card-header">
+        <h2><i class="ti ti-bolt"></i> <%= t('nodes.setupProgressTitle') %></h2>
+        <span class="status-indicator" id="setupProgressStatus"><span class="status-dot"></span><span>…</span></span>
+    </div>
+    <div class="card-body">
+        <pre class="qa-log" id="setupProgressLog" style="display:block"></pre>
+    </div>
+</div>
+<script>
+(function () {
+    const nodeId = <%- JSON.stringify(node?._id ? String(node._id) : '') %>;
+    const started = <%- JSON.stringify(typeof setupStarted !== 'undefined' && setupStarted ? true : false) %>;
+    const i18nSetup = {
+        running: <%- JSON.stringify(t('nodes.setupProgressRunning')) %>,
+        done: <%- JSON.stringify(t('nodes.setupProgressDone')) %>,
+        failed: <%- JSON.stringify(t('nodes.setupProgressFailed')) %>,
+        started: <%- JSON.stringify(t('nodes.setupProgressStarted')) %>,
+    };
+    if (!nodeId) return;
+    const card = document.getElementById('setupProgressCard');
+    const logEl = document.getElementById('setupProgressLog');
+    const statusEl = document.getElementById('setupProgressStatus');
+    let shown = false;
+    let timer = null;
+    function setStatus(state, text) {
+        statusEl.className = 'status-indicator status-' + state;
+        statusEl.innerHTML = '<span class="status-dot"></span>';
+        statusEl.appendChild(document.createTextNode(text));
+    }
+    async function poll() {
+        let data = null;
+        try {
+            const cf = window.celerityFetch || fetch;
+            const res = await cf('/panel/nodes/' + nodeId + '/setup-task');
+            if (res.status === 404) {
+                if (!shown) return; // no task (yet) — keep polling a little
+                stop();
+                return;
+            }
+            data = await res.json();
+        } catch (e) { stop(); return; }
+        if (!data) return;
+        shown = true;
+        card.style.display = '';
+        logEl.textContent = (data.logs || []).join('\n');
+        logEl.scrollTop = logEl.scrollHeight;
+        if (data.status === 'running') {
+            setStatus('syncing', i18nSetup.running);
+        } else if (data.status === 'done') {
+            setStatus('online', i18nSetup.done);
+            showToast(i18nSetup.done);
+            stop();
+            setTimeout(() => location.reload(), 2500);
+        } else {
+            setStatus('error', (i18nSetup.failed + (data.error ? ': ' + data.error : '')));
+            showToast(i18nSetup.failed, 'error');
+            stop();
+        }
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+    function start() {
+        if (started && typeof showToast === 'function') showToast(i18nSetup.started, 'info');
+        poll();
+        timer = setInterval(poll, 2500);
+    }
+    // Deferred app.js (celerityFetch/showToast) runs before DOMContentLoaded.
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start);
+    } else {
+        start();
+    }
+})();
+</script>
+
 <%- include('partials/node-form/probes') %>
 
 <%- include('partials/node-form/scripts') %>
