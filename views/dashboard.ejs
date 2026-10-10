@@ -719,8 +719,8 @@ async function loadNodesStats(onlyIds) {
             const diskPercent = data.disk && data.disk.total > 0 ? data.disk.percent : null;
 
             let cpuColor = 'var(--text-primary)';
-            if (cpuPercent >= 80) cpuColor = '#ef4444';
-            else if (cpuPercent >= 60) cpuColor = '#f59e0b';
+            if (cpuPercent >= 80) cpuColor = '#fafafa';
+            else if (cpuPercent >= 60) cpuColor = '#a1a1aa';
 
             const diskDesktop = diskPercent != null ? `<span class="disk">Disk: ${diskPercent}%</span>` : '';
             const diskMobile = diskPercent != null ? ` / ${diskPercent}%` : '';

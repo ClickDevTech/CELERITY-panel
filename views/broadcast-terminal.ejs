@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#6366f1">
+    <meta name="theme-color" content="#0a0a0b">
     <title><%= typeof t !== 'undefined' ? t('broadcast.title') : 'Broadcast Terminal' %> | VamPanel</title>
     <%- include('partials/favicon') %>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -65,10 +65,9 @@
         }
 
         .header-logo .logo-text {
-            background: linear-gradient(135deg, var(--accent) 0%, #a855f7 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: #ffffff;
+            font-weight: 800;
+            letter-spacing: 3px;
         }
 
         .header-divider {
@@ -127,8 +126,8 @@
         }
 
         .broadcast-tab.active {
-            color: #fff;
-            background: linear-gradient(135deg, var(--accent), #7c3aed);
+            color: #09090b;
+            background: #f4f4f5;
             box-shadow: 0 8px 26px rgba(255,255,255,0.28);
         }
 

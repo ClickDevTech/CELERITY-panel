@@ -7357,3 +7357,84 @@ body::before {
 [data-tilt]:hover::after {
     opacity: 1;
 }
+
+/* --- Contrast safety net: light surfaces always get dark text --- */
+body span[style*="background:var(--accent)"],
+body span[style*="background: var(--accent)"] {
+    color: #09090b !important;
+}
+body .view-tab.active,
+body .cron-mode-btn.active,
+body .broadcast-tab.active,
+body .preset-badge,
+body .upd-step.is-done .upd-step-ic,
+body .icon-pick-cell:hover {
+    color: #09090b;
+}
+
+/* --- Island v2: subtler, fits all links --- */
+.island {
+    max-width: 300px;
+    background: rgba(8, 8, 10, 0.7);
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.island-word {
+    font-size: 10px;
+    letter-spacing: 2px;
+    opacity: 0.85;
+}
+.island-link {
+    padding: 8px 11px;
+    font-size: 12.5px;
+    gap: 6px;
+}
+.island-link .ti {
+    font-size: 15px;
+}
+@media (hover: hover) {
+    .island:hover,
+    .island.open,
+    .island:focus-within {
+        border-radius: 26px;
+        max-width: 880px;
+    }
+    .island:hover .island-nav,
+    .island.open .island-nav,
+    .island:focus-within .island-nav {
+        max-width: 820px;
+        opacity: 1;
+    }
+}
+.island.open {
+    border-radius: 26px;
+    max-width: 880px;
+}
+.island.open .island-nav {
+    max-width: 820px;
+    opacity: 1;
+}
+/* Staggered link entrance */
+.island.open .island-link:nth-child(1) { transition-delay: 0.02s; }
+.island.open .island-link:nth-child(2) { transition-delay: 0.05s; }
+.island.open .island-link:nth-child(3) { transition-delay: 0.08s; }
+.island.open .island-link:nth-child(4) { transition-delay: 0.11s; }
+.island.open .island-link:nth-child(5) { transition-delay: 0.14s; }
+.island.open .island-link:nth-child(6) { transition-delay: 0.17s; }
+.island.open .island-link:nth-child(7) { transition-delay: 0.2s; }
+.island.open .island-link:nth-child(8) { transition-delay: 0.23s; }
+@media (max-width: 1100px) {
+    .island-nav {
+        overflow-x: auto;
+        max-width: 62vw !important;
+        scrollbar-width: none;
+    }
+    .island-nav::-webkit-scrollbar { display: none; }
+}
+/* Tilt is JS-driven (lerp) — no CSS transition fighting */
+[data-tilt] {
+    transition: box-shadow 0.2s ease, border-color 0.15s ease;
+}
+.vam-fog {
+    transition: none;
+}

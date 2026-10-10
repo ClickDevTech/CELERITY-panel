@@ -417,10 +417,10 @@ function nodeMetaFor(node) {
             <div class="network-legend" id="networkLegend">
                 <div class="legend-title"><%= t('network.legendTitle') %></div>
                 <div class="legend-section">
-                    <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span><%= t('network.legendOnline') %></div>
-                    <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span><%= t('network.legendOffline') %></div>
-                    <div class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span><%= t('network.legendDeployed') %></div>
-                    <div class="legend-item"><span class="legend-dot" style="background:#64748b"></span><%= t('network.legendPending') %></div>
+                    <div class="legend-item"><span class="legend-dot" style="background:#fafafa"></span><%= t('network.legendOnline') %></div>
+                    <div class="legend-item"><span class="legend-dot" style="background:#52525b"></span><%= t('network.legendOffline') %></div>
+                    <div class="legend-item"><span class="legend-dot" style="background:#e4e4e7"></span><%= t('network.legendDeployed') %></div>
+                    <div class="legend-item"><span class="legend-dot" style="background:#3f3f46"></span><%= t('network.legendPending') %></div>
                 </div>
                 <div class="legend-divider"></div>
                 <div class="legend-section">
@@ -897,10 +897,10 @@ function nodeMetaFor(node) {
     background: rgba(255, 255, 255, 0.05);
 }
 .view-tab.active {
-    background: linear-gradient(135deg, var(--accent, #6366f1) 0%, var(--accent-gradient-end, #7c3aed) 100%);
-    color: #fff;
-    box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35),
-                0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    background: #f4f4f5;
+    color: #09090b;
+    box-shadow: 0 6px 20px rgba(255, 255, 255, 0.25),
+                0 1px 0 rgba(255, 255, 255, 0.4) inset,
                 0 -1px 0 rgba(0, 0, 0, 0.25) inset;
 }
 .tab-badge {
@@ -910,7 +910,7 @@ function nodeMetaFor(node) {
     font-size: 11px;
 }
 .view-tab.active .tab-badge {
-    background: rgba(255,255,255,0.25);
+    background: rgba(0,0,0,0.14);
 }
 /* Cascade role badge in node table */
 .badge-cascade {
@@ -923,9 +923,9 @@ function nodeMetaFor(node) {
     margin-left: 4px;
     vertical-align: middle;
 }
-.badge-cascade.portal { background: #6366f120; border: 1px solid #6366f1; color: #818cf8; }
-.badge-cascade.bridge { background: #f59e0b20; border: 1px solid #f59e0b; color: #fbbf24; }
-.badge-cascade.relay  { background: #8b5cf620; border: 1px solid #8b5cf6; color: #a78bfa; }
+.badge-cascade.portal { background: rgba(255,255,255,0.10); border: 1px solid #e4e4e7; color: #f4f4f5; }
+.badge-cascade.bridge { background: rgba(255,255,255,0.06); border: 1px solid #a1a1aa; color: #d4d4d8; }
+.badge-cascade.relay  { background: rgba(255,255,255,0.08); border: 1px solid #d4d4d8; color: #e4e4e7; }
 /* Drag-and-drop ghost row */
 .sortable-ghost { opacity: 0.4; background: var(--accent, #6366f1) !important; }
 .drag-handle { cursor: grab; user-select: none; white-space: nowrap; vertical-align: middle; }

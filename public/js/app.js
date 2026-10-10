@@ -178,36 +178,48 @@
     window.VamTilt = initTilt;
 
     // ---------- Parallax tilt for [data-tilt] + .stat-card ----------
-    // Subtle 3D tilt following the pointer. Disabled on touch, coarse
-    // pointers and prefers-reduced-motion.
+    // Lerped (damped) motion: pointer sets a target, a rAF loop eases the
+    // card towards it — no jitter, no transition fighting. Disabled on touch,
+    // coarse pointers and prefers-reduced-motion.
     function initTilt() {
         var fine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
         var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (!fine || calm) return;
         var MAX = 6; // degrees — visible but tasteful
+        var EASE = 0.12;
         document.querySelectorAll('.stat-card, [data-tilt]').forEach(function (el) {
             if (el.hasAttribute('data-tilt-init')) return;
             el.setAttribute('data-tilt-init', '1');
-            var raf = 0;
+            var st = { tx: 0, ty: 0, cx: 0, cy: 0, running: false };
+            function frame() {
+                st.cx += (st.tx - st.cx) * EASE;
+                st.cy += (st.ty - st.cy) * EASE;
+                if (Math.abs(st.tx - st.cx) < 0.02 && Math.abs(st.ty - st.cy) < 0.02) {
+                    st.cx = st.tx; st.cy = st.ty;
+                    st.running = false;
+                    if (st.tx === 0 && st.ty === 0) { el.style.transform = ''; return; }
+                } else {
+                    requestAnimationFrame(frame);
+                }
+                el.style.transform =
+                    'perspective(900px) rotateX(' + (-st.cy * MAX).toFixed(3) +
+                    'deg) rotateY(' + (st.cx * MAX).toFixed(3) + 'deg) translateY(-2px)';
+            }
+            function kick() {
+                if (!st.running) { st.running = true; requestAnimationFrame(frame); }
+            }
             el.addEventListener('pointermove', function (e) {
                 if (e.pointerType && e.pointerType !== 'mouse') return;
-                cancelAnimationFrame(raf);
-                raf = requestAnimationFrame(function () {
-                    var r = el.getBoundingClientRect();
-                    var px = (e.clientX - r.left) / r.width - 0.5;
-                    var py = (e.clientY - r.top) / r.height - 0.5;
-                    el.classList.add('is-moving');
-                    el.style.setProperty('--mx', ((px + 0.5) * 100).toFixed(1) + '%');
-                    el.style.setProperty('--my', ((py + 0.5) * 100).toFixed(1) + '%');
-                    el.style.transform =
-                        'perspective(900px) rotateX(' + (-py * MAX).toFixed(2) +
-                        'deg) rotateY(' + (px * MAX).toFixed(2) + 'deg) translateY(-2px)';
-                });
+                var r = el.getBoundingClientRect();
+                st.tx = (e.clientX - r.left) / r.width - 0.5;
+                st.ty = (e.clientY - r.top) / r.height - 0.5;
+                el.style.setProperty('--mx', ((st.tx + 0.5) * 100).toFixed(1) + '%');
+                el.style.setProperty('--my', ((st.ty + 0.5) * 100).toFixed(1) + '%');
+                kick();
             });
             el.addEventListener('pointerleave', function () {
-                cancelAnimationFrame(raf);
-                el.classList.remove('is-moving');
-                el.style.transform = '';
+                st.tx = 0; st.ty = 0;
+                kick();
             });
         });
     }
@@ -242,16 +254,22 @@
         var fine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
         var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (!fine || calm) return;
-        var raf = 0;
+        var tx = 0, ty = 0, cx = 0, cy = 0, running = false;
+        function frame() {
+            cx += (tx - cx) * 0.07;
+            cy += (ty - cy) * 0.07;
+            document.documentElement.style.setProperty('--fx', cx.toFixed(2) + 'px');
+            document.documentElement.style.setProperty('--fy', cy.toFixed(2) + 'px');
+            if (Math.abs(tx - cx) < 0.05 && Math.abs(ty - cy) < 0.05) { running = false; return; }
+            requestAnimationFrame(frame);
+        }
         document.addEventListener('pointermove', function (e) {
             if (e.pointerType && e.pointerType !== 'mouse') return;
-            cancelAnimationFrame(raf);
-            raf = requestAnimationFrame(function () {
-                var px = e.clientX / window.innerWidth - 0.5;
-                var py = e.clientY / window.innerHeight - 0.5;
-                document.documentElement.style.setProperty('--fx', (-px * 22).toFixed(1) + 'px');
-                document.documentElement.style.setProperty('--fy', (-py * 22).toFixed(1) + 'px');
-            });
+            var px = e.clientX / window.innerWidth - 0.5;
+            var py = e.clientY / window.innerHeight - 0.5;
+            tx = -px * 22;
+            ty = -py * 22;
+            if (!running) { running = true; requestAnimationFrame(frame); }
         }, { passive: true });
     }
 

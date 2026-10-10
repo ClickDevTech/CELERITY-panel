@@ -102,9 +102,9 @@
     border: 1.5px solid currentColor;
 }
 
-.legend-portal { background: rgba(99, 102, 241, 0.3); border-color: #e4e4e7; color: #e4e4e7; }
-.legend-bridge { background: rgba(245, 158, 11, 0.3); border-color: #d4d4d8; color: #d4d4d8; }
-.legend-relay  { background: rgba(139, 92, 246, 0.3); border-color: #d4d4d8; color: #d4d4d8; }
+.legend-portal { background: rgba(255, 255, 255, 0.22); border-color: #e4e4e7; color: #e4e4e7; }
+.legend-bridge { background: rgba(255, 255, 255, 0.12); border-color: #d4d4d8; color: #d4d4d8; }
+.legend-relay  { background: rgba(255, 255, 255, 0.16); border-color: #d4d4d8; color: #d4d4d8; }
 
 .legend-line {
     width: 22px;
