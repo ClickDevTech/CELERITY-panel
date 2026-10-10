@@ -21,6 +21,34 @@ const BACKUP_FILE_PREFIXES = [BACKUP_FILE_PREFIX, ...LEGACY_BACKUP_FILE_PREFIXES
 const BACKUP_META_FILE = 'celerity-meta.json';
 
 /**
+ * Verify a finished .tar.gz archive without extracting it: `tar -tzf` reads
+ * the whole gzip stream and the tar index, so a truncated or corrupt file
+ * fails here instead of surfacing months later at restore time.
+ *
+ * Returns { ok, entries } — entries is the file count inside the archive.
+ * Throws on any verification failure (caller deletes the archive).
+ */
+async function verifyArchive(archivePath, backupName) {
+    let stdout = '';
+    try {
+        ({ stdout } = await execFileAsync('tar', ['-tzf', archivePath]));
+    } catch (error) {
+        throw new Error(`Archive verification failed (unreadable tar.gz): ${error.message}`);
+    }
+    const entries = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (entries.length === 0) {
+        throw new Error('Archive verification failed: empty archive');
+    }
+    // Only the manifest sidecar counts — a bare directory entry is not proof.
+    const hasMeta = entries.some((e) => e === BACKUP_META_FILE || e.endsWith(`/${BACKUP_META_FILE}`));
+    if (!hasMeta) {
+        throw new Error('Archive verification failed: manifest entry missing');
+    }
+    logger.info(`[Backup] Archive verified: ${entries.length} entries`);
+    return { ok: true, entries: entries.length };
+}
+
+/**
  * Compare the ENCRYPTION_KEY fingerprint recorded in an archive against the one
  * this installation runs with.
  *
@@ -153,6 +181,16 @@ async function createBackup(settings) {
         const stats = await fs.stat(archivePath);
         const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
 
+        // Verify before upload/rotation: a corrupt archive must never replace
+        // good ones or land in S3. Throws → caught below, archive deleted.
+        let verifiedEntries = 0;
+        try {
+            ({ entries: verifiedEntries } = await verifyArchive(archivePath, backupName));
+        } catch (verifyError) {
+            await fs.rm(archivePath, { force: true }).catch(() => {});
+            throw verifyError;
+        }
+
         let s3 = {
             enabled: !!settings?.backup?.s3?.enabled,
             success: false,
@@ -191,6 +229,7 @@ async function createBackup(settings) {
             path: archivePath,
             size: stats.size,
             sizeMB: parseFloat(sizeMB),
+            verifiedEntries,
             s3,
         };
 
@@ -700,6 +739,7 @@ async function restoreUploadedBackup(filePath, originalName) {
 
 module.exports = {
     createBackup,
+    verifyArchive,
     listBackups,
     listS3Backups,
     downloadFromS3,

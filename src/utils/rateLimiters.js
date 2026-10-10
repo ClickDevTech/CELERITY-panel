@@ -24,9 +24,80 @@ const _state = {
     authPerSecond: 200,
 };
 
+/**
+ * Hybrid Redis/memory store for express-rate-limit v7.
+ *
+ * Uses Redis (shared across instances and restarts) when connected, and falls
+ * back to the built-in in-memory bucket when Redis is down — limiting never
+ * hard-fails requests. Lazy-requires cacheService to avoid a require cycle
+ * (cacheService never requires this module).
+ */
+function createHybridStore(prefix, windowMs) {
+    const mem = new rateLimit.MemoryStore();
+    const getRedis = () => {
+        try {
+            const cacheService = require('../services/cacheService');
+            return cacheService.isConnected() ? cacheService.redis : null;
+        } catch {
+            return null;
+        }
+    };
+    return {
+        init() {
+            if (typeof mem.init === 'function') mem.init({ windowMs });
+        },
+        async increment(key) {
+            const redis = getRedis();
+            if (redis) {
+                try {
+                    const rk = `rl:${prefix}:${key}`;
+                    const results = await redis.multi([['incr', rk], ['pttl', rk]]).exec();
+                    const hits = results?.[0]?.[1];
+                    let ttl = results?.[1]?.[1];
+                    if (typeof hits === 'number') {
+                        if (ttl === -1) {
+                            await redis.pexpire(rk, windowMs);
+                            ttl = windowMs;
+                        }
+                        return {
+                            totalHits: hits,
+                            resetTime: new Date(Date.now() + (typeof ttl === 'number' && ttl > 0 ? ttl : windowMs)),
+                        };
+                    }
+                } catch (err) {
+                    logger.warn(`[RateLimit] Redis store failed, memory fallback: ${err.message}`);
+                }
+            }
+            return mem.increment(key);
+        },
+        async decrement(key) {
+            const redis = getRedis();
+            if (redis) {
+                try {
+                    await redis.decr(`rl:${prefix}:${key}`);
+                    return;
+                } catch { /* fall through */ }
+            }
+            if (typeof mem.decrement === 'function') return mem.decrement(key);
+        },
+        async resetKey(key) {
+            const redis = getRedis();
+            if (redis) {
+                try {
+                    await redis.del(`rl:${prefix}:${key}`);
+                } catch { /* fall through */ }
+            }
+            if (typeof mem.resetKey === 'function') return mem.resetKey(key);
+        },
+    };
+}
+
 const subscriptionLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: () => _state.subscriptionPerMinute,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: createHybridStore('sub', 60 * 1000),
     handler: (req, res) => {
         logger.warn(`[Sub] Rate limit: ${req.ip}`);
         res.status(429).type('text/plain').send('# Too many requests');
@@ -42,6 +113,9 @@ const authLimiter = rateLimit({
     windowMs: 1000,
     max: () => _state.authPerSecond,
     keyGenerator: authKey,
+    standardHeaders: false,
+    legacyHeaders: false,
+    store: createHybridStore('auth', 1000),
     handler: (req, res) => {
         logger.warn(`[Auth] Rate limit: ${authKey(req)}`);
         res.status(429).json({ ok: false });
@@ -65,4 +139,5 @@ module.exports = {
     authLimiter,
     applyRateLimits,
     getRateLimitState,
+    createHybridStore,
 };

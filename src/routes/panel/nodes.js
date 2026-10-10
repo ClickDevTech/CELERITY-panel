@@ -27,6 +27,7 @@ const { getActiveGroups, invalidateNodesCache, normalizeSubscriptionVariants } =
 const { buildNodeUiMeta } = require('../../utils/nodeUi');
 const { isServerlessNode, checkCascadeMembership } = require('../../utils/nodeTypes');
 const nodeSetupLock = require('../../utils/nodeSetupLock');
+const setupTaskStore = require('../../utils/setupTaskStore');
 const {
     normalizeCdnConfig,
     validateCdnOrigin,
@@ -106,6 +107,10 @@ const cdnResolveLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+
+// Background auto-setup progress feed lives in setupTaskStore (in-memory,
+// capped, lazily expired). Polled via GET /nodes/:id/setup-task.
+const getSetupTask = setupTaskStore.getTask;
 
 async function reauthenticateXrayVersionChange(req, res) {
     const password = String(req.body?.currentPassword || '');
@@ -660,12 +665,94 @@ router.post('/nodes', async (req, res) => {
         logger.info(`[Panel] Created ${nodeType} node ${name} (${isServerlessNode(nodeType) ? nodeType : ip})`);
         // Invalidate active-nodes, subscription, and dashboard caches so changes are reflected immediately
         await invalidateNodesCache();
-        sendNodeFormResult(req, res, `/panel/nodes/${newNode._id}`);
+        // "Setup automatically" checkbox: install in the background (root@ip
+        // + password from the form), the node page picks up the status.
+        // The redirect carries ?setup=started so the form shows the live log.
+        let createdRedirect = `/panel/nodes/${newNode._id}`;
+        if (req.body.autoSetup === 'on' && (nodeType === 'hysteria' || nodeType === 'xray')
+            && (newNode.ssh?.password || newNode.ssh?.privateKey)) {
+            const bgId = String(newNode._id);
+            setImmediate(() => {
+                runAutoSetupInBackground(bgId).catch((e) => {
+                    logger.error(`[Panel] Background auto-setup failed: ${e.message}`);
+                });
+            });
+            createdRedirect += '?setup=started';
+        }
+        sendNodeFormResult(req, res, createdRedirect);
     } catch (error) {
         logger.error(`[Panel] Create node error: ${error.message}`);
         sendNodeFormResult(req, res, '/panel/nodes/add', error.message, 500);
     }
 });
+
+// Background auto-setup after node creation (the "setup automatically"
+// checkbox). Mirrors POST /nodes/:id/setup but never blocks the response.
+// Progress is published into setupTasks for GET /nodes/:id/setup-task.
+async function runAutoSetupInBackground(nodeId) {
+    let lockKey = null;
+    const task = setupTaskStore.createTask(nodeId);
+    const finish = (status, error = null) => setupTaskStore.finishTask(task, status, error);
+    try {
+        const node = await HyNode.findById(nodeId);
+        if (!node || isServerlessNode(node)) {
+            finish('error', 'Node not found');
+            return;
+        }
+        if (!node.ssh?.password && !node.ssh?.privateKey) {
+            finish('error', 'SSH credentials missing');
+            return;
+        }
+        lockKey = String(node._id);
+        if (!nodeSetupLock.acquire(lockKey, 'Node auto-setup')) {
+            logger.warn(`[Panel] Auto-setup skipped for ${node.name}: setup already running`);
+            finish('error', 'Setup already running for this node');
+            return;
+        }
+        logger.info(`[Panel] Auto-setup started for node ${node.name} (${node.ip})`);
+        const onLog = (line) => setupTaskStore.pushLog(task, line);
+        let result;
+        if (node.type === 'xray' && node.cascadeRole === 'bridge') {
+            result = await nodeSetup.setupXrayNode(node, { restartService: false, exitOnly: true, onLog });
+        } else if (node.type === 'xray') {
+            result = await nodeSetup.setupXrayNodeWithAgent(node, { restartService: true, onLog });
+        } else {
+            const skipHopping = isSameVpsAsPanel(node);
+            result = await nodeSetup.setupNode(node, {
+                installHysteria: true,
+                setupPortHopping: !skipHopping,
+                restartService: true,
+                onLog,
+            });
+        }
+        for (const line of result.logs || []) setupTaskStore.pushLog(task, line);
+        if (result.success) {
+            const updateFields = { status: 'online', lastSync: new Date(), lastError: '', healthFailures: 0 };
+            if (node.type !== 'xray') updateFields.useTlsFiles = result.useTlsFiles;
+            if (node.cascadeRole === 'bridge') updateFields.status = 'offline';
+            await HyNode.findByIdAndUpdate(nodeId, { $set: updateFields });
+            logger.info(`[Panel] Auto-setup finished for node ${node.name}`);
+            finish('done');
+        } else {
+            await HyNode.findByIdAndUpdate(nodeId, {
+                $set: { status: 'error', lastError: result.error, healthFailures: 0 },
+            });
+            logger.warn(`[Panel] Auto-setup failed for node ${node.name}: ${result.error}`);
+            finish('error', result.error);
+        }
+        await invalidateNodesCache();
+    } catch (error) {
+        logger.error(`[Panel] Auto-setup error: ${error.message}`);
+        finish('error', error.message);
+        try {
+            await HyNode.findByIdAndUpdate(nodeId, {
+                $set: { status: 'error', lastError: error.message, healthFailures: 0 },
+            });
+        } catch (_e) { /* ignore */ }
+    } finally {
+        if (lockKey) nodeSetupLock.release(lockKey);
+    }
+}
 
 // POST /panel/nodes/scan-sni - Stream TLS 1.3+H2 scan results as SSE
 router.post('/nodes/scan-sni', sniScanLimiter, async (req, res) => {
@@ -848,6 +935,23 @@ router.get('/nodes/:id/xray-version-task', async (req, res) => {
     return res.json(xrayVersionService.getTask(req.params.id));
 });
 
+// GET /panel/nodes/:id/setup-task — live progress of a background auto-setup
+// (the "setup automatically" checkbox). Polled by the node form.
+router.get('/nodes/:id/setup-task', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+        return res.status(400).json({ error: 'Invalid node id' });
+    }
+    const task = getSetupTask(req.params.id);
+    if (!task) return res.status(404).json({ error: 'No setup task for this node' });
+    return res.json({
+        status: task.status,
+        logs: task.logs,
+        startedAt: task.startedAt,
+        finishedAt: task.finishedAt,
+        error: task.error,
+    });
+});
+
 router.post('/nodes/:id/xray-version', xrayVersionApplyLimiter, async (req, res) => {
     try {
         if (!mongoose.isValidObjectId(req.params.id)) {
@@ -1020,6 +1124,7 @@ router.get('/nodes/:id', async (req, res) => {
             candidateNodes,
             cascadeLinks: cascadeLinks || [],
             error: req.query.error || null,
+            setupStarted: req.query.setup === 'started',
             panelDomain: config.PANEL_DOMAIN || '',
             lastInitScript: settings?.lastInitScript || '',
             canAddPairedProtocol,

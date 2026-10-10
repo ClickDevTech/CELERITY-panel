@@ -339,13 +339,13 @@
     align-items: center;
     justify-content: center;
     color: var(--danger);
-    background: rgba(239, 68, 68, 0.08);
-    border-color: rgba(239, 68, 68, 0.22);
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.22);
 }
 .cdn-edge-remove:hover {
-    color: #fff;
-    background: var(--danger);
-    border-color: var(--danger);
+    color: #09090b;
+    background: #f4f4f5;
+    border-color: #f4f4f5;
 }
 @media (max-width: 760px) {
     .cdn-connection-flow {
@@ -2831,7 +2831,7 @@ document.getElementById('generateSshKeyBtn')?.addEventListener('click', async fu
         const data = await res.json();
         if (data.success) {
             statusEl.textContent = '<%= t('nodes.sshKeyInstalled') %>';
-            statusEl.style.color = 'var(--color-success, #22c55e)';
+            statusEl.style.color = 'var(--color-success, #f4f4f5)';
             // Update UI to show key is now set
             const label = document.querySelector('label[for="sshPrivateKey"]');
             if (label && !label.querySelector('.badge')) {
@@ -2843,7 +2843,7 @@ document.getElementById('generateSshKeyBtn')?.addEventListener('click', async fu
             }
         } else {
             statusEl.textContent = '<%= t('nodes.sshKeyError') %>: ' + (data.error || 'Unknown error');
-            statusEl.style.color = 'var(--color-danger, #ef4444)';
+            statusEl.style.color = 'var(--color-danger, #d4d4d8)';
         }
     } catch (err) {
         statusEl.textContent = '<%= t('nodes.sshKeyError') %>: ' + err.message;

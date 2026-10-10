@@ -25,11 +25,19 @@ const settingsSchema = new mongoose.Schema({
         userTTL: { type: Number, default: 900 },
         onlineSessionsTTL: { type: Number, default: 10 },
         activeNodesTTL: { type: Number, default: 30 },
+        // Formerly hardcoded in cacheService DEFAULT_TTL — now tunable.
+        settingsTTL: { type: Number, default: 60 },
+        trafficStatsTTL: { type: Number, default: 300 },
+        groupsTTL: { type: Number, default: 300 },
+        dashboardCountsTTL: { type: Number, default: 60 },
     },
     
     rateLimit: {
         subscriptionPerMinute: { type: Number, default: 100 },
         authPerSecond: { type: Number, default: 200 },
+        // Per subscription link: one aggressive client must not eat the
+        // whole global subscription budget.
+        subscriptionPerTokenPerMinute: { type: Number, default: 30 },
     },
     
     sshPool: {
@@ -88,6 +96,10 @@ const settingsSchema = new mongoose.Schema({
         supportUrl:     { type: String, default: '' },
         webPageUrl:     { type: String, default: '' },
         happProviderId: { type: String, default: '' },
+        // Port-hopping entries in subscriptions. OFF by default: links carry
+        // only the single main-port entry; hopping stays available per node
+        // (subscriptionVariants) and per request (?hopping=1) when enabled.
+        hoppingEnabled: { type: Boolean, default: false },
         logoUrl:        { type: String, default: '' },
         pageTitle:      { type: String, default: '' },
         // Instruction shown under the title on the public subscription page.

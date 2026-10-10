@@ -3,29 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= typeof t !== 'undefined' ? t('auth.loginTitle') : 'Panel Login' %> | C³ CELERITY</title>
+    <title><%= typeof t !== 'undefined' ? t('auth.loginTitle') : 'Panel Login' %> | VamPanel</title>
     <%- include('partials/favicon') %>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.min.css">
+    <link rel="stylesheet" href="/fonts/fonts.css?v=1">
+    <link rel="stylesheet" href="/css/vam.min.css?v=1">
 </head>
 <body class="login-page">
     <div class="login-container">
         <div class="login-box">
             <div class="login-header">
-                <span class="logo-icon large">⚡</span>
-                <h1>C³ CELERITY</h1>
-                <a href="https://t.me/First_VPN_Click_bot" target="_blank" style="background: linear-gradient(135deg, var(--accent) 0%, #a855f7 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-decoration: none;">by Click Connect</a>
+                <span class="wordmark large">VAMPANEL</span>
+                <span class="login-brand">vpn panel</span>
             </div>
             
-            <!-- Language Switcher -->
-            <div class="login-lang-switcher">
-                <% const langOptions = typeof languageOptions !== 'undefined' ? languageOptions : []; %>
-                <% langOptions.forEach(function(option) { %>
-                <a href="?lang=<%= encodeURIComponent(option.code) %>" class="lang-btn <%= typeof lang !== 'undefined' && lang === option.code ? 'active' : '' %>"><%= option.label %></a>
-                <% }); %>
-            </div>
-            
+            <!-- Russian only -->
+
             <% const lockoutIsActive = Boolean(lockoutActive && lockoutIso && lockoutUntil); %>
             <% if (error) { %>
             <div class="alert alert-error"><%= error %></div>
@@ -113,7 +105,7 @@
     })();
     </script>
     <% if (typeof appVersion !== 'undefined' && appVersion) { %>
-    <a href="https://github.com/ClickDevTech/CELERITY-panel/releases" target="_blank" rel="noopener" class="login-footer">v<%= appVersion %></a>
+    <a href="https://github.com/shalavochkk/CELERITY-panel/releases" target="_blank" rel="noopener" class="login-footer">v<%= appVersion %></a>
     <% } %>
 </body>
 </html>

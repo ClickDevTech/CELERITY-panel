@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= typeof t !== 'undefined' ? t('auth.totpTitle') : 'Two-factor verification' %> | C³ CELERITY</title>
+    <title><%= typeof t !== 'undefined' ? t('auth.totpTitle') : 'Two-factor verification' %> | VamPanel</title>
     <%- include('partials/favicon') %>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.min.css">
+    <link rel="stylesheet" href="/fonts/fonts.css?v=1">
+    <link rel="stylesheet" href="/css/vam.min.css?v=1">
 </head>
 <body class="login-page">
     <%
@@ -36,8 +35,7 @@
     <div class="login-container<%= shouldShowEnrollment ? ' totp-enrollment' : '' %>">
         <div class="login-box">
             <div class="login-header">
-                <span class="logo-icon large">⚡</span>
-                <h1>C³ CELERITY</h1>
+                <span class="wordmark">VAMPANEL</span>
                 <p><%= resolvedTitle %></p>
             </div>
 

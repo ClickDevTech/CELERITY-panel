@@ -3,32 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= typeof t !== 'undefined' ? t('setup.title') : 'Initial Setup' %> | C³ CELERITY</title>
+    <title><%= typeof t !== 'undefined' ? t('setup.title') : 'Initial Setup' %> | VamPanel</title>
     <%- include('partials/favicon') %>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+    <link rel="stylesheet" href="/fonts/fonts.css?v=1">
+    <link rel="stylesheet" href="/css/vam.min.css?v=1">
+    <link rel="stylesheet" href="/vendor/tabler/tabler-icons.min.css">
 </head>
 <body class="onboarding-page">
     <div class="onboarding-shell">
         <div class="onboarding-card">
             <div class="onboarding-header">
-                <span class="logo-icon">⚡</span>
-                <h1>C³ CELERITY</h1>
-                <a class="onboarding-brand" href="https://t.me/First_VPN_Click_bot" target="_blank" rel="noopener noreferrer">by Click Connect</a>
+                <span class="wordmark">VAMPANEL</span>
+                <span class="onboarding-brand">vpn panel</span>
                 <p class="onboarding-subtitle">
                     <%= typeof t !== 'undefined' ? t('setup.header') : 'Create the first administrator account and prepare the panel for secure onboarding.' %>
                 </p>
             </div>
 
             <div style="text-align:center;">
-                <div class="onboarding-lang-switch">
-                    <% const langOptions = typeof languageOptions !== 'undefined' ? languageOptions : []; %>
-                    <% langOptions.forEach(function(option) { %>
-                    <a href="?lang=<%= encodeURIComponent(option.code) %>" class="<%= typeof lang !== 'undefined' && lang === option.code ? 'active' : '' %>"><%= option.label %></a>
-                    <% }); %>
-                </div>
+                <div class="onboarding-lang-switch" style="display:none"></div>
             </div>
 
             <% if (error) { %>

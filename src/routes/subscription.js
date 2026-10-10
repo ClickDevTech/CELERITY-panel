@@ -34,41 +34,18 @@ const {
     frontClientAlpn,
     frontPublicHost,
 } = require('../utils/xrayFront');
+const {
+    detectFormat,
+    isHappUa,
+    isIncyUa,
+    isXrayProfileClient,
+    isBrowser,
+    normalizeFormatParam,
+    computeEtag,
+    refreshSubscriptionUserinfo,
+} = require('../utils/subscriptionFormat');
 
 // ==================== HELPERS ====================
-
-function detectFormat(userAgent) {
-    const ua = (userAgent || '').toLowerCase();
-    // Shadowrocket expects base64-encoded URI list
-    if (/shadowrocket/.test(ua)) return 'shadowrocket';
-    // HAPP / Incy (Xray-core based) — plain URI list, upgraded to xray-json when
-    // a virtual node is present (see generateSubscriptionData).
-    if (/happ/.test(ua)) return 'uri';
-    if (/incy/.test(ua)) return 'uri';
-    // sing-box based clients — checked BEFORE clash because Hiddify UA contains "ClashMeta"
-    // Example: "HiddifyNext/4.0.5 (android) like ClashMeta v2ray sing-box"
-    if (/hiddify|hiddifynext|sing-?box|nekobox|nekoray|neko|sfi|sfa|sfm|sft|karing/.test(ua)) return 'singbox';
-    if (/clash|stash|surge|loon/.test(ua)) return 'clash';
-    return 'uri';
-}
-
-// HAPP and Incy: Xray-core clients sharing our xray-json profile array and the
-// ://routing/onadd/{base64} routing deep-link (only the URL scheme differs).
-function isHappUa(userAgent) {
-    return /happ/i.test(userAgent || '');
-}
-function isIncyUa(userAgent) {
-    return /incy/i.test(userAgent || '');
-}
-function isXrayProfileClient(userAgent) {
-    return isHappUa(userAgent) || isIncyUa(userAgent);
-}
-
-function isBrowser(req) {
-    const accept = req.headers.accept || '';
-    const ua = (req.headers['user-agent'] || '').toLowerCase();
-    return accept.includes('text/html') && /mozilla|chrome|safari|edge|opera/.test(ua);
-}
 
 async function getUserByToken(token) {
     const user = await HyUser.findOne({ subscriptionToken: token })
@@ -350,8 +327,12 @@ function validateUser(user) {
     return { valid: true };
 }
 
-function getNodeConfigs(node) {
+function getNodeConfigs(node, opts = {}) {
     if (node.type !== 'hysteria') return [];
+    // Port hopping is opt-in: the global subscription.hoppingEnabled switch
+    // (or ?hopping=1) decides whether Hopping entries are published at all.
+    // Nodes pinned to variants:'hopping' fall back to the single TLS entry.
+    const hoppingEnabled = opts.hoppingEnabled !== false;
     const configs = [];
     const host = node.domain || node.ip;
     // SNI logic:
@@ -384,7 +365,7 @@ function getNodeConfigs(node) {
         const tls = { name: 'TLS', host, port: node.port || 443, portRange: '', hopInterval, sni, hasCert, obfs, obfsPassword };
         if (variants !== 'hopping') configs.push(tls);
         // Port 80 removed (used for ACME)
-        if (node.portRange && variants !== 'tls') {
+        if (node.portRange && variants !== 'tls' && hoppingEnabled) {
             configs.push({ name: 'Hopping', host, port: node.port || 443, portRange: node.portRange, hopInterval, sni, hasCert, obfs, obfsPassword });
         }
         // Hopping-only without a range would drop the node from subscriptions.
@@ -1364,7 +1345,7 @@ function buildClashDns(rules, dns) {
 
 // ==================== FORMAT GENERATORS ====================
 
-function generateURIList(user, nodes) {
+function generateURIList(user, nodes, opts = {}) {
     const uris = [];
     const dedupeLabel = _createLabelDeduplicator();
     nodes.forEach(node => {
@@ -1376,7 +1357,7 @@ function generateURIList(user, nodes) {
         if (node.type === 'xray' || node.type === 'cdn') {
             generateVlessURIs(user, node, dedupeLabel).forEach(uri => uris.push(uri));
         } else {
-            getNodeConfigs(node).forEach(cfg => {
+            getNodeConfigs(node, opts).forEach(cfg => {
                 uris.push(generateURI(user, node, cfg, dedupeLabel));
             });
         }
@@ -1494,7 +1475,7 @@ function _buildClashVlessProxies(user, node, dedupeLabel = _passthroughLabel) {
         .map(inbound => _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel));
 }
 
-function generateClashYAML(user, nodes, routing) {
+function generateClashYAML(user, nodes, routing, opts = {}) {
     const auth = `${user.userId}:${user.password}`;
     const proxies = [];
     const proxyNames = [];
@@ -1518,7 +1499,7 @@ function generateClashYAML(user, nodes, routing) {
                 proxies.push(proxy);
             });
         } else {
-            getNodeConfigs(node).forEach(cfg => {
+            getNodeConfigs(node, opts).forEach(cfg => {
                 const name = dedupeLabel(`${node.flag || ''} ${node.name} ${cfg.name}`.trim());
                 proxyNames.push(name);
 
@@ -1717,7 +1698,7 @@ function _buildSingboxVlessOutbounds(user, node) {
  * (e.g. `proxy`, `proxy-2`) for balancers. `displayName` always carries the
  * human-readable label regardless of override.
  */
-function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _passthroughLabel) {
+function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _passthroughLabel, opts = {}) {
     if (node.type === 'virtual') return [];
     const auth = `${user.userId}:${user.password}`;
     const built = [];
@@ -1813,7 +1794,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
         return built;
     }
 
-    getNodeConfigs(node).forEach(cfg => {
+    getNodeConfigs(node, opts).forEach(cfg => {
         const displayName = dedupeLabel(`${node.flag || ''} ${node.name} ${cfg.name}`.trim());
         const tag = tagOverride ? tagOverride(built.length, displayName) : displayName;
         const hysteriaSettings = { version: 2, auth };
@@ -1862,7 +1843,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
     return built;
 }
 
-function generateV2rayJSON(user, nodes, routing) {
+function generateV2rayJSON(user, nodes, routing, opts = {}) {
     const outbounds = [];
     const allTags = [];
     // Tags here are the display names, and Xray rejects a config with a repeated
@@ -1873,7 +1854,7 @@ function generateV2rayJSON(user, nodes, routing) {
     // express multiple balancers cleanly. Use ?format=xray-json for HAPP.
     nodes.forEach(node => {
         if (node.type === 'virtual') return;
-        _buildV2rayOutboundsForNode(user, node, null, dedupeLabel).forEach(({ tag, outbound }) => {
+        _buildV2rayOutboundsForNode(user, node, null, dedupeLabel, opts).forEach(({ tag, outbound }) => {
             outbounds.push(outbound);
             allTags.push(tag);
         });
@@ -1995,7 +1976,7 @@ function _buildXrayProfile(remark, proxyOutbounds, routing, extras = {}) {
  *
  * Consumed by HAPP and any client that ingests Xray JSON profile arrays.
  */
-function generateXrayJSON(user, nodes, routing) {
+function generateXrayJSON(user, nodes, routing, opts = {}) {
     const profiles = [];
     // Profile remarks are what the client lists as servers; duplicates would make
     // two entries indistinguishable. Outbound tags inside a profile stay local
@@ -2019,7 +2000,7 @@ function generateXrayJSON(user, nodes, routing) {
             // selector ["proxy"], and fallbackTag="proxy" still resolves
             // unambiguously to the first outbound.
             sources.forEach((src) => {
-                _buildV2rayOutboundsForNode(user, src).forEach(({ outbound }) => {
+                _buildV2rayOutboundsForNode(user, src, null, _passthroughLabel, opts).forEach(({ outbound }) => {
                     const ord = outbounds.length + 1;
                     const tag = ord === 1 ? 'proxy' : `proxy-${ord}`;
                     outbound.tag = tag;
@@ -2067,7 +2048,7 @@ function generateXrayJSON(user, nodes, routing) {
 
         // Real node — one profile per published inbound (xray) or port-config (hysteria).
         // We keep one outbound per profile so HAPP shows them as distinct servers.
-        _buildV2rayOutboundsForNode(user, node, () => 'proxy', dedupeLabel).forEach(({ outbound, displayName }) => {
+        _buildV2rayOutboundsForNode(user, node, () => 'proxy', dedupeLabel, opts).forEach(({ outbound, displayName }) => {
             profiles.push(_buildXrayProfile(displayName, [outbound], routing, {
                 balancerRule: { type: 'field', network: 'tcp,udp', outboundTag: 'proxy' },
             }));
@@ -2077,7 +2058,7 @@ function generateXrayJSON(user, nodes, routing) {
     return profiles;
 }
 
-function generateSingboxJSON(user, nodes, routing) {
+function generateSingboxJSON(user, nodes, routing, opts = {}) {
     const auth = `${user.userId}:${user.password}`;
     const proxyOutbounds = [];
     const tags = [];
@@ -2102,7 +2083,7 @@ function generateSingboxJSON(user, nodes, routing) {
                 proxyOutbounds.push(outbound);
             });
         } else {
-            getNodeConfigs(node).forEach(cfg => {
+            getNodeConfigs(node, opts).forEach(cfg => {
                 const tag = dedupeLabel(`${node.flag || ''} ${node.name} ${cfg.name}`.trim());
                 tags.push(tag);
 
@@ -2386,7 +2367,10 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
                 }
             });
         } else {
-            getNodeConfigs(node).forEach(cfg => {
+            // The HTML page follows the global hopping switch (?hopping is an
+            // app-link concern; browsers always see the panel default).
+            const htmlHopping = settings?.subscription?.hoppingEnabled === true;
+            getNodeConfigs(node, { hoppingEnabled: htmlHopping }).forEach(cfg => {
                 allConfigs.push({
                     location: node.name,
                     flag: node.flag || '🌐',
@@ -3179,7 +3163,7 @@ function sendFakeSubscription(res, user, format, userAgent, settings, remark, fa
         expireAt: user.expireAt,
     };
     res.set('Cache-Control', 'no-store');
-    sendCachedSubscription(res, data, format, userAgent, settings, extraHeaders);
+    sendCachedSubscription(req, res, data, format, userAgent, settings, extraHeaders);
 }
 
 // Default fake-location names per invalid reason, used only when the admin
@@ -3231,7 +3215,7 @@ async function rejectOrSoftBlock(req, res, user, validation, ctx = {}) {
             .send(html);
     }
 
-    const format = req.query.format || detectFormat(userAgent);
+    const format = normalizeFormatParam(req.query.format) || detectFormat(userAgent);
     const extraHeaders = {};
     if (/happ/i.test(userAgent) && announce) {
         extraHeaders['announce'] = encodeAnnounceHeader(announce);
@@ -3361,7 +3345,9 @@ async function serveSubscription(req, res, ctx) {
     const { user, cacheToken, baseUrl } = ctx;
     const userAgent = req.headers['user-agent'] || 'unknown';
 
-    let format = req.query.format;
+    // Explicit ?format wins when known; junk values fall back to UA detection
+    // instead of exploding the cache keyspace.
+    let format = normalizeFormatParam(req.query.format);
     const browser = isBrowser(req);
 
     // Browser without ?format — render HTML and bypass cache (no shared state
@@ -3389,20 +3375,48 @@ async function serveSubscription(req, res, ctx) {
 
     const settings = await getSettings();
 
+    // Per-link budget: one aggressive client (or leaked link) must not eat
+    // the whole global subscription allowance. Fail-open without Redis (or
+    // when the cache backend predates this check).
+    const tokenLimit = settings?.rateLimit?.subscriptionPerTokenPerMinute || 30;
+    let tokenRl = { allowed: true, count: 0, limit: tokenLimit };
+    try {
+        if (typeof cache.checkSubscriptionTokenRateLimit === 'function') {
+            tokenRl = await cache.checkSubscriptionTokenRateLimit(cacheToken, tokenLimit);
+        }
+    } catch { /* fail open */ }
+    if (!tokenRl.allowed) {
+        logger.warn(`[Sub] Per-token rate limit: ${cacheToken.substring(0, 8)}... (${tokenRl.count}/${tokenRl.limit})`);
+        return res.status(429).set('Retry-After', '60').type('text/plain').send('# Too many requests');
+    }
+
     const { extraHeaders: hwidHeaders, aborted: hwidAborted } = await runHwidSubscriptionGate(req, res, user, settings, format);
     if (hwidAborted) return;
+
+    // Port hopping is opt-in (VamPanel default: single main-port entry).
+    // Global switch lives in settings; ?hopping=0/1 overrides per request.
+    let hoppingEnabled = settings?.subscription?.hoppingEnabled === true;
+    const hoppingParam = String(req.query.hopping ?? '').trim().toLowerCase();
+    if (['1', 'true', 'on', 'yes'].includes(hoppingParam)) hoppingEnabled = true;
+    else if (['0', 'false', 'off', 'no'].includes(hoppingParam)) hoppingEnabled = false;
+    const genOpts = { hoppingEnabled };
 
     // HAPP/Incy may upgrade a "uri" response to xray-json, so split the cache
     // keyspace from plain URI consumers on the same token. HAPP and Incy share
     // one namespace (identical body; routing scheme differs post-cache).
-    const cacheFormat = (isXrayProfileClient(userAgent) && (format === 'uri' || format === 'raw'))
+    // Hopping state is part of the key: same token, different entries.
+    let cacheFormat = (isXrayProfileClient(userAgent) && (format === 'uri' || format === 'raw'))
         ? `${format}+xprofile`
         : format;
+    if (hoppingEnabled) cacheFormat += '+hop';
 
     const cached = await cache.getSubscription(cacheToken, cacheFormat);
     if (cached) {
         logger.debug(`[Sub] Cache HIT: ${cacheToken}:${cacheFormat}`);
-        return sendCachedSubscription(res, cached, format, userAgent, settings, hwidHeaders);
+        // Content keeps its TTL, but traffic/expiry/titles come from the
+        // freshly loaded user — Subscription-Userinfo never goes stale.
+        refreshSubscriptionUserinfo(cached, user, getSubscriptionTitle(user));
+        return sendCachedSubscription(req, res, cached, format, userAgent, settings, hwidHeaders);
     }
 
     logger.debug(`[Sub] Cache MISS: token=${cacheToken.substring(0,8)}..., format=${cacheFormat}`);
@@ -3415,9 +3429,9 @@ async function serveSubscription(req, res, ctx) {
 
     logger.debug(`[Sub] Serving ${nodes.length} nodes to user ${user.userId}`);
 
-    const subscriptionData = generateSubscriptionData(user, nodes, format, userAgent, settings?.subscription?.happProviderId || '', settings?.routing);
+    const subscriptionData = generateSubscriptionData(user, nodes, format, userAgent, settings?.subscription?.happProviderId || '', settings?.routing, genOpts);
     await cache.setSubscription(cacheToken, cacheFormat, subscriptionData);
-    return sendCachedSubscription(res, subscriptionData, format, userAgent, settings, hwidHeaders);
+    return sendCachedSubscription(req, res, subscriptionData, format, userAgent, settings, hwidHeaders);
 }
 
 /**
@@ -3469,7 +3483,7 @@ router.get('/files/:token', async (req, res) => {
 /**
  * Generate subscription data for caching
  */
-function generateSubscriptionData(user, nodes, format, userAgent, happProviderId = '', routing = null) {
+function generateSubscriptionData(user, nodes, format, userAgent, happProviderId = '', routing = null, opts = {}) {
     let content;
     let needsBase64 = false;
     // Effective format may differ from requested when we transparently upgrade
@@ -3480,22 +3494,22 @@ function generateSubscriptionData(user, nodes, format, userAgent, happProviderId
 
     switch (format) {
         case 'shadowrocket':
-            content = generateURIList(user, nodes);
+            content = generateURIList(user, nodes, opts);
             needsBase64 = true;
             break;
         case 'clash':
         case 'yaml':
-            content = generateClashYAML(user, nodes, routing);
+            content = generateClashYAML(user, nodes, routing, opts);
             break;
         case 'singbox':
         case 'json':
-            content = JSON.stringify(generateSingboxJSON(user, nodes, routing), null, 2);
+            content = JSON.stringify(generateSingboxJSON(user, nodes, routing, opts), null, 2);
             break;
         case 'v2ray-json':
-            content = JSON.stringify(generateV2rayJSON(user, nodes, routing), null, 2);
+            content = JSON.stringify(generateV2rayJSON(user, nodes, routing, opts), null, 2);
             break;
         case 'xray-json':
-            content = JSON.stringify(generateXrayJSON(user, nodes, routing), null, 2);
+            content = JSON.stringify(generateXrayJSON(user, nodes, routing, opts), null, 2);
             break;
         case 'uri':
         case 'raw':
@@ -3504,11 +3518,11 @@ function generateSubscriptionData(user, nodes, format, userAgent, happProviderId
             // Xray-core runs the balancer. Other URI consumers keep the list.
             const hasVirtual = isXrayProfileClient(userAgent) && nodes.some(n => n.type === 'virtual');
             if (hasVirtual) {
-                content = JSON.stringify(generateXrayJSON(user, nodes, routing), null, 2);
+                content = JSON.stringify(generateXrayJSON(user, nodes, routing, opts), null, 2);
                 effectiveFormat = 'xray-json';
                 break;
             }
-            content = generateURIList(user, nodes);
+            content = generateURIList(user, nodes, opts);
             // HAPP reads #providerid from body as fallback (in case headers are stripped by a proxy)
             if (happProviderId) {
                 content = `#providerid ${happProviderId}\n${content}`;
@@ -3541,7 +3555,7 @@ function generateSubscriptionData(user, nodes, format, userAgent, happProviderId
 /**
  * Send cached subscription response
  */
-function sendCachedSubscription(res, data, format, userAgent, settings, hwidExtraHeaders = null) {
+function sendCachedSubscription(req, res, data, format, userAgent, settings, hwidExtraHeaders = null) {
     // contentFormat reflects what's actually in `data.content` and may differ
     // from the requested `format` when we transparently upgrade the response
     // (HAPP UA + virtual node → xray-json). Falls back to `format` for legacy
@@ -3642,6 +3656,16 @@ function sendCachedSubscription(res, data, format, userAgent, settings, hwidExtr
         }
     }
 
+    // ETag over the final body (after HAPP prepends): byte-identical content
+    // answers 304 so clients skip re-download. A stale client header set is
+    // harmless — the next 200 refreshes Subscription-Userinfo.
+    const etag = data.etag || computeEtag(content);
+    headers['ETag'] = etag;
+    const ifNoneMatch = req?.headers?.['if-none-match'];
+    if (ifNoneMatch && ifNoneMatch.split(',').map((s) => s.trim()).includes(etag)) {
+        return res.status(304).set({ ETag: etag }).end();
+    }
+
     res.set(headers);
     res.send(content);
 }
@@ -3666,6 +3690,16 @@ module.exports.serveSubscription = serveSubscription;
 module.exports.serveInfo = serveInfo;
 module.exports.validateUser = validateUser;
 module.exports.rejectOrSoftBlock = rejectOrSoftBlock;
+// Exposed for contract tests (UA x format matrix): the generators are pure
+// (user, nodes, routing, opts) and must stay that way — no req/res/globals.
+// Split roadmap: extract builders/{uri,clash,singbox,v2ray,xray,html}.js once
+// the contract suite pins their output (see scripts/test-subscription-*).
+module.exports.generateSubscriptionData = generateSubscriptionData;
+module.exports.generateURIList = generateURIList;
+module.exports.generateClashYAML = generateClashYAML;
+module.exports.generateSingboxJSON = generateSingboxJSON;
+module.exports.generateV2rayJSON = generateV2rayJSON;
+module.exports.generateXrayJSON = generateXrayJSON;
 // Exposed for the diagnostic probe manifest. The probe matches subscription
 // outbounds to nodes by tag, so the panel must predict those tags with the
 // very same code that generates the subscription.

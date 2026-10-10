@@ -197,7 +197,8 @@ function detectLanguage(req) {
 }
 
 function i18nMiddleware(req, res, next) {
-    const lang = detectLanguage(req);
+    // VamPanel is Russian-only: ignore query/cookie/session language prefs.
+    const lang = DEFAULT_LANG;
     const queryLang = normalizeLanguage(req.query?.lang);
     
     if (queryLang) {

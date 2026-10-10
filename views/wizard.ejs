@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= typeof t !== 'undefined' ? t('wizard.title') : 'Setup Wizard' %> | C³ CELERITY</title>
+    <title><%= typeof t !== 'undefined' ? t('wizard.title') : 'Setup Wizard' %> | VamPanel</title>
     <%- include('partials/favicon') %>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+    <link rel="stylesheet" href="/fonts/fonts.css?v=1">
+    <link rel="stylesheet" href="/css/vam.min.css?v=1">
+    <link rel="stylesheet" href="/vendor/tabler/tabler-icons.min.css">
     <style>
         .wizard-steps {
             display: grid;
@@ -97,9 +96,9 @@
             margin-bottom: 14px;
             border-radius: 14px;
             font-size: 24px;
-            color: white;
-            background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);
-            box-shadow: 0 14px 34px rgba(99, 102, 241, 0.22);
+            color: #09090b;
+            background: linear-gradient(135deg, #f4f4f5 0%, #a1a1aa 100%);
+            box-shadow: 0 14px 34px rgba(255, 255, 255, 0.2);
         }
 
         .choice-title {
@@ -316,19 +315,13 @@
 <div class="onboarding-card">
 
     <div class="onboarding-header">
-        <span class="logo-icon">⚡</span>
-        <h1>C³ CELERITY</h1>
-        <a class="onboarding-brand" href="https://t.me/First_VPN_Click_bot" target="_blank" rel="noopener noreferrer">by Click Connect</a>
+        <span class="wordmark">VAMPANEL</span>
+        <span class="onboarding-brand">vpn panel</span>
         <p class="onboarding-subtitle"><%= typeof t !== 'undefined' ? t('wizard.subtitle') : 'Prepare the panel, the first nodes, and the initial access bundle in one guided flow.' %></p>
     </div>
 
     <div style="text-align:center;">
-        <div class="onboarding-lang-switch">
-            <% const langOptions = typeof languageOptions !== 'undefined' ? languageOptions : []; %>
-            <% langOptions.forEach(function(option) { %>
-            <a href="?lang=<%= encodeURIComponent(option.code) %>" class="<%= typeof lang !== 'undefined' && lang === option.code ? 'active' : '' %>"><%= option.label %></a>
-            <% }); %>
-        </div>
+        <div class="onboarding-lang-switch" style="display:none"></div>
     </div>
 
     <div class="wizard-steps">

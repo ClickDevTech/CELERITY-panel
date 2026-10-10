@@ -27,8 +27,11 @@ const DEFAULT_TTL = {
 };
 
 // Key prefixes
+// SUB carries a version (v2 = hopping-aware keyspace + fresh userinfo on HIT).
+// Old v1 entries are simply orphaned and expire by TTL; both invalidate
+// patterns below (`sub:{token}:*`, `sub:*`) match across versions.
 const PREFIX = {
-    SUB: 'sub:',             // sub:{token}:{format}
+    SUB: 'sub:v2:',             // sub:v2:{token}:{format}
     QR: 'qr:',               // qr:{baseUrl}
     USER: 'user:',           // user:{userId}
     DEVICES: 'devices:',     // devices:{userId} - Hash with device IPs
@@ -62,15 +65,19 @@ class CacheService {
         if (!settings?.cache) return;
         
         const c = settings.cache;
+        const num = (v, fb, min, max) => {
+            const n = parseInt(v, 10);
+            return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fb;
+        };
         this.ttl = {
-            SUBSCRIPTION: c.subscriptionTTL || DEFAULT_TTL.SUBSCRIPTION,
-            USER: c.userTTL || DEFAULT_TTL.USER,
-            ONLINE_SESSIONS: c.onlineSessionsTTL || DEFAULT_TTL.ONLINE_SESSIONS,
-            ACTIVE_NODES: c.activeNodesTTL || DEFAULT_TTL.ACTIVE_NODES,
-            SETTINGS: DEFAULT_TTL.SETTINGS, // Always fixed
-            TRAFFIC_STATS: DEFAULT_TTL.TRAFFIC_STATS, // Always fixed
-            GROUPS: DEFAULT_TTL.GROUPS, // Always fixed
-            DASHBOARD_COUNTS: DEFAULT_TTL.DASHBOARD_COUNTS, // Always fixed
+            SUBSCRIPTION: num(c.subscriptionTTL, DEFAULT_TTL.SUBSCRIPTION, 60, 86400),
+            USER: num(c.userTTL, DEFAULT_TTL.USER, 60, 3600),
+            ONLINE_SESSIONS: num(c.onlineSessionsTTL, DEFAULT_TTL.ONLINE_SESSIONS, 5, 60),
+            ACTIVE_NODES: num(c.activeNodesTTL, DEFAULT_TTL.ACTIVE_NODES, 10, 300),
+            SETTINGS: num(c.settingsTTL, DEFAULT_TTL.SETTINGS, 10, 600),
+            TRAFFIC_STATS: num(c.trafficStatsTTL, DEFAULT_TTL.TRAFFIC_STATS, 60, 3600),
+            GROUPS: num(c.groupsTTL, DEFAULT_TTL.GROUPS, 60, 3600),
+            DASHBOARD_COUNTS: num(c.dashboardCountsTTL, DEFAULT_TTL.DASHBOARD_COUNTS, 10, 600),
         };
         logger.info(`[Cache] TTL updated: sub=${this.ttl.SUBSCRIPTION}s, user=${this.ttl.USER}s`);
     }
@@ -713,8 +720,35 @@ class CacheService {
         }
     }
 
-    // ==================== ACCESS-LOGS BATCH DEDUP ====================
+    /**
+     * Per-token subscription rate limit: one aggressive client (or leaked
+     * link) must not eat the whole global subscription budget.
+     * Same INCR + EXPIRE mechanics as API keys. Fail-open without Redis.
+     * Returns { allowed: bool, count: number, limit: number }
+     */
+    async checkSubscriptionTokenRateLimit(token, maxPerMinute) {
+        if (!this.isConnected()) return { allowed: true, count: 0, limit: maxPerMinute };
 
+        try {
+            const safe = String(token || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_');
+            const redisKey = `ratelimit:sub:${safe}`;
+            const count = await this.redis.incr(redisKey);
+
+            if (count === 1) {
+                await this.redis.expire(redisKey, 60);
+            }
+
+            return {
+                allowed: count <= maxPerMinute,
+                count,
+                limit: maxPerMinute,
+            };
+        } catch (err) {
+            return { allowed: true, count: 0, limit: maxPerMinute };
+        }
+    }
+
+    // ==================== ACCESS-LOGS BATCH DEDUP ====================
     /**
      * Build the dedup key for an access-logs batch. Node id is sanitized so an
      * unexpected value cannot inject key separators.
