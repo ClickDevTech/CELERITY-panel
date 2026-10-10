@@ -7088,3 +7088,272 @@ img[src$="xray.svg"] {
         margin-right: 0;
     }
 }
+
+/* ==========================================================================
+ * VAMPANEL v4 — Dynamic Island nav, SF Pro Expanded type, button contrast
+ * ========================================================================== */
+
+/* --- Type: SF Pro Expanded stack (real SF on Apple, Archivo Expanded else) --- */
+body {
+    font-family: "SF Pro Display", "SF Pro Expanded", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Archivo", "Inter", "Segoe UI", sans-serif;
+    font-stretch: expanded;
+    letter-spacing: 0.01em;
+}
+h1, h2, h3, .topbar h1, .card-header h2 {
+    letter-spacing: -0.01em;
+}
+.wordmark, .island-word, .stat-value, .topbar h1 {
+    font-family: "SF Pro Display", "SF Pro Expanded", -apple-system, BlinkMacSystemFont, "Archivo", "Inter", sans-serif;
+    font-stretch: expanded;
+}
+code, pre, .qa-log, .node-ip, .logs-container {
+    font-family: "SF Pro Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* --- Button contrast: dark text on every light button, always --- */
+.btn-primary,
+.btn-primary:hover,
+.btn-primary:active,
+.btn-primary:disabled,
+.btn-primary.is-loading {
+    color: #09090b;
+}
+.btn-success,
+.btn-success:hover,
+.btn-success:active,
+.btn-success:disabled {
+    background: #f4f4f5;
+    border-color: #f4f4f5;
+    color: #09090b;
+    box-shadow: 0 2px 18px rgba(255, 255, 255, 0.22);
+}
+.btn-warning,
+.btn-warning:hover,
+.btn-warning:active {
+    background: transparent;
+    border: 1px solid #f4f4f5;
+    color: #fafafa;
+}
+.btn-warning:hover {
+    background: #f4f4f5;
+    color: #09090b;
+}
+
+/* --- No sidebar anymore: full-width content --- */
+.sidebar,
+.mobile-header,
+.mobile-overlay,
+.sidebar-collapse-btn,
+.lang-switcher,
+.github-link {
+    display: none !important;
+}
+.content {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+body.sidebar-collapsed .content {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+/* --- Fog layer (JS parallax via --fx/--fy) --- */
+body::before {
+    display: none;
+}
+.vam-fog {
+    position: fixed;
+    inset: -6%;
+    z-index: 0;
+    pointer-events: none;
+    transform: translate3d(var(--fx, 0px), var(--fy, 0px), 0);
+    transition: transform 0.35s ease-out;
+}
+.vam-fog span {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(90px);
+}
+.vam-fog span:nth-child(1) {
+    width: 560px; height: 380px; left: 6%; top: -6%;
+    background: rgba(255, 255, 255, 0.08);
+    animation: vam-aurora 22s ease-in-out infinite alternate;
+}
+.vam-fog span:nth-child(2) {
+    width: 640px; height: 420px; right: 4%; top: 6%;
+    background: rgba(255, 255, 255, 0.055);
+    animation: vam-aurora 27s ease-in-out infinite alternate-reverse;
+}
+.vam-fog span:nth-child(3) {
+    width: 720px; height: 480px; left: 30%; bottom: -14%;
+    background: rgba(255, 255, 255, 0.045);
+    animation: vam-aurora 31s ease-in-out infinite alternate;
+}
+
+/* --- Dynamic Island --- */
+.island-wrap {
+    position: sticky;
+    top: 12px;
+    z-index: 60;
+    display: flex;
+    justify-content: center;
+    padding: 12px 16px 0;
+    pointer-events: none;
+}
+.island {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: rgba(8, 8, 10, 0.82);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    box-shadow: 0 12px 44px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transition: border-radius 0.3s cubic-bezier(0.34, 1.3, 0.64, 1), padding 0.3s ease, max-width 0.3s ease;
+    max-width: 340px;
+    position: relative;
+}
+.island-word {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    color: #fff;
+    white-space: nowrap;
+}
+.island-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.9);
+    flex-shrink: 0;
+    animation: pulse 2s infinite;
+}
+.island-burger {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.07);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+.island-burger:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+.island-burger:active {
+    transform: scale(0.92);
+}
+.island-burger span {
+    display: block;
+    width: 15px;
+    height: 2px;
+    border-radius: 2px;
+    background: #fff;
+    transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+}
+.island.open .island-burger span:nth-child(1) {
+    transform: translateY(6px) rotate(45deg);
+}
+.island.open .island-burger span:nth-child(2) {
+    opacity: 0;
+}
+.island.open .island-burger span:nth-child(3) {
+    transform: translateY(-6px) rotate(-45deg);
+}
+/* Collapsed: only burger + word + dot visible */
+.island-nav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    transition: max-width 0.34s cubic-bezier(0.34, 1.25, 0.64, 1), opacity 0.25s ease;
+}
+@media (hover: hover) {
+    .island:hover .island-nav,
+    .island.open .island-nav,
+    .island:focus-within .island-nav {
+        max-width: 720px;
+        opacity: 1;
+    }
+    .island:hover,
+    .island.open,
+    .island:focus-within {
+        border-radius: 26px;
+        max-width: 760px;
+    }
+}
+.island.open .island-nav {
+    max-width: 720px;
+    opacity: 1;
+}
+.island.open {
+    border-radius: 26px;
+    max-width: 760px;
+}
+.island-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 13px;
+    border-radius: 999px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.island-link:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    transform: translateY(-1px);
+}
+.island-link .ti {
+    font-size: 16px;
+}
+.island-link.active {
+    background: #f4f4f5;
+    color: #09090b;
+}
+
+/* --- Staggered card entrance --- */
+.stats-grid > * {
+    animation: vam-rise 0.45s cubic-bezier(0.22, 0.8, 0.3, 1) backwards;
+}
+.stats-grid > *:nth-child(1) { animation-delay: 0.03s; }
+.stats-grid > *:nth-child(2) { animation-delay: 0.09s; }
+.stats-grid > *:nth-child(3) { animation-delay: 0.15s; }
+.stats-grid > *:nth-child(4) { animation-delay: 0.21s; }
+@keyframes vam-rise {
+    from { opacity: 0; transform: translateY(16px) scale(0.98); filter: blur(4px); }
+    to { opacity: 1; transform: none; filter: none; }
+}
+
+/* --- Cursor glare on tilt cards --- */
+.stat-card::after,
+[data-tilt]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, 0.13), transparent 46%);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    pointer-events: none;
+}
+.stat-card:hover::after,
+[data-tilt]:hover::after {
+    opacity: 1;
+}

@@ -170,6 +170,8 @@
         });
 
         initTilt();
+        initIsland();
+        initFog();
     });
 
     // Re-run tilt binding for dynamically added cards
@@ -182,7 +184,7 @@
         var fine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
         var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (!fine || calm) return;
-        var MAX = 3; // degrees — subtle
+        var MAX = 6; // degrees — visible but tasteful
         document.querySelectorAll('.stat-card, [data-tilt]').forEach(function (el) {
             if (el.hasAttribute('data-tilt-init')) return;
             el.setAttribute('data-tilt-init', '1');
@@ -195,6 +197,8 @@
                     var px = (e.clientX - r.left) / r.width - 0.5;
                     var py = (e.clientY - r.top) / r.height - 0.5;
                     el.classList.add('is-moving');
+                    el.style.setProperty('--mx', ((px + 0.5) * 100).toFixed(1) + '%');
+                    el.style.setProperty('--my', ((py + 0.5) * 100).toFixed(1) + '%');
                     el.style.transform =
                         'perspective(900px) rotateX(' + (-py * MAX).toFixed(2) +
                         'deg) rotateY(' + (px * MAX).toFixed(2) + 'deg) translateY(-2px)';
@@ -206,6 +210,49 @@
                 el.style.transform = '';
             });
         });
+    }
+
+    // ---------- Dynamic Island: click toggle (hover handled by CSS) ----------
+    function initIsland() {
+        var island = document.getElementById('island');
+        var burger = document.getElementById('islandBurger');
+        if (!island || !burger) return;
+        burger.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var open = island.classList.toggle('open');
+            burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        document.addEventListener('click', function (e) {
+            if (!island.classList.contains('open')) return;
+            if (!island.contains(e.target)) {
+                island.classList.remove('open');
+                burger.setAttribute('aria-expanded', 'false');
+            }
+        });
+        island.querySelectorAll('.island-link').forEach(function (link) {
+            link.addEventListener('click', function () {
+                island.classList.remove('open');
+                burger.setAttribute('aria-expanded', 'false');
+            });
+        });
+    }
+
+    // ---------- Fog parallax: background drifts against the cursor ----------
+    function initFog() {
+        var fine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
+        var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!fine || calm) return;
+        var raf = 0;
+        document.addEventListener('pointermove', function (e) {
+            if (e.pointerType && e.pointerType !== 'mouse') return;
+            cancelAnimationFrame(raf);
+            raf = requestAnimationFrame(function () {
+                var px = e.clientX / window.innerWidth - 0.5;
+                var py = e.clientY / window.innerHeight - 0.5;
+                document.documentElement.style.setProperty('--fx', (-px * 22).toFixed(1) + 'px');
+                document.documentElement.style.setProperty('--fy', (-py * 22).toFixed(1) + 'px');
+            });
+        }, { passive: true });
     }
 
     // ---------- Public API (backwards compatible) ----------

@@ -6,8 +6,8 @@
     <title><%= typeof t !== 'undefined' ? t('auth.loginTitle') : 'Panel Login' %> | VamPanel</title>
     <%- include('partials/favicon') %>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,100..900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.min.css?v=5">
 </head>
 <body class="login-page">
     <div class="login-container">
@@ -17,14 +17,8 @@
                 <span class="login-brand">vpn panel</span>
             </div>
             
-            <!-- Language Switcher -->
-            <div class="login-lang-switcher">
-                <% const langOptions = typeof languageOptions !== 'undefined' ? languageOptions : []; %>
-                <% langOptions.forEach(function(option) { %>
-                <a href="?lang=<%= encodeURIComponent(option.code) %>" class="lang-btn <%= typeof lang !== 'undefined' && lang === option.code ? 'active' : '' %>"><%= option.label %></a>
-                <% }); %>
-            </div>
-            
+            <!-- Russian only -->
+
             <% const lockoutIsActive = Boolean(lockoutActive && lockoutIso && lockoutUntil); %>
             <% if (error) { %>
             <div class="alert alert-error"><%= error %></div>
