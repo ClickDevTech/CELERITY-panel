@@ -14,37 +14,38 @@
 
     const i18n = window._networkI18n || {};
 
+    // Monochrome status palette — state is carried by labels + shape, not hue.
     const STATUS_COLORS = {
-        online:   '#22c55e',
-        offline:  '#64748b',
-        error:    '#ef4444',
-        syncing:  '#eab308',
-        deployed: '#3b82f6',
-        pending:  '#475569',
+        online:   '#fafafa',
+        offline:  '#52525b',
+        error:    '#a1a1aa',
+        syncing:  '#d4d4d8',
+        deployed: '#e4e4e7',
+        pending:  '#3f3f46',
     };
 
     const ROLE_BG = {
-        standalone: '#0f172a',
-        portal:     '#150e3a',
-        bridge:     '#1a0e00',
-        relay:      '#130a2a',
-        internet:   '#0a2e1a',
+        standalone: '#101013',
+        portal:     '#141417',
+        bridge:     '#17171a',
+        relay:      '#131316',
+        internet:   '#101311',
     };
 
     const ROLE_BORDER_ACCENT = {
-        standalone: '#334155',
-        portal:     '#6366f1',
-        bridge:     '#f59e0b',
-        relay:      '#8b5cf6',
-        internet:   '#22c55e',
+        standalone: '#3f3f46',
+        portal:     '#e4e4e7',
+        bridge:     '#a1a1aa',
+        relay:      '#d4d4d8',
+        internet:   '#fafafa',
     };
 
     const ROLE_GLOW = {
         standalone: null,
-        portal:   '#6366f1',
-        bridge:   '#f59e0b',
-        relay:    '#8b5cf6',
-        internet: '#22c55e',
+        portal:   '#e4e4e7',
+        bridge:   '#a1a1aa',
+        relay:    '#d4d4d8',
+        internet: '#fafafa',
     };
 
     const ROLE_LABELS = {

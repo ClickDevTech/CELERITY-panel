@@ -147,10 +147,10 @@
         }
     }
 
-    // ─── Charts ────────────────────────────────────────────────────────────
+    // ─── Charts (monochrome: series differ by lightness) ───────────────────
     const Cc = {
-        accepted: '#22c55e', rejected: '#f59e0b', blocked: '#ef4444',
-        tcp: '#6366f1', udp: '#06b6d4', accent: '#7c3aed', grid: '#27272a', text: '#a1a1aa',
+        accepted: '#fafafa', rejected: '#d4d4d8', blocked: '#a1a1aa',
+        tcp: '#f4f4f5', udp: '#8e8e93', accent: '#e4e4e7', grid: '#27272a', text: '#a1a1aa',
     };
     let timelineChart = null, actionChart = null, protoChart = null;
 

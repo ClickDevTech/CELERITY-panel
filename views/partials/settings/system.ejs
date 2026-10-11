@@ -105,6 +105,13 @@
                                    style="max-width: 200px;">
                             <small class="hint"><%= t('settings.subscriptionsPerMinuteHint') %></small>
                         </div>
+                        <div class="form-group" style="margin-bottom: 0; margin-top: 14px;">
+                            <label for="rateLimit.subscriptionPerTokenPerMinute"><%= t('settings.subscriptionsPerTokenPerMinute') %></label>
+                            <input type="number" name="rateLimit.subscriptionPerTokenPerMinute" id="rateLimit.subscriptionPerTokenPerMinute"
+                                   value="<%= settings?.rateLimit?.subscriptionPerTokenPerMinute || 30 %>" min="5" max="600"
+                                   style="max-width: 200px;">
+                            <small class="hint"><%= t('settings.subscriptionsPerTokenPerMinuteHint') %></small>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -141,6 +148,30 @@
                                 <input type="number" name="cache.activeNodesTTL" id="cache.activeNodesTTL"
                                        value="<%= settings?.cache?.activeNodesTTL || 30 %>" min="10" max="300">
                                 <small class="hint"><%= t('settings.activeNodesTTLHint') %></small>
+                            </div>
+                            <div class="form-group">
+                                <label for="cache.settingsTTL"><%= t('settings.settingsTTL') %></label>
+                                <input type="number" name="cache.settingsTTL" id="cache.settingsTTL"
+                                       value="<%= settings?.cache?.settingsTTL || 60 %>" min="10" max="600">
+                                <small class="hint"><%= t('settings.settingsTTLHint') %></small>
+                            </div>
+                            <div class="form-group">
+                                <label for="cache.trafficStatsTTL"><%= t('settings.trafficStatsTTL') %></label>
+                                <input type="number" name="cache.trafficStatsTTL" id="cache.trafficStatsTTL"
+                                       value="<%= settings?.cache?.trafficStatsTTL || 300 %>" min="60" max="3600">
+                                <small class="hint"><%= t('settings.trafficStatsTTLHint') %></small>
+                            </div>
+                            <div class="form-group">
+                                <label for="cache.groupsTTL"><%= t('settings.groupsTTL') %></label>
+                                <input type="number" name="cache.groupsTTL" id="cache.groupsTTL"
+                                       value="<%= settings?.cache?.groupsTTL || 300 %>" min="60" max="3600">
+                                <small class="hint"><%= t('settings.groupsTTLHint') %></small>
+                            </div>
+                            <div class="form-group">
+                                <label for="cache.dashboardCountsTTL"><%= t('settings.dashboardCountsTTL') %></label>
+                                <input type="number" name="cache.dashboardCountsTTL" id="cache.dashboardCountsTTL"
+                                       value="<%= settings?.cache?.dashboardCountsTTL || 60 %>" min="10" max="600">
+                                <small class="hint"><%= t('settings.dashboardCountsTTLHint') %></small>
                             </div>
                         </div>
                     </div>

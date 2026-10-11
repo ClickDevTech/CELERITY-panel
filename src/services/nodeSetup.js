@@ -590,13 +590,17 @@ async function runInitScript(conn, node, log, logs) {
 }
 
 async function setupNode(node, options = {}) {
-    const { installHysteria = true, setupPortHopping = true, restartService = true } = options;
+    const { installHysteria = true, setupPortHopping = true, restartService = true, onLog = null } = options;
     
     const logs = [];
     const log = (msg) => {
         const line = `[${new Date().toISOString()}] ${msg}`;
         logs.push(line);
         logger.info(`[NodeSetup] ${msg}`);
+        // Live progress for the panel setup-task feed (background auto-setup).
+        if (typeof onLog === 'function') {
+            try { onLog(line); } catch { /* progress must never break setup */ }
+        }
     };
     
     log(`Starting setup for ${node.name} (${node.ip})`);
@@ -995,13 +999,17 @@ echo "ACME setup completed for \${DOMAIN}"
  * @returns {{ success, logs, realityKeys? }}
  */
 async function setupXrayNode(node, options = {}) {
-    const { restartService = true, exitOnly = false } = options;
+    const { restartService = true, exitOnly = false, onLog = null } = options;
 
     const logs = [];
     const log = (msg) => {
         const line = `[${new Date().toISOString()}] ${msg}`;
         logs.push(line);
         logger.info(`[XraySetup] ${msg}`);
+        // Live progress for the panel setup-task feed (background auto-setup).
+        if (typeof onLog === 'function') {
+            try { onLog(line); } catch { /* progress must never break setup */ }
+        }
     };
 
     log(`Starting Xray setup for ${node.name} (${node.ip})${exitOnly ? ' [exit/bridge mode]' : ''}`);

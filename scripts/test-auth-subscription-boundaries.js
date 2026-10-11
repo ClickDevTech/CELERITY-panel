@@ -126,6 +126,7 @@ async function withRouteStubs(usersById, usersByToken, run) {
         setActiveNodes: async () => {},
         getSubscription: async () => null,
         setSubscription: async () => {},
+        checkSubscriptionTokenRateLimit: async () => ({ allowed: true, count: 0, limit: 30 }),
     };
 
     Module._load = function patchedLoad(request, parent, isMain) {
