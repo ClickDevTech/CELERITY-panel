@@ -133,6 +133,13 @@ h3 { font-size: 0.95rem; }
 p { margin: 0; }
 small, .hint { font-size: 12px; color: var(--ink-3); }
 .hint { display: block; margin-top: 6px; line-height: 1.5; }
+.form-hint { font-size: 12.5px; color: var(--ink-3); line-height: 1.55; }
+.form-warning {
+    font-size: 12.5px; color: var(--ink-1); line-height: 1.55;
+    border: 1px solid var(--line-strong); border-left-width: 3px;
+    background: rgba(255, 255, 255, 0.045); border-radius: var(--r-sm);
+    padding: 9px 12px; margin-top: 8px;
+}
 code, pre, kbd {
     font-family: "SF Pro Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
     font-size: 0.86em;

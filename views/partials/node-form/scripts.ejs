@@ -201,7 +201,7 @@
 .logs-output {
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid var(--glass-border);
-    color: #4ade80;
+    color: #e4e4e7;
     padding: 15px;
     border-radius: var(--radius-sm);
     font-family: 'Consolas', 'Monaco', monospace;
@@ -217,9 +217,9 @@
     justify-content: space-between;
     align-items: center;
 }
-.logs-output .error { color: #ff6b6b; }
-.logs-output .success { color: #51cf66; }
-.logs-output .warning { color: #ffd43b; }
+.logs-output .error { color: #f4f4f5; font-weight: 600; }
+.logs-output .success { color: var(--text-primary); }
+.logs-output .warning { color: var(--text-secondary); }
 .form-group.is-inactive {
     opacity: 0.55;
 }
@@ -367,8 +367,8 @@
     }
 }
 .input-error {
-    border-color: var(--error, #ff6b6b) !important;
-    box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.15);
+    border-color: #f4f4f5 !important;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15);
 }
 
 /* ── SNI Scanner modal ── */
@@ -2847,7 +2847,7 @@ document.getElementById('generateSshKeyBtn')?.addEventListener('click', async fu
         }
     } catch (err) {
         statusEl.textContent = '<%= t('nodes.sshKeyError') %>: ' + err.message;
-        statusEl.style.color = 'var(--color-danger, #ef4444)';
+        statusEl.style.color = 'var(--color-danger, #d4d4d8)';
     } finally {
         btn.disabled = false;
         btn.textContent = '<%= t('nodes.generateSshKey') %>';

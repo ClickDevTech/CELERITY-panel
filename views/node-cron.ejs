@@ -30,11 +30,11 @@
 .cron-table tr:last-child td { border-bottom: 0; }
 .cron-command-cell { font-family: monospace; white-space: pre-wrap; word-break: break-word; }
 .cron-diff { background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); padding: 12px; min-height: 120px; max-height: 320px; overflow: auto; white-space: pre-wrap; font-family: monospace; font-size: 13px; }
-.cron-diff-line-add { color: #86efac; }
-.cron-diff-line-remove { color: #fca5a5; }
-.cron-output { background: #10131f; border: 1px solid var(--border); border-radius: var(--radius-sm); color: #d1d5db; min-height: 110px; max-height: 280px; overflow: auto; padding: 12px; white-space: pre-wrap; font-family: monospace; font-size: 13px; }
+.cron-diff-line-add { color: #f4f4f5; font-weight: 700; }
+.cron-diff-line-remove { color: var(--text-muted); text-decoration: line-through; }
+.cron-output { background: #0c0c0e; border: 1px solid var(--border); border-radius: var(--radius-sm); color: #d4d4d8; min-height: 110px; max-height: 280px; overflow: auto; padding: 12px; white-space: pre-wrap; font-family: monospace; font-size: 13px; }
 .cron-hidden { display: none !important; }
-.cron-backup { color: var(--success, #22c55e); font-family: monospace; word-break: break-all; }
+.cron-backup { color: var(--success, #f4f4f5); font-family: monospace; word-break: break-all; }
 @media (max-width: 720px) {
     .cron-task-form, .cron-command-row { grid-template-columns: 1fr; }
 }

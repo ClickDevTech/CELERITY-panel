@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="<%= typeof lang !== 'undefined' ? lang : 'en' %>">
 <head>
     <meta charset="UTF-8">
@@ -7,7 +7,7 @@
     <title><%= typeof t !== 'undefined' ? t('broadcast.title') : 'Broadcast Terminal' %> | VamPanel</title>
     <%- include('partials/favicon') %>
     <link rel="stylesheet" href="/fonts/fonts.css?v=1">
-    <link rel="stylesheet" href="/css/vam.min.css?v=1">
+    <link rel="stylesheet" href="/css/vam.min.css?v=2">
     <link rel="stylesheet" href="/vendor/tabler/tabler-icons.min.css">
     <style>
         html, body { height: 100%; }
@@ -22,7 +22,7 @@
             flex-direction: column;
         }
 
-        /* ── Header ──────────────────────────────────────────────────────── */
+        /* в”Ђв”Ђ Header в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         .header {
             background: rgba(17, 17, 19, 0.72);
             border-bottom: 1px solid var(--glass-border);
@@ -164,7 +164,7 @@
             50%      { opacity: 0.45; }
         }
 
-        /* ── Broadcast-only button variant ───────────────────────────────── */
+        /* в”Ђв”Ђ Broadcast-only button variant в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         .btn-ghost-danger {
             background: transparent;
             border-color: rgba(255, 255, 255, 0.4);
@@ -176,7 +176,7 @@
             color: #fff;
         }
 
-        /* ── Layout ──────────────────────────────────────────────────────── */
+        /* в”Ђв”Ђ Layout в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         .page {
             padding: 18px 24px 18px;
             display: flex;
@@ -186,7 +186,7 @@
             min-height: 0;
         }
 
-        /* ── Glass surface utility ───────────────────────────────────────── */
+        /* в”Ђв”Ђ Glass surface utility в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         .glass-surface {
             position: relative;
             background: var(--glass-bg);
@@ -210,7 +210,7 @@
         }
         .glass-surface > * { position: relative; z-index: 1; }
 
-        /* ── Control bar ─────────────────────────────────────────────────── */
+        /* в”Ђв”Ђ Control bar в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         .control-bar {
             padding: 14px 16px;
             display: flex;
@@ -321,7 +321,7 @@
         .node-chip.done-fail  .chip-dot,
         .node-chip.error      .chip-dot { background: var(--danger); }
 
-        /* ── Command input ───────────────────────────────────────────────── */
+        /* в”Ђв”Ђ Command input в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         .command-row {
             display: flex;
             gap: 10px;
@@ -486,7 +486,7 @@
         .cron-result-node { color: var(--text-primary); font-weight: 600; }
         .cron-result-message { color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; word-break: break-word; }
 
-        /* ── Output area ─────────────────────────────────────────────────── */
+        /* в”Ђв”Ђ Output area в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         .output-area {
             flex: 1;
             min-height: 0;
@@ -529,7 +529,7 @@
             border-radius: 24px;
         }
 
-        /* ── Node cards ──────────────────────────────────────────────────── */
+        /* в”Ђв”Ђ Node cards в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         .node-card {
             display: flex;
             flex-direction: column;
@@ -628,7 +628,7 @@
             padding: 2px 0;
         }
         .node-output:empty::before {
-            content: '—';
+            content: 'вЂ”';
             color: var(--text-muted);
             opacity: 0.5;
         }
@@ -643,7 +643,7 @@
             font-family: 'JetBrains Mono', monospace;
         }
 
-        /* ── Summary bar ─────────────────────────────────────────────────── */
+        /* в”Ђв”Ђ Summary bar в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         .summary-bar {
             padding: 10px 16px;
             font-size: 12.5px;
@@ -670,7 +670,7 @@
         .summary-stat.fail    { border-color: rgba(255,255,255,0.4);  background: rgba(255,255,255,0.08); }
         .summary-stat.fail strong{ color: #d4d4d8; }
 
-        /* ── Overlay ─────────────────────────────────────────────────────── */
+        /* в”Ђв”Ђ Overlay в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         .overlay {
             position: fixed;
             inset: 0;
@@ -717,13 +717,13 @@
         .error-box h2 { font-size: 14.5px; margin-bottom: 6px; color: #d4d4d8; display: inline-flex; align-items: center; gap: 8px; }
         .error-box p  { color: var(--text-secondary); font-size: 13px; }
 
-        /* ── Scrollbar ───────────────────────────────────────────────────── */
+        /* в”Ђв”Ђ Scrollbar в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-        /* ── Responsive ──────────────────────────────────────────────────── */
+        /* в”Ђв”Ђ Responsive в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ */
         @media (max-width: 768px) {
             .page { padding: 12px; gap: 10px; }
             .header { padding: 12px 14px; }
@@ -772,7 +772,7 @@
         cronUser:           typeof t !== 'undefined' ? t('broadcast.cronUser')          : 'Cron user',
         cronRawBlock:       typeof t !== 'undefined' ? t('broadcast.cronRawBlock')      : 'Raw cron block',
         cronRawPlaceholder: typeof t !== 'undefined' ? t('broadcast.cronRawPlaceholder'): '*/5 * * * * /opt/job.sh',
-        cronSave:           typeof t !== 'undefined' ? t('broadcast.cronSave')          : 'Save C³ block',
+        cronSave:           typeof t !== 'undefined' ? t('broadcast.cronSave')          : 'Save CВі block',
         cronSaveRun:        typeof t !== 'undefined' ? t('broadcast.cronSaveRun')       : 'Save + Run now',
         cronResults:        typeof t !== 'undefined' ? t('broadcast.cronResults')       : 'Cron results',
         cronSaved:          typeof t !== 'undefined' ? t('broadcast.cronSaved')         : 'Saved',
@@ -788,7 +788,7 @@
     <div class="header">
         <div class="header-left">
             <a href="/panel/nodes" class="header-logo" title="VamPanel">
-                <span class="logo-icon">⚡</span>
+                <span class="logo-icon">вљЎ</span>
                 <span class="logo-text">VamPanel</span>
             </a>
             <div class="header-divider"></div>
@@ -948,11 +948,11 @@
     </div>
 
     <script>
-        // ── Data from server ──────────────────────────────────────────────
+        // в”Ђв”Ђ Data from server в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         const ALL_NODES = <%- JSON.stringify(nodes) %>;
         const i18n = <%- JSON.stringify(i18nKeys) %>;
 
-        // ── State ─────────────────────────────────────────────────────────
+        // в”Ђв”Ђ State в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         let ws = null;
         let running = false;
         let selectedNodeIds = new Set(ALL_NODES.map(n => String(n._id)));
@@ -962,7 +962,7 @@
 
         try { cmdHistory = JSON.parse(localStorage.getItem('bc_cmd_history') || '[]'); } catch (_) {}
 
-        // ── WebSocket ─────────────────────────────────────────────────────
+        // в”Ђв”Ђ WebSocket в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         function connect() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws/broadcast`);
@@ -1015,7 +1015,7 @@
             connect();
         }
 
-        // ── Node selection ────────────────────────────────────────────────
+        // в”Ђв”Ђ Node selection в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         function toggleNode(id) {
             if (selectedNodeIds.has(id)) {
                 selectedNodeIds.delete(id);
@@ -1047,7 +1047,7 @@
             if (counter) counter.textContent = `${selectedNodeIds.size} / ${ALL_NODES.length}`;
         }
 
-        // ── Execute / Cancel ──────────────────────────────────────────────
+        // в”Ђв”Ђ Execute / Cancel в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         function doExecute() {
             const cmd = document.getElementById('cmdInput').value.trim();
             if (!cmd || running || !ws || ws.readyState !== WebSocket.OPEN) return;
@@ -1089,7 +1089,7 @@
             setTimeout(() => { window.location.href = '/panel/nodes'; }, 100);
         }
 
-        // ── Message handlers ──────────────────────────────────────────────
+        // в”Ђв”Ђ Message handlers в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         function handleNodeStatus(msg) {
             const card = ensureCard(msg.nodeId, msg.name, msg.ip);
 
@@ -1138,7 +1138,7 @@
             document.getElementById('summaryBar').style.display = '';
         }
 
-        // ── DOM helpers ───────────────────────────────────────────────────
+        // в”Ђв”Ђ DOM helpers в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         const cardMap = new Map();
 
         function clearOutput() {
@@ -1253,7 +1253,7 @@
             return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
 
-        // ── Multicast cron ────────────────────────────────────────────────
+        // в”Ђв”Ђ Multicast cron в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         function switchBroadcastMode(mode) {
             document.querySelectorAll('#broadcastTabs .broadcast-tab').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.mode === mode);
@@ -1293,7 +1293,7 @@
 
             const node = document.createElement('div');
             node.className = 'cron-result-node';
-            node.textContent = `${result.name || result.nodeId}${result.ip ? ' · ' + result.ip : ''}`;
+            node.textContent = `${result.name || result.nodeId}${result.ip ? ' В· ' + result.ip : ''}`;
 
             const message = document.createElement('div');
             message.className = 'cron-result-message';
@@ -1352,7 +1352,7 @@
             }
         }
 
-        // ── Textarea auto-resize ──────────────────────────────────────────
+        // в”Ђв”Ђ Textarea auto-resize в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         function autoResize(el) {
             el.style.height = 'auto';
             el.style.overflow = 'hidden';
@@ -1361,7 +1361,7 @@
             if (el.scrollHeight > 220) el.style.overflow = 'auto';
         }
 
-        // ── Keyboard shortcuts ────────────────────────────────────────────
+        // в”Ђв”Ђ Keyboard shortcuts в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         document.addEventListener('DOMContentLoaded', () => {
             const input = document.getElementById('cmdInput');
             const cronRawBlock = document.getElementById('cronRawBlock');

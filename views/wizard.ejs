@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="<%= typeof lang !== 'undefined' ? lang : 'en' %>">
 <head>
     <meta charset="UTF-8">
@@ -6,7 +6,7 @@
     <title><%= typeof t !== 'undefined' ? t('wizard.title') : 'Setup Wizard' %> | VamPanel</title>
     <%- include('partials/favicon') %>
     <link rel="stylesheet" href="/fonts/fonts.css?v=1">
-    <link rel="stylesheet" href="/css/vam.min.css?v=1">
+    <link rel="stylesheet" href="/css/vam.min.css?v=2">
     <link rel="stylesheet" href="/vendor/tabler/tabler-icons.min.css">
     <style>
         .wizard-steps {
@@ -634,7 +634,7 @@
 <script>
 (function () {
 
-    // ── Step 1: scenario card selection ──────────────────────────────────────
+    // в”Ђв”Ђ Step 1: scenario card selection в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     const scenarioForm = document.getElementById('scenario-form');
     if (scenarioForm) {
         const radios  = scenarioForm.querySelectorAll('input[type="radio"]');
@@ -652,7 +652,7 @@
         });
     }
 
-    // ── Step 2: protocol checkboxes toggle sections ───────────────────────────
+    // в”Ђв”Ђ Step 2: protocol checkboxes toggle sections в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     const chkHy   = document.getElementById('chk-hy');
     const chkXray = document.getElementById('chk-xray');
     const hySettings   = document.getElementById('hy-settings');
@@ -684,7 +684,7 @@
         });
     }
 
-    // ── SSH auth tabs ─────────────────────────────────────────────────────────
+    // в”Ђв”Ђ SSH auth tabs в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     window.switchSshTab = function (tab) {
         const pwdSection = document.getElementById('ssh-password-section');
         const keySection = document.getElementById('ssh-key-section');
@@ -706,7 +706,7 @@
         }
     };
 
-    // ── Step 3: SSE progress stream ───────────────────────────────────────────
+    // в”Ђв”Ђ Step 3: SSE progress stream в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
     const logEl      = document.getElementById('progress-log');
     const statusEl   = document.getElementById('progress-status');
     const actionsEl  = document.getElementById('progress-actions');

@@ -480,7 +480,7 @@ function nodeMetaFor(node) {
                     </div>
                     <input type="hidden" name="mode" id="linkModeInput" value="reverse">
                     <div class="form-hint" id="modeHint"><%= t('network.modeReverseHint') %></div>
-                    <div class="form-hint" id="modeFlowHint" style="margin-top:3px; color:#94a3b8"><%= t('network.modeReverseFlow') %></div>
+                    <div class="form-hint" id="modeFlowHint" style="margin-top:3px; color:var(--text-secondary)"><%= t('network.modeReverseFlow') %></div>
                     <div class="form-warning" id="modeWarnHint" style="margin-top:6px"><%= t('network.modeReverseWarning') %></div>
                 </div>
 
@@ -804,9 +804,9 @@ function nodeMetaFor(node) {
 }
 .badge-xray {
     display: inline-block;
-    background: #7c3aed20;
-    border: 1px solid #7c3aed;
-    color: #a78bfa;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--border-light);
+    color: var(--text-primary);
     border-radius: 4px;
     padding: 1px 6px;
     font-size: 10px;
@@ -849,19 +849,19 @@ function nodeMetaFor(node) {
     margin: 1px 2px 1px 0;
 }
 .badge-agent-online {
-    border-color: var(--success, #22c55e);
-    color: var(--success, #22c55e);
-    background: rgba(34,197,94,0.08);
+    border-color: var(--success, #f4f4f5);
+    color: var(--success, #f4f4f5);
+    background: rgba(255,255,255,0.08);
 }
 .badge-agent-offline {
-    border-color: var(--danger, #ef4444);
-    color: var(--danger, #ef4444);
-    background: rgba(239,68,68,0.08);
+    border-color: var(--danger, #a1a1aa);
+    color: var(--danger, #a1a1aa);
+    background: rgba(255,255,255,0.05);
 }
 .badge-agent-unknown {
-    border-color: var(--warning, #f59e0b);
-    color: var(--warning, #f59e0b);
-    background: rgba(245,158,11,0.08);
+    border-color: var(--warning, #d4d4d8);
+    color: var(--warning, #d4d4d8);
+    background: rgba(255,255,255,0.05);
 }
 /* View tabs — matches .settings-tabs / .filters-bar glass pill */
 .view-tabs {

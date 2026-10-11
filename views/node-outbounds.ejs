@@ -310,7 +310,7 @@ function renderProxies() {
     wrap.style.display = '';
     chips.innerHTML = pendingOutbounds.map(ob => `
         <button type="button"
-            style="background:rgba(99,102,241,0.15);color:#818cf8;border:none;border-radius:20px;padding:4px 12px;font-size:12px;font-family:monospace;cursor:pointer;font-weight:600"
+            style="background:rgba(255,255,255,0.1);color:#f4f4f5;border:1px solid rgba(255,255,255,0.2);border-radius:20px;padding:4px 12px;font-size:12px;font-family:monospace;cursor:pointer;font-weight:600"
             onclick="insertProxyName('${escHtml(ob.name)}')" title="Insert into rule">
             <i class="ti ti-refresh"></i> ${escHtml(ob.name)}
         </button>
