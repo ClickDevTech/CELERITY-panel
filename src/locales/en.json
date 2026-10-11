@@ -229,6 +229,7 @@
     "node": "Node",
     "addNode": "Add Node",
     "noNodes": "No nodes",
+    "noNodesHint": "Add your first node to start monitoring traffic",
     "noLogs": "No logs",
     "loadError": "Loading error",
     "panel": "Panel",
