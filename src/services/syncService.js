@@ -529,8 +529,12 @@ class SyncService {
      *
      * SSH is only used for the config upload. If agent is not yet installed,
      * falls back to SSH restart.
+     *
+     * `report.applied` is set once the new config is running on the node, so a
+     * caller can tell "rejected and rolled back" from "running but the agent
+     * did not confirm health" — both return false.
      */
-    async updateXrayNodeConfig(node, { lockHeld = false } = {}) {
+    async updateXrayNodeConfig(node, { lockHeld = false, report = null } = {}) {
         const lockKey = String(node?._id || '');
         if (!lockHeld && !nodeSetupLock.acquire(lockKey, 'Xray config sync')) {
             throw new Error(`Node is busy: ${nodeSetupLock.holder(lockKey)} is running`);
@@ -874,6 +878,7 @@ class SyncService {
         if (!keepFrontRollback) {
             await frontService.clearFrontRollbackState(node._id).catch(() => {});
         }
+        if (report) report.applied = true;
 
         // Update node status. checkXrayAgentHealth owns it: it counts failures
         // and flips to offline at the threshold. Overwriting the status here

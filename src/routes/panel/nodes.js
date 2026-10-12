@@ -47,6 +47,7 @@ const logger = require('../../utils/logger');
 const {
     render,
     parseXrayFormFields,
+    mergeRealityGuard,
     validateXrayFormFields,
     ensureExtraInboundRealityKeys,
     resolveManualKeyPlaceholder,
@@ -1139,6 +1140,7 @@ router.post('/nodes/:id', async (req, res) => {
                 // The form posts only the operator-editable part of the front.
                 updates.xray.front = { ...existingXray.front, ...parsedXray.front };
             }
+            updates.xray.realityGuard = mergeRealityGuard(existingXray, updates.xray);
             const nodeForValidate = {
                 port: parseInt(req.body.port, 10) || existingNode.port,
                 domain: String(req.body.domain || '').trim(),

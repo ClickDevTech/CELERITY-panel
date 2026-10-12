@@ -381,6 +381,119 @@
         </div>
     </div>
 
+    <%# Reality dest watchdog (realityGuardService). Covers every Reality
+        inbound of the node, so it lives outside the main inbound fields and is
+        shown while at least one inbound uses Reality. Mode is the only
+        operator input; the rest is runtime state shown read-only. %>
+    <%
+        const rg = node?.xray?.realityGuard || {};
+        const rgMode = ['auto', 'notify', 'off'].includes(rg.mode) ? rg.mode : 'auto';
+        const rgStatus = rg.status || 'ok';
+        const rgStandalone = !node?.cascadeRole || node.cascadeRole === 'standalone';
+        const rgAnyReality = (node?.xray?.security || 'reality') === 'reality'
+            || xrExtras.some(e => e && (e.security || 'reality') === 'reality');
+        const rgDateLocale = (typeof dateLocale === 'string' && dateLocale) || undefined;
+        const rgFmt = d => d ? new Date(d).toLocaleString(rgDateLocale, { dateStyle: 'short', timeStyle: 'short' }) : '';
+        const rgStatusBadge = { ok: 'success', failing: 'warning', dead: 'danger', no_candidate: 'danger' }[rgStatus] || 'secondary';
+        const rgStatusLabel = rgStatus === 'failing'
+            ? t('nodes.realityGuardStatusFailing').replace('{n}', rg.failCount || 0).replace('{max}', 3)
+            : t({ ok: 'nodes.realityGuardStatusOk', dead: 'nodes.realityGuardStatusDead', no_candidate: 'nodes.realityGuardStatusNoCandidate' }[rgStatus] || 'nodes.realityGuardStatusOk');
+        const rgModeChip = t({ auto: 'nodes.realityGuardModeAuto', notify: 'nodes.realityGuardModeNotify', off: 'nodes.realityGuardModeOff' }[rgMode]);
+    %>
+    <div class="nf-group" id="xrayRealityGuardGroup" style="<%= rgAnyReality ? '' : 'display:none' %>">
+        <details class="nf-module" id="xrayRealityGuard">
+            <summary class="nf-module__head">
+                <span class="nf-module__ico"><i class="ti ti-refresh"></i></span>
+                <span class="nf-module__text">
+                    <span class="nf-module__title"><%= t('nodes.realityGuardTitle') %></span>
+                    <span class="nf-module__sub"><%= t('nodes.realityGuardSub') %></span>
+                    <span class="nf-chips">
+                        <span class="nf-chip"><i class="ti ti-adjustments"></i><%= rgModeChip %></span>
+                        <% if (node?._id && rgMode !== 'off' && rg.lastCheckAt) { %>
+                            <span class="nf-chip"><i class="ti ti-activity"></i><%= rgStatusLabel %></span>
+                        <% } %>
+                    </span>
+                </span>
+                <i class="ti ti-chevron-down nf-module__chev"></i>
+            </summary>
+            <div class="nf-module__body">
+                <% if (!rgStandalone) { %>
+                    <div class="nf-info is-warning" style="margin-bottom:14px;">
+                        <i class="ti ti-alert-triangle"></i>
+                        <div>
+                            <strong><%= t('nodes.realityGuardCascadeTitle') %></strong>
+                            <small><%= t('nodes.realityGuardCascadeHint') %></small>
+                        </div>
+                    </div>
+                <% } %>
+
+                <div class="nf-choices" role="radiogroup" aria-label="<%= t('nodes.realityGuardTitle') %>">
+                    <label class="nf-choice">
+                        <input type="radio" name="xray.realityGuard.mode" value="auto" <%= rgMode === 'auto' ? 'checked' : '' %>>
+                        <span class="badge badge-success"><%= t('nodes.xrayTlsRecommended') %></span>
+                        <span class="nf-choice__text">
+                            <span class="nf-choice__name"><%= t('nodes.realityGuardModeAuto') %></span>
+                            <span class="nf-choice__hint"><%= t('nodes.realityGuardModeAutoHint') %></span>
+                        </span>
+                    </label>
+                    <label class="nf-choice">
+                        <input type="radio" name="xray.realityGuard.mode" value="notify" <%= rgMode === 'notify' ? 'checked' : '' %>>
+                        <span class="nf-choice__text">
+                            <span class="nf-choice__name"><%= t('nodes.realityGuardModeNotify') %></span>
+                            <span class="nf-choice__hint"><%= t('nodes.realityGuardModeNotifyHint') %></span>
+                        </span>
+                    </label>
+                    <label class="nf-choice">
+                        <input type="radio" name="xray.realityGuard.mode" value="off" <%= rgMode === 'off' ? 'checked' : '' %>>
+                        <span class="nf-choice__text">
+                            <span class="nf-choice__name"><%= t('nodes.realityGuardModeOff') %></span>
+                            <span class="nf-choice__hint"><%= t('nodes.realityGuardModeOffHint') %></span>
+                        </span>
+                    </label>
+                </div>
+
+                <% if (node?._id) { %>
+                    <div class="nf-group">
+                        <div class="nf-info <%= rgStatus === 'dead' || rgStatus === 'no_candidate' ? 'is-warning' : '' %>">
+                            <i class="ti ti-activity"></i>
+                            <div>
+                                <strong>
+                                    <%= t('nodes.realityGuardStatus') %>:
+                                    <% if (rg.lastCheckAt) { %>
+                                        <span class="badge badge-<%= rgStatusBadge %>"><%= rgStatusLabel %></span>
+                                    <% } else { %>
+                                        <span class="badge badge-secondary"><%= t('nodes.realityGuardNotChecked') %></span>
+                                    <% } %>
+                                </strong>
+                                <% if (rg.lastCheckAt) { %>
+                                    <small><%= t('nodes.realityGuardLastCheck') %>: <%= rgFmt(rg.lastCheckAt) %></small>
+                                <% } %>
+                                <% if (rg.lastError && rgStatus !== 'ok') { %>
+                                    <small><%= t('nodes.realityGuardLastError') %>: <code><%= rg.lastError %></code></small>
+                                <% } %>
+                                <% if (rg.lastRotatedAt) { %>
+                                    <small><%= t('nodes.realityGuardLastRotated') %> <%= rgFmt(rg.lastRotatedAt) %>: <code><%= rg.lastRotatedFrom %></code> → <code><%= rg.lastRotatedTo %></code></small>
+                                <% } %>
+                            </div>
+                        </div>
+                    </div>
+                <% } %>
+
+                <div class="nf-group">
+                    <div class="nf-info">
+                        <i class="ti ti-info-circle"></i>
+                        <div>
+                            <strong><%= t('nodes.realityGuardHowTitle') %></strong>
+                            <small><%= t('nodes.realityGuardHowCheck') %></small>
+                            <small><%= t('nodes.realityGuardHowRotate') %></small>
+                            <small><%= t('nodes.realityGuardHowClients') %></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </details>
+    </div>
+
     <%# SNI Scanner modal (Reality only) %>
     <div id="sniScanModal" class="sni-modal-overlay" style="display:none" role="dialog" aria-modal="true">
         <div class="sni-modal-card">

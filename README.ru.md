@@ -652,6 +652,8 @@ const expected = 'sha256=' + crypto
 | `sync.completed`        | Завершён цикл синхронизации |
 | `probe.node_unreachable` | Пробер не достучался до инбаунда ноды из своей точки |
 | `probe.target_unreachable` | Ресурс из чек-листа стал недоступен через ноду |
+| `node.reality_dest_dead` | Reality dest ноды перестал работать и не был заменён автоматически |
+| `node.reality_dest_rotated` | Reality dest/SNI ноды заменён автоматически |
 | `probe.offline`         | Пробер перестал присылать отчёты |
 
 Пороги оповещений о диске настраиваются в **Настройки → Безопасность → Вебхуки**

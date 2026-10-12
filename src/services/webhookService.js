@@ -54,6 +54,10 @@ const EVENTS = {
     PROBE_NODE_UNREACHABLE: 'probe.node_unreachable',
     /** A checklist resource became unreachable through a node (geo-block, blacklist). */
     PROBE_TARGET_UNREACHABLE: 'probe.target_unreachable',
+    /** Reality dest of a node is dead and was not replaced (notify mode, no candidate, cooldown or rollback). */
+    NODE_REALITY_DEST_DEAD: 'node.reality_dest_dead',
+    /** Reality dest/SNI of a node was replaced automatically. */
+    NODE_REALITY_DEST_ROTATED: 'node.reality_dest_rotated',
 };
 
 /** Dedup device-limit webhooks (in-memory; resets on restart). */
@@ -179,6 +183,8 @@ const _SAMPLE_BUILDERS = {
     'probe.offline': () => ({ probeId: 'sample-probe', probeName: 'Moscow', country: 'RU', asn: 'AS12345', lastSeenAt: new Date().toISOString() }),
     'probe.node_unreachable': () => ({ probeId: 'sample-probe', probeName: 'Moscow', country: 'RU', asn: 'AS12345', nodeId: 'sample-node', nodeName: 'Sample Node', inboundId: 'main', code: 'handshake_failed', message: 'tls handshake timeout' }),
     'probe.target_unreachable': () => ({ probeId: 'sample-probe', probeName: 'Moscow', country: 'RU', asn: 'AS12345', nodeId: 'sample-node', nodeName: 'Sample Node', targetId: 'openai', httpStatus: 403, message: 'blocked' }),
+    'node.reality_dest_dead': () => ({ nodeId: 'sample-node', name: 'Sample Node', dest: 'old.example.com:443', reason: 'cert_expired', cause: 'no_candidate' }),
+    'node.reality_dest_rotated': () => ({ nodeId: 'sample-node', name: 'Sample Node', oldDest: 'old.example.com:443', newDest: 'new.example.com:443', newSni: ['new.example.com'], reason: 'cert_expired' }),
 };
 
 function _sampleDataFor(event) {

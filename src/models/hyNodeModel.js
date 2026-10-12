@@ -396,6 +396,19 @@ const xrayConfigSchema = new mongoose.Schema({
         droppedEvents: { type: Number, default: 0 },
         lastReconcileAt: { type: Date, default: null },
     },
+
+    // Reality dest watchdog state (see realityGuardService). Written with
+    // targeted $set updates only, so a check never triggers a config sync.
+    realityGuard: {
+        mode: { type: String, enum: ['auto', 'notify', 'off'], default: 'auto' },
+        status: { type: String, enum: ['ok', 'failing', 'dead', 'no_candidate'], default: 'ok' },
+        failCount: { type: Number, default: 0 },
+        lastCheckAt: { type: Date, default: null },
+        lastError: { type: String, default: '', maxlength: 300 },
+        lastRotatedAt: { type: Date, default: null },
+        lastRotatedFrom: { type: String, default: '', maxlength: 300 },
+        lastRotatedTo: { type: String, default: '', maxlength: 300 },
+    },
 }, { _id: false });
 
 // Virtual node: a balancer entry that aggregates other nodes into a single

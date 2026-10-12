@@ -621,6 +621,8 @@ const expected = 'sha256=' + crypto
 | `sync.completed` | Sync cycle finished |
 | `probe.node_unreachable` | A probe cannot reach a node inbound from its vantage point |
 | `probe.target_unreachable` | A checklist resource became unreachable through a node |
+| `node.reality_dest_dead` | A node's Reality dest stopped working and was not replaced automatically |
+| `node.reality_dest_rotated` | A node's Reality dest/SNI was replaced automatically |
 | `probe.offline` | A probe stopped reporting |
 
 Disk alert thresholds are configured under **Settings → Security → Webhooks**

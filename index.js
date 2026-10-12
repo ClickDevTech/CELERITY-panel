@@ -1063,6 +1063,16 @@ function setupCronJobs() {
         }
     });
 
+    // Reality dest watchdog every 15 minutes: replaces dead dest/SNI on
+    // standalone Xray nodes (per-node mode: auto / notify / off).
+    cron.schedule('*/15 * * * *', async () => {
+        try {
+            await require('./src/services/realityGuardService').checkAll();
+        } catch (error) {
+            logger.error(`[Cron] Reality guard failed: ${error.message}`);
+        }
+    });
+
     // Probe retention daily at 00:20.
     cron.schedule('20 0 * * *', async () => {
         try {
