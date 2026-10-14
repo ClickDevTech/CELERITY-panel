@@ -383,13 +383,36 @@
 
     <%# Reality dest watchdog (realityGuardService). Covers every Reality
         inbound of the node, so it lives outside the main inbound fields and is
-        shown while at least one inbound uses Reality. Mode is the only
-        operator input; the rest is runtime state shown read-only. %>
+        shown while at least one inbound uses Reality. Mode and the reserve
+        list are operator input; the rest is runtime state shown read-only. %>
     <%
         const rg = node?.xray?.realityGuard || {};
         const rgMode = ['auto', 'notify', 'off'].includes(rg.mode) ? rg.mode : 'auto';
         const rgStatus = rg.status || 'ok';
-        const rgStandalone = !node?.cascadeRole || node.cascadeRole === 'standalone';
+        const rgGuarded = !node?.cascadeRole || ['standalone', 'portal'].includes(node.cascadeRole);
+        const rgReason = (code) => {
+            const key = 'nodes.realityGuardReason.' + code;
+            const text = t(key);
+            return text === key ? code : text;
+        };
+        const rgDescribe = value => String(value || '').split('; ').filter(Boolean).map((entry) => {
+            const idx = entry.lastIndexOf(': ');
+            return idx > 0 ? entry.slice(0, idx) + ' — ' + rgReason(entry.slice(idx + 2)) : rgReason(entry);
+        });
+        const rgWarnSnis = String(rg.warning || '').split('; ').filter(Boolean).map(entry => entry.split(': ')[0]);
+        const rgReserve = Array.isArray(rg.reserveSnis) ? rg.reserveSnis : [];
+        const rgActiveSnis = new Set([node?.xray?.realitySni || [], ...xrExtras.map(e => (e && e.realitySni) || [])]
+            .flat().map(s => String(s).toLowerCase()));
+        const rgFailedByDomain = new Map((rg.reserveFailed || []).map(f => [f.domain, f]));
+        const rgNow = Date.now();
+        const rgReserveStates = rgReserve.map((domain) => {
+            if (rgActiveSnis.has(domain)) return { domain, active: true };
+            const failed = rgFailedByDomain.get(domain);
+            if (failed && failed.at && rgNow - new Date(failed.at).getTime() < 24 * 60 * 60 * 1000) {
+                return { domain, failed };
+            }
+            return null;
+        }).filter(Boolean);
         const rgAnyReality = (node?.xray?.security || 'reality') === 'reality'
             || xrExtras.some(e => e && (e.security || 'reality') === 'reality');
         const rgDateLocale = (typeof dateLocale === 'string' && dateLocale) || undefined;
@@ -417,7 +440,7 @@
                 <i class="ti ti-chevron-down nf-module__chev"></i>
             </summary>
             <div class="nf-module__body">
-                <% if (!rgStandalone) { %>
+                <% if (!rgGuarded) { %>
                     <div class="nf-info is-warning" style="margin-bottom:14px;">
                         <i class="ti ti-alert-triangle"></i>
                         <div>
@@ -452,6 +475,27 @@
                     </label>
                 </div>
 
+                <div class="form-group" style="margin-top:14px;">
+                    <div class="nf-label-row">
+                        <label for="xrayRealityGuardReserve"><%= t('nodes.realityGuardReserveLabel') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                        <%- include('field-help', { textKey: 'nodes.realityGuardReserveHelp', scope: 'panel', t }) %>
+                    </div>
+                    <textarea id="xrayRealityGuardReserve" name="xray.realityGuard.reserveSnis" rows="4" class="code-textarea"
+                              placeholder="www.microsoft.com&#10;www.apple.com" autocomplete="off" spellcheck="false"><%= rgReserve.join('\n') %></textarea>
+                    <small class="nf-section__hint"><%= t('nodes.realityGuardReserveHint') %></small>
+                    <% rgReserveStates.forEach((item) => { %>
+                        <small class="nf-section__hint">
+                            <code><%= item.domain %></code>
+                            <% if (item.active) { %>
+                                <span class="badge badge-success"><%= t('nodes.realityGuardReserveActive') %></span>
+                            <% } else { %>
+                                <span class="badge badge-warning"><%= t('nodes.realityGuardReserveFailed').replace('{time}', rgFmt(item.failed.at)) %></span>
+                                <%= rgReason(item.failed.reason) %>
+                            <% } %>
+                        </small>
+                    <% }) %>
+                </div>
+
                 <% if (node?._id) { %>
                     <div class="nf-group">
                         <div class="nf-info <%= rgStatus === 'dead' || rgStatus === 'no_candidate' ? 'is-warning' : '' %>">
@@ -468,8 +512,10 @@
                                 <% if (rg.lastCheckAt) { %>
                                     <small><%= t('nodes.realityGuardLastCheck') %>: <%= rgFmt(rg.lastCheckAt) %></small>
                                 <% } %>
-                                <% if (rg.lastError && rgStatus !== 'ok') { %>
-                                    <small><%= t('nodes.realityGuardLastError') %>: <code><%= rg.lastError %></code></small>
+                                <% if (rg.lastError) { %>
+                                    <% rgDescribe(rg.lastError).forEach((line) => { %>
+                                        <small><%= t(rgStatus === 'ok' ? 'nodes.realityGuardNote' : 'nodes.realityGuardLastError') %>: <%= line %></small>
+                                    <% }) %>
                                 <% } %>
                                 <% if (rg.lastRotatedAt) { %>
                                     <small><%= t('nodes.realityGuardLastRotated') %> <%= rgFmt(rg.lastRotatedAt) %>: <code><%= rg.lastRotatedFrom %></code> → <code><%= rg.lastRotatedTo %></code></small>
@@ -477,6 +523,18 @@
                             </div>
                         </div>
                     </div>
+                    <% if (rgMode !== 'off' && rgWarnSnis.length) { %>
+                        <div class="nf-group">
+                            <div class="nf-info is-warning">
+                                <i class="ti ti-alert-triangle"></i>
+                                <div>
+                                    <strong><%= t('nodes.realityGuardWarningTitle') %></strong>
+                                    <small><%= t('nodes.realityGuardWarningNoH2') %></small>
+                                    <small><% rgWarnSnis.forEach((sni, i) => { %><%= i ? ', ' : '' %><code><%= sni %></code><% }) %></small>
+                                </div>
+                            </div>
+                        </div>
+                    <% } %>
                 <% } %>
 
                 <div class="nf-group">

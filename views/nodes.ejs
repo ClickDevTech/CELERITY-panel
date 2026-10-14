@@ -261,6 +261,11 @@ function nodeMetaFor(node) {
                                       title="<%= t(rgState === 'dead' ? 'nodes.realityGuardStatusDead' : 'nodes.realityGuardStatusNoCandidate') %><%= node.xray.realityGuard.lastError ? ': ' + node.xray.realityGuard.lastError : '' %>">
                                     <i class="ti ti-alert-triangle"></i> <%= t('nodes.realityGuardBadge') %>
                                 </span>
+                                <% } else if (node.xray?.realityGuard?.mode !== 'off' && node.xray?.realityGuard?.warning) { %>
+                                <span class="node-info-badge badge-agent-unknown"
+                                      title="<%= t('nodes.realityGuardWarningTitle') %>: <%= t('nodes.realityGuardWarningNoH2') %>">
+                                    <i class="ti ti-alert-circle"></i> <%= t('nodes.realityGuardWarningBadge') %>
+                                </span>
                                 <% } %>
                             <% } else { %>
                                 <span class="text-muted">—</span>

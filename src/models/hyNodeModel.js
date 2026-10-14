@@ -408,6 +408,19 @@ const xrayConfigSchema = new mongoose.Schema({
         lastRotatedAt: { type: Date, default: null },
         lastRotatedFrom: { type: String, default: '', maxlength: 300 },
         lastRotatedTo: { type: String, default: '', maxlength: 300 },
+        warning: { type: String, default: '', maxlength: 300 },
+        nodeConfirmedAt: { type: Date, default: null },
+        // Operator-owned replacement candidates; the guard never edits this list.
+        reserveSnis: { type: [String], default: [] },
+        // Guard-owned: reserve domains that failed recently and are skipped for a while.
+        reserveFailed: {
+            type: [new mongoose.Schema({
+                domain: { type: String, maxlength: 253 },
+                at: { type: Date },
+                reason: { type: String, maxlength: 40 },
+            }, { _id: false })],
+            default: [],
+        },
     },
 }, { _id: false });
 

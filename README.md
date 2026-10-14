@@ -621,8 +621,8 @@ const expected = 'sha256=' + crypto
 | `sync.completed` | Sync cycle finished |
 | `probe.node_unreachable` | A probe cannot reach a node inbound from its vantage point |
 | `probe.target_unreachable` | A checklist resource became unreachable through a node |
-| `node.reality_dest_dead` | A node's Reality dest stopped working and was not replaced automatically |
-| `node.reality_dest_rotated` | A node's Reality dest/SNI was replaced automatically |
+| `node.reality_dest_dead` | The Reality dest of a standalone or Portal node is down (confirmed from the node when it has SSH access) and was not replaced automatically. `cause` gives the reason; with `cause: no_candidate`, `candidates` lists the checked reserve and scan addresses with the reason each one was rejected |
+| `node.reality_dest_rotated` | A node's Reality dest/SNI was replaced automatically: with the first working address from the node's reserve list or, if there is none, with a host from its /24 |
 | `probe.offline` | A probe stopped reporting |
 
 Disk alert thresholds are configured under **Settings → Security → Webhooks**

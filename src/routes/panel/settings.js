@@ -328,7 +328,7 @@ router.post('/settings', async (req, res) => {
         let homepageModeChanged = null;
         let probeTrafficLimit = null;
         if (req.body['_homepageSettings'] !== undefined) {
-            const VALID_MODES = ['nginx', 'custom'];
+            const VALID_MODES = ['nginx', 'custom', 'off'];
             const mode = String(req.body['homepage.mode'] || 'nginx');
             const safeMode = VALID_MODES.includes(mode) ? mode : 'nginx';
             updates['homepage.mode'] = safeMode;
@@ -846,11 +846,10 @@ router.post('/settings/homepage/upload', (req, res) => {
     });
 });
 
-// POST /settings/homepage/reset - drop custom HTML, revert to fake nginx
+// POST /settings/homepage/reset - drop custom HTML, revert to fake nginx (unless decoy is off)
 router.post('/settings/homepage/reset', async (req, res) => {
     try {
         await homepageService.clearCustom();
-        await Settings.update({ 'homepage.mode': 'nginx' });
         logger.info(`[Panel] Homepage reset to default by ${req.session.adminUsername}`);
         return res.redirect('/panel/settings?tab=security&message=' + encodeURIComponent(res.locals.t?.('settings.homepageResetDone') || 'Homepage reset to default'));
     } catch (error) {

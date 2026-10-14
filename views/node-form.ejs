@@ -148,11 +148,13 @@ Object.assign(locals, {
                     <input type="checkbox" name="active" <%= node?.active !== false ? 'checked' : '' %>>
                     <span class="checkbox-text"><%= t('nodes.nodeActive') %></span>
                 </label>
-                <button type="submit" class="btn btn-primary">
-                    <i class="ti <%= node?._id ? 'ti-device-floppy' : 'ti-plus' %>"></i>
-                    <%= node?._id ? t('nodes.saveNode') : t('nodes.createNode') %>
-                </button>
-                <a href="/panel/nodes" class="btn"><%= t('common.cancel') %></a>
+                <div class="nf-savebar__actions">
+                    <a href="/panel/nodes" class="btn"><%= t('common.cancel') %></a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="ti <%= node?._id ? 'ti-device-floppy' : 'ti-plus' %>"></i>
+                        <%= node?._id ? t('nodes.saveNode') : t('nodes.createNode') %>
+                    </button>
+                </div>
             </div>
         </form>
     </div>

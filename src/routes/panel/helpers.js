@@ -399,6 +399,9 @@ function parseXrayFormFields(body) {
 
     if (body['xray.realityGuard.mode'] !== undefined) {
         xray.realityGuard = { mode: normalizeRealityGuardMode(body['xray.realityGuard.mode']) };
+        if (body['xray.realityGuard.reserveSnis'] !== undefined) {
+            xray.realityGuard.reserveSnis = normalizeReserveSnis(body['xray.realityGuard.reserveSnis']);
+        }
     }
 
     const front = parseXrayFront(body);
@@ -411,6 +414,10 @@ function normalizeRealityGuardMode(value) {
     return _pickEnum(value, XRAY_REALITY_GUARD_MODES, 'auto');
 }
 
+function normalizeReserveSnis(value) {
+    return require('../../services/realityGuardService').normalizeReserveSnis(value);
+}
+
 function _realityDestSignature(xray) {
     const pick = inbound => (inbound && (inbound.security || 'reality') === 'reality')
         ? `${inbound.realityDest || ''}|${(inbound.realitySni || []).join(',')}`
@@ -419,9 +426,9 @@ function _realityDestSignature(xray) {
 }
 
 /**
- * Merge the posted watchdog mode into the stored watchdog state. The form
- * only carries the mode, so runtime fields are preserved — unless the
- * operator changed a Reality dest/SNI by hand, which makes them stale.
+ * Merge the posted watchdog settings (mode and reserve list) into the stored
+ * watchdog state. Runtime fields are preserved — unless the operator changed
+ * a Reality dest/SNI by hand, which makes them stale.
  *
  * @param {Object} existingXray - Stored xray block (plain object)
  * @param {Object} nextXray     - Merged xray block about to be persisted
@@ -429,14 +436,22 @@ function _realityDestSignature(xray) {
  */
 function mergeRealityGuard(existingXray, nextXray) {
     const stored = existingXray?.realityGuard || {};
+    const posted = nextXray?.realityGuard || {};
+    const reserveSnis = posted.reserveSnis !== undefined
+        ? normalizeReserveSnis(posted.reserveSnis)
+        : normalizeReserveSnis(stored.reserveSnis);
     const guard = {
         ...stored,
-        mode: normalizeRealityGuardMode(nextXray?.realityGuard?.mode ?? stored.mode),
+        mode: normalizeRealityGuardMode(posted.mode ?? stored.mode),
+        reserveSnis,
+        reserveFailed: (stored.reserveFailed || []).filter(f => reserveSnis.includes(f.domain)),
     };
     if (_realityDestSignature(existingXray) !== _realityDestSignature(nextXray)) {
         guard.status = 'ok';
         guard.failCount = 0;
         guard.lastError = '';
+        guard.warning = '';
+        guard.nodeConfirmedAt = null;
     }
     return guard;
 }
@@ -1470,8 +1485,11 @@ function buildClonedNodePrefill(source) {
     delete xray.accessLogs;
     delete xray.manualCert;
     delete xray.manualKey;
-    // Runtime watchdog state belongs to the source node; only the mode is copied.
-    xray.realityGuard = { mode: normalizeRealityGuardMode(source.xray?.realityGuard?.mode) };
+    // Runtime watchdog state belongs to the source node; only the settings are copied.
+    xray.realityGuard = {
+        mode: normalizeRealityGuardMode(source.xray?.realityGuard?.mode),
+        reserveSnis: normalizeReserveSnis(source.xray?.realityGuard?.reserveSnis),
+    };
     xray.realityPrivateKey = freshKeys.privateKey;
     xray.realityPublicKey = freshKeys.publicKey;
     if (Array.isArray(xray.extraInbounds)) {

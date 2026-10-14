@@ -4,6 +4,7 @@
  * Modes:
  *   - 'nginx'  : built-in fake nginx welcome page (mask the panel)
  *   - 'custom' : user-uploaded HTML stored in settings
+ *   - 'off'    : no decoy; root redirects to /panel (custom HTML is kept)
  *
  * Hot path (`respond`) only touches in-memory state — no DB or disk
  * reads per request. Cache is rebuilt on init() and on setMode/setCustom/clearCustom.
@@ -63,6 +64,16 @@ function setNginxState(customBuf = null) {
     };
 }
 
+function setOffState(customBuf = null) {
+    state = {
+        mode: 'off',
+        body: null,
+        etag: null,
+        hasCustom: !!customBuf,
+        customSize: customBuf ? customBuf.length : 0,
+    };
+}
+
 function setCustomState(buf) {
     state = {
         mode: 'custom',
@@ -82,9 +93,15 @@ async function init() {
     try {
         const Settings = require('../models/settingsModel');
         const settings = await Settings.get();
-        const mode = settings?.homepage?.mode === 'custom' ? 'custom' : 'nginx';
+        const rawMode = settings?.homepage?.mode;
+        const mode = rawMode === 'custom' || rawMode === 'off' ? rawMode : 'nginx';
         const customBuf = normalizeCustomBuffer(settings?.homepage?.customHtml);
 
+        if (mode === 'off') {
+            setOffState(customBuf);
+            logger.info('[Homepage] Decoy disabled; root redirects to /panel');
+            return;
+        }
         if (mode === 'custom') {
             if (customBuf) {
                 setCustomState(customBuf);
@@ -107,12 +124,18 @@ async function init() {
  * revert persisted mode to nginx so the next restart stays consistent.
  */
 async function setMode(mode) {
-    if (mode !== 'nginx' && mode !== 'custom') return;
+    if (mode !== 'nginx' && mode !== 'custom' && mode !== 'off') return;
 
     const Settings = require('../models/settingsModel');
     const settings = await Settings.get();
     const customBuf = normalizeCustomBuffer(settings?.homepage?.customHtml);
 
+    if (mode === 'off') {
+        await Settings.update({ 'homepage.mode': 'off' });
+        setOffState(customBuf);
+        logger.info('[Homepage] Decoy disabled; root redirects to /panel');
+        return;
+    }
     if (mode === 'nginx') {
         await Settings.update({ 'homepage.mode': 'nginx' });
         setNginxState(customBuf);
@@ -146,10 +169,17 @@ async function setCustom(buffer) {
 }
 
 /**
- * Remove the custom HTML payload and reset the cache to the built-in nginx page.
+ * Remove the custom HTML payload. In 'off' mode the decoy stays disabled;
+ * otherwise the cache is reset to the built-in nginx page.
  */
 async function clearCustom() {
     const Settings = require('../models/settingsModel');
+    if (state.mode === 'off') {
+        await Settings.update({ 'homepage.customHtml': null });
+        setOffState();
+        logger.info('[Homepage] Custom HTML cleared, decoy stays disabled');
+        return;
+    }
     await Settings.update({
         'homepage.mode': 'nginx',
         'homepage.customHtml': null,
@@ -171,7 +201,12 @@ function getCustomSize() {
  * masking headers and ETag-based 304 support.
  */
 function respond(req, res) {
-    const { body, etag } = state;
+    const { mode, body, etag } = state;
+
+    if (mode === 'off') {
+        res.redirect(302, '/panel');
+        return;
+    }
 
     res.setHeader('Server', FAKE_SERVER_HEADER);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');

@@ -183,7 +183,14 @@ const _SAMPLE_BUILDERS = {
     'probe.offline': () => ({ probeId: 'sample-probe', probeName: 'Moscow', country: 'RU', asn: 'AS12345', lastSeenAt: new Date().toISOString() }),
     'probe.node_unreachable': () => ({ probeId: 'sample-probe', probeName: 'Moscow', country: 'RU', asn: 'AS12345', nodeId: 'sample-node', nodeName: 'Sample Node', inboundId: 'main', code: 'handshake_failed', message: 'tls handshake timeout' }),
     'probe.target_unreachable': () => ({ probeId: 'sample-probe', probeName: 'Moscow', country: 'RU', asn: 'AS12345', nodeId: 'sample-node', nodeName: 'Sample Node', targetId: 'openai', httpStatus: 403, message: 'blocked' }),
-    'node.reality_dest_dead': () => ({ nodeId: 'sample-node', name: 'Sample Node', dest: 'old.example.com:443', reason: 'cert_expired', cause: 'no_candidate' }),
+    'node.reality_dest_dead': () => ({
+        nodeId: 'sample-node',
+        name: 'Sample Node',
+        dest: 'old.example.com:443',
+        reason: 'cert_expired',
+        cause: 'no_candidate',
+        candidates: [{ domain: 'reserve.example.com', reason: 'cert_name' }],
+    }),
     'node.reality_dest_rotated': () => ({ nodeId: 'sample-node', name: 'Sample Node', oldDest: 'old.example.com:443', newDest: 'new.example.com:443', newSni: ['new.example.com'], reason: 'cert_expired' }),
 };
 
