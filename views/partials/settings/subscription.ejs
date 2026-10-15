@@ -96,6 +96,14 @@
                             </span>
                         </label>
                     </div>
+                    <div class="form-group">
+                        <label for="usersDefaultAccess"><%= t('settings.usersDefaultAccess') || 'Доступ без групп' %></label>
+                        <select name="users.defaultAccess" id="usersDefaultAccess">
+                            <option value="all" <%= (settings?.users?.defaultAccess ?? 'all') === 'all' ? 'selected' : '' %>><%= t('settings.usersDefaultAccessAll') || 'Все ноды' %></option>
+                            <option value="none" <%= settings?.users?.defaultAccess === 'none' ? 'selected' : '' %>><%= t('settings.usersDefaultAccessNone') || 'Пусто (строгая изоляция)' %></option>
+                        </select>
+                        <small class="hint"><%= t('settings.usersDefaultAccessHint') || 'Что видит юзер без групп и прямых привязок. Группы — опциональное ограничение поверх.' %></small>
+                    </div>
                 </div>
 
                 <hr class="settings-divider">

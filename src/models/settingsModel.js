@@ -149,6 +149,14 @@ const settingsSchema = new mongoose.Schema({
         },
     },
 
+    // Default visibility for users with no groups and no directly linked
+    // nodes. 'all' (default): such users see every active entry node — groups
+    // are opt-in restriction. 'none': strict gating, unassigned users get an
+    // empty subscription until the operator assigns them.
+    users: {
+        defaultAccess: { type: String, enum: ['all', 'none'], default: 'all' },
+    },
+
     deployment: {
         completed:   { type: Boolean, default: false },
         profile:     { type: String, enum: ['', 'self-host', 'remote'], default: '' },

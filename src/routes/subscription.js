@@ -116,11 +116,27 @@ async function getActiveNodesWithCache() {
     return nodes;
 }
 
+/**
+ * Group visibility filter (pure, tested).
+ *
+ * Users WITH groups see the intersection. Users with NO groups follow the
+ * users.defaultAccess policy: 'all' (default) sees every node, 'none' sees
+ * nothing until the operator assigns them.
+ */
+function filterNodesByGroups(allNodes, userGroupIds, defaultAccess) {
+    if (!userGroupIds || userGroupIds.length === 0) {
+        return defaultAccess === 'none' ? [] : [...allNodes];
+    }
+    return allNodes.filter(n => {
+        const nodeGroupIds = (n.groups || []).map(g => g._id?.toString() || g.toString());
+        return nodeGroupIds.some(gId => userGroupIds.includes(gId));
+    });
+}
+
 async function getActiveNodes(user) {
     let nodes = [];
     let settings;
     let allNodesForResolution = null;
-    
     // Check if user has linked nodes
     if (user.nodes && user.nodes.length > 0) {
         // User has linked nodes - only need settings
@@ -140,14 +156,11 @@ async function getActiveNodes(user) {
         settings = loadedSettings;
         allNodesForResolution = allNodes;
         
-        // Filter by user groups
+        // Filter by user groups. Users with no groups fall back to the
+        // users.defaultAccess policy ('all' by default): groups are opt-in
+        // restriction, so an unassigned user sees every active node.
         const userGroupIds = (user.groups || []).map(g => g._id?.toString() || g.toString());
-        nodes = allNodes.filter(n => {
-            const nodeGroupIds = (n.groups || []).map(g => g._id?.toString() || g.toString());
-            return nodeGroupIds.some(gId => userGroupIds.includes(gId));
-        });
-        
-        logger.debug(`[Sub] User ${user.userId}: ${nodes.length} nodes by groups`);
+        nodes = filterNodesByGroups(allNodes, userGroupIds, loadedSettings?.users?.defaultAccess);
     }
     
     const lb = settings.loadBalancing || {};
@@ -3700,6 +3713,7 @@ module.exports.generateClashYAML = generateClashYAML;
 module.exports.generateSingboxJSON = generateSingboxJSON;
 module.exports.generateV2rayJSON = generateV2rayJSON;
 module.exports.generateXrayJSON = generateXrayJSON;
+module.exports.filterNodesByGroups = filterNodesByGroups;
 // Exposed for the diagnostic probe manifest. The probe matches subscription
 // outbounds to nodes by tag, so the panel must predict those tags with the
 // very same code that generates the subscription.

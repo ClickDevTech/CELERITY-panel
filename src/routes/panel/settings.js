@@ -253,6 +253,11 @@ router.post('/settings', async (req, res) => {
                 updates['subscription.hoppingEnabled'] = next;
                 hoppingChanged = true;
             }
+            // Default visibility for groupless users. Same card, same rules.
+            setIfPresent('users.defaultAccess', (v) => {
+                const raw = String(v || 'all');
+                return raw === 'none' ? 'none' : 'all';
+            });
 
             if (req.body['subscription.buttonsJson'] !== undefined) {
                 let parsedButtons = [];
