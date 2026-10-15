@@ -5,7 +5,6 @@ const Admin = require('../../models/adminModel');
 const totpService = require('../../services/totpService');
 const logger = require('../../utils/logger');
 const {
-    loginLimiter,
     totpVerifyLimiter,
     clearPanelTotpPending,
     clearPanelLoginTotpLockout,
@@ -145,8 +144,9 @@ router.post('/setup', async (req, res) => {
     }
 });
 
-// POST /panel/login (with rate limiting)
-router.post('/login', loginLimiter, async (req, res) => {
+// POST /panel/login (no throttle by operator decision — brute force is
+// covered by fail2ban on SSH and TOTP on the panel; see totpVerifyLimiter).
+router.post('/login', async (req, res) => {
     try {
         const lockout = getPanelLoginTotpLockout(req);
         if (lockout) {
