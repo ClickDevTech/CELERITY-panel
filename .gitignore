@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 
+# Local throwaway scripts
+*.tmp.js
+check-*.tmp.js
+
 # Environment
 .env
 .env.local
