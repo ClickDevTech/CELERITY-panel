@@ -58,10 +58,11 @@ async function getUserByToken(token) {
 /**
  * Get subscription title for a user.
  * Takes subscriptionTitle from the first group, or the group name.
+ * Groupless users get the panel brand instead of a protocol placeholder.
  */
 function getSubscriptionTitle(user) {
     if (!user.groups || user.groups.length === 0) {
-        return 'Hysteria';
+        return 'Vanpn';
     }
     
     // Take the first group
