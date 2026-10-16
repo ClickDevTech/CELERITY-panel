@@ -839,6 +839,9 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
     const fingerprint = inbound.fingerprint || 'chrome';
 
     const params = new URLSearchParams();
+    // VLESS requires `encryption`; only `none` is defined. Strict clients
+    // (Hiddify/sing-box ≥1.11 import, NekoBox) reject URIs without it.
+    params.set('encryption', 'none');
     // Modern Xray-core clients (HAPP, NekoBox, v2rayN, Streisand) expect
     // `type=xhttp`. The legacy `splithttp` keyword is rejected by some
     // clients and silently falls back to tcp, breaking the connection.
