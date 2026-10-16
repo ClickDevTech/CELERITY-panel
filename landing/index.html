@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VAMPN</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&family=Cormorant+Garamond:ital,wght@0,500;1,500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#07030a; --bg2:#1a0510; --blood:#c1121f; --blood-hi:#ff4d5a; --blood-dk:#4a0009; --bone:#e9dcd0;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--bone)}
+body{
+  font-family:"Cormorant Garamond",Georgia,serif;overflow:hidden;
+  background:
+    radial-gradient(ellipse 60% 45% at 50% 38%,rgba(193,18,31,.22),transparent 70%),
+    radial-gradient(ellipse at 50% 120%,var(--bg2),transparent 60%),var(--bg);
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,.85) 100%)}
+#rain{position:fixed;inset:0;width:100%;height:100%}
+main{position:relative;z-index:2;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.2rem;padding:1rem;text-align:center}
+
+.stage{perspective:900px}
+.logo{position:relative;transform-style:preserve-3d;transition:transform .12s ease-out;will-change:transform}
+.layer{
+  grid-area:1/1;display:block;
+  font-family:"UnifrakturCook","Pirata One",Georgia,serif;font-weight:700;
+  font-size:clamp(4.2rem,21vw,15rem);line-height:1;letter-spacing:.02em;white-space:nowrap;
+  user-select:none;
+}
+.stack{display:grid;transform-style:preserve-3d}
+.stack .layer{position:relative}
+.stack .layer:not(:first-child){position:absolute;inset:0}
+.front{
+  background:linear-gradient(175deg,#ff6b74 0%,var(--blood) 30%,#7d0711 70%,#3b0007 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 24px rgba(193,18,31,.55));
+}
+.gloss{ /* wet highlight */
+  background:linear-gradient(170deg,rgba(255,255,255,.75) 0%,rgba(255,255,255,0) 22%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;pointer-events:none
+}
+.drips{position:absolute;left:0;right:0;top:66%;height:0;filter:url(#goo);transform:translateZ(1px);pointer-events:none}
+.drip{
+  position:absolute;top:0;width:var(--w);height:0;border-radius:0 0 50% 50%;
+  background:linear-gradient(90deg,#7d0711,var(--blood) 40%,var(--blood-hi) 55%,#6a0009);
+  animation:drip var(--t) cubic-bezier(.45,.05,.55,.95) var(--d) infinite;
+}
+.drip::after{content:"";position:absolute;left:50%;bottom:-.2em;width:calc(var(--w)*1.7);aspect-ratio:1;
+  transform:translateX(-50%);border-radius:50%;background:radial-gradient(circle at 35% 30%,var(--blood-hi),var(--blood) 55%,#5a0009)}
+@keyframes drip{
+  0%{height:0;opacity:1;transform:translateY(0)}
+  70%{height:var(--h);opacity:1;transform:translateY(0)}
+  88%{height:calc(var(--h)*1.15);opacity:1;transform:translateY(0)}
+  100%{height:calc(var(--h)*1.15);opacity:0;transform:translateY(min(18vh,160px))}
+}
+.puddle{width:min(70vw,640px);height:26px;margin:-1.2rem auto 0;border-radius:50%;
+  background:radial-gradient(ellipse,rgba(193,18,31,.75),rgba(193,18,31,0) 70%);filter:blur(6px)}
+
+.tag{font-size:clamp(1.2rem,3.6vw,1.9rem);font-style:italic;max-width:30ch;line-height:1.35;color:#d9c6bb}
+.cta{
+  font:inherit;font-size:1.3rem;color:var(--bone);text-decoration:none;
+  padding:.8rem 2.2rem;border:1px solid var(--blood);border-radius:999px;
+  background:linear-gradient(180deg,rgba(193,18,31,.35),rgba(74,0,9,.55));
+  box-shadow:0 0 28px rgba(193,18,31,.35),inset 0 1px 0 rgba(255,255,255,.18);
+  transition:box-shadow .25s,transform .25s
+}
+.cta:hover,.cta:focus-visible{box-shadow:0 0 46px rgba(255,77,90,.6),inset 0 1px 0 rgba(255,255,255,.3);transform:translateY(-2px);outline:none}
+.cta:focus-visible{outline:2px solid var(--bone);outline-offset:4px}
+@media (prefers-reduced-motion:reduce){.drip{animation:none;height:var(--h)}.logo{transition:none}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="goo"><feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="b"/>
+    <feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -9"/></filter>
+</svg>
+<canvas id="rain" aria-hidden="true"></canvas>
+<main>
+  <div class="stage">
+    <div class="logo" id="logo">
+      <div class="stack" id="stack">
+        <span class="layer front" aria-label="VAMPN">VAMPN</span>
+      </div>
+    </div>
+    <div class="puddle"></div>
+  </div>
+  <p class="tag">Твоя ночь без границ. Сеть, что пьёт слежку до дна.</p>
+  <a class="cta" href="https://t.me/vampirenetworkbot">Войти во тьму</a>
+</main>
+<script>
+(function(){
+  var TEXT="VAMPN", DEPTH=22, STEP=2.4;
+  var stack=document.getElementById('stack'), logo=document.getElementById('logo');
+
+  /* 3D extrusion: stacked copies pushed back in Z, darker with depth */
+  var front=stack.firstElementChild;
+  for(var i=1;i<=DEPTH;i++){
+    var s=document.createElement('span');
+    s.className='layer';s.setAttribute('aria-hidden','true');s.textContent=TEXT;
+    var k=i/DEPTH, l=Math.round(30-24*k);
+    s.style.color='hsl(352,85%,'+Math.max(4,l/2)+'%)';
+    s.style.transform='translateZ('+(-i*STEP)+'px)';
+    stack.appendChild(s);
+  }
+  front.style.transform='translateZ(0)';
+  var gl=document.createElement('span');
+  gl.className='layer gloss';gl.setAttribute('aria-hidden','true');gl.textContent=TEXT;
+  gl.style.transform='translateZ(1px)';stack.appendChild(gl);
+
+  /* dripping blood */
+  var dr=document.createElement('div');dr.className='drips';
+  logo.appendChild(dr);
+  function makeDrips(){
+    dr.innerHTML='';
+    var w=stack.offsetWidth, n=Math.max(7,Math.round(w/70));
+    for(var i=0;i<n;i++){
+      var d=document.createElement('i');d.className='drip';
+      d.style.left=(4+Math.random()*92)+'%';
+      d.style.setProperty('--w',(7+Math.random()*10).toFixed(1)+'px');
+      d.style.setProperty('--h',(30+Math.random()*Math.min(150,w*.28)).toFixed(0)+'px');
+      d.style.setProperty('--t',(4.5+Math.random()*4).toFixed(1)+'s');
+      d.style.setProperty('--d',(-Math.random()*8).toFixed(1)+'s');
+      dr.appendChild(d);
+    }
+  }
+  (document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(makeDrips);
+  var rt;addEventListener('resize',function(){clearTimeout(rt);rt=setTimeout(makeDrips,250)});
+
+  /* pointer / idle tilt */
+  var tx=0,ty=0,px=null,py=null,still=!matchMedia('(prefers-reduced-motion:reduce)').matches;
+  function aim(x,y){px=x;py=y}
+  addEventListener('pointermove',function(e){aim(e.clientX/innerWidth-.5,e.clientY/innerHeight-.5)});
+  addEventListener('pointerleave',function(){px=null});
+  (function tilt(t){
+    var ax,ay;
+    if(px===null){ax=still?Math.sin(t/1800)*.28:0;ay=still?Math.cos(t/2300)*.12:0}else{ax=px;ay=py}
+    tx+=(ax-tx)*.08;ty+=(ay-ty)*.08;
+    logo.style.transform='rotateY('+(tx*46)+'deg) rotateX('+(-ty*30)+'deg)';
+    requestAnimationFrame(tilt);
+  })(0);
+
+  /* falling blood rain */
+  var cv=document.getElementById('rain'),cx=cv.getContext('2d'),W,H,drops=[];
+  function size(){var r=devicePixelRatio||1;W=cv.width=innerWidth*r;H=cv.height=innerHeight*r;cv.r=r}
+  size();addEventListener('resize',size);
+  function spawn(init){return{x:Math.random()*W,y:init?Math.random()*H:-20,v:(2+Math.random()*4)*cv.r,l:(10+Math.random()*26)*cv.r,a:.15+Math.random()*.4}}
+  for(var i=0;i<60;i++)drops.push(spawn(true));
+  if(!matchMedia('(prefers-reduced-motion:reduce)').matches)(function loop(){
+    cx.clearRect(0,0,W,H);
+    drops.forEach(function(d,i){
+      d.y+=d.v;d.v*=1.012;
+      var g=cx.createLinearGradient(0,d.y-d.l,0,d.y);
+      g.addColorStop(0,'rgba(193,18,31,0)');g.addColorStop(1,'rgba(220,30,45,'+d.a+')');
+      cx.strokeStyle=g;cx.lineWidth=2*cv.r;cx.lineCap='round';
+      cx.beginPath();cx.moveTo(d.x,d.y-d.l);cx.lineTo(d.x,d.y);cx.stroke();
+      if(d.y-d.l>H)drops[i]=spawn(false);
+    });
+    requestAnimationFrame(loop);
+  })();
+})();
+</script>
+</body>
+</html>

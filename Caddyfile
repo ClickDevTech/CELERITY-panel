@@ -19,9 +19,17 @@
     #     protocols tls1.2 tls1.2
     # }
 
-    reverse_proxy backend:3000 {
-        transport http {
-            versions 1.1
+    # Public landing at exact / (VAMPN.html). Everything else -> panel.
+    handle / {
+        root * /srv/landing
+        file_server
+    }
+
+    handle {
+        reverse_proxy backend:3000 {
+            transport http {
+                versions 1.1
+            }
         }
     }
 }
