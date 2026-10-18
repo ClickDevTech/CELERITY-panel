@@ -881,6 +881,7 @@ function parseHysteriaFormFields(body) {
             geoip: aclEnabled ? (body['acl.geoip'] || '').trim() : '',
             geosite: aclEnabled ? (body['acl.geosite'] || '').trim() : '',
             geoUpdateInterval: aclEnabled ? (body['acl.geoUpdateInterval'] || '').trim() : '',
+            inlineRules: aclRules,
         },
         aclRules,
         useTlsFiles: parseBool(body, 'useTlsFiles', false),
