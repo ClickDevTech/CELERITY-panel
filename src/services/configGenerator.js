@@ -445,7 +445,8 @@ function buildResolverConfig(node) {
  */
 function applyOutboundsAndAcl(config, node) {
     const customOutbounds = node.outbounds || [];
-    const customAclRules = node.aclRules || [];
+    // ACL rules can come from either aclRules (Xray) or acl.inlineRules (Hysteria)
+    const customAclRules = node.aclRules || node.acl?.inlineRules || [];
     const aclOptions = node.acl || {};
     const aclEnabled = aclOptions.enabled !== false;
     
