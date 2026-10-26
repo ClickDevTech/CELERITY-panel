@@ -1,7 +1,7 @@
 # Celerity panel updater sidecar.
 # Tiny, dependency-free Node service. Needs docker CLI + compose plugin to drive
 # the host Docker daemon (via a mounted socket) and git for source-mode updates.
-FROM node:20-alpine
+FROM node:22-alpine
 
 RUN apk add --no-cache docker-cli docker-cli-compose git
 

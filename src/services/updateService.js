@@ -10,7 +10,7 @@
  *   2. Updater bridge: talk to the isolated updater sidecar over the internal
  *      network using HMAC-signed requests (status + apply).
  *
- * No new npm dependencies: uses global fetch (Node 20) and the built-in crypto
+ * No new npm dependencies: uses global fetch (Node 22) and the built-in crypto
  * module only.
  */
 
