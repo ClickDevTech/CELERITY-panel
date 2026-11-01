@@ -28,6 +28,9 @@ const {
     applyFrontPatch,
     captureFrontRollbackState,
 } = require('../services/edgeFront/frontConfig');
+const vlessEncryption = require('../utils/vlessEncryption');
+
+const { redactNode } = vlessEncryption;
 
 function hasSshCredentials(node) {
     return !!(node?.ssh?.password || node?.ssh?.privateKey);
@@ -136,7 +139,7 @@ async function setNodeActive(req, res, active) {
 
             return res.json({
                 success: true,
-                node: disabledNode,
+                node: redactNode(disabledNode),
                 runtime,
                 ...(warning ? { warning } : {}),
             });
@@ -169,7 +172,7 @@ async function setNodeActive(req, res, active) {
             logger.warn(`[Nodes API] Enable node ${node.name} failed: ${errorMessage}`);
             return res.status(500).json({
                 error: errorMessage,
-                node: failedNode,
+                node: redactNode(failedNode),
                 runtime,
             });
         }
@@ -185,7 +188,7 @@ async function setNodeActive(req, res, active) {
 
         logger.info(`[Nodes API] Enabled node ${node.name}`);
 
-        res.json({ success: true, node: enabledNode, runtime });
+        res.json({ success: true, node: redactNode(enabledNode), runtime });
     } catch (error) {
         logger.error(`[Nodes API] ${active ? 'Enable' : 'Disable'} node error: ${error.message}`);
         res.status(500).json({ error: error.message });
@@ -208,7 +211,7 @@ router.get('/', requireScope('nodes:read'), async (req, res) => {
             .populate('groups', 'name color')
             .sort({ name: 1 });
         
-        res.json(nodes);
+        res.json(nodes.map(redactNode));
     } catch (error) {
         logger.error(`[Nodes API] List error: ${error.message}`);
         res.status(500).json({ error: error.message });
@@ -251,7 +254,7 @@ router.get('/:id', requireScope('nodes:read'), async (req, res) => {
         });
         
         res.json({
-            ...node.toObject(),
+            ...redactNode(node),
             userCount,
         });
     } catch (error) {
@@ -307,6 +310,9 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
             if (xhttpError) return res.status(400).json({ error: xhttpError });
             const frontError = applyFrontPatch(xray, frontNode, null);
             if (frontError) return res.status(400).json({ error: frontError });
+            vlessEncryption.takeRegenerateIds(xray);
+            const encryptionError = await vlessEncryption.applyVlessEncryptionToXray(xray, null);
+            if (encryptionError) return res.status(400).json({ error: encryptionError });
         }
 
         // Validate virtual-specific fields up-front (pre('validate') hook is
@@ -429,7 +435,7 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
 
         logger.info(`[Nodes API] Created ${nodeType} node ${name} (${isServerlessNode(nodeType) ? 'serverless' : ip})`);
 
-        res.status(201).json(node);
+        res.status(201).json(redactNode(node));
     } catch (error) {
         logger.error(`[Nodes API] Create node error: ${error.message}`);
         res.status(500).json({ error: error.message });
@@ -497,6 +503,16 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         // having them wiped by a whole-subdocument $set.
         const nextXray = xrayPatch ? { ...(existing.xray || {}), ...xrayPatch } : existing.xray;
         if (xrayPatch) {
+            const regenerateIds = vlessEncryption.takeRegenerateIds(xrayPatch);
+            delete nextXray.vlessEncryptionRegenerate;
+            const encryptionError = await vlessEncryption.applyVlessEncryptionToXray(
+                nextXray,
+                existing.xray,
+                regenerateIds
+            ) || vlessEncryption.versionError(nextXray, existing.xrayVersion, existing.name);
+            if (encryptionError) return res.status(400).json({ error: encryptionError });
+            // Main-inbound keys live on nextXray; extras were settled in place.
+            for (const key of vlessEncryption.FIELDS) xrayPatch[key] = nextXray[key];
             delete updates.xray;
             for (const [key, value] of Object.entries(xrayPatch)) {
                 // front is owned by the xray branch below: it merges the
@@ -625,7 +641,7 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         
         logger.info(`[Nodes API] Updated node ${node.name}`);
         
-        res.json(node);
+        res.json(redactNode(node));
     } catch (error) {
         logger.error(`[Nodes API] Update error: ${error.message}`);
         res.status(500).json({ error: error.message });
@@ -844,7 +860,7 @@ router.post('/:id/groups', requireScope('nodes:write'), async (req, res) => {
         await invalidateNodesCache();
         
         logger.info(`[Nodes API] Added groups for node ${node.name}`);
-        res.json(node);
+        res.json(redactNode(node));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -875,7 +891,7 @@ router.delete('/:id/groups/:groupId', requireScope('nodes:write'), async (req, r
         await invalidateNodesCache();
         
         logger.info(`[Nodes API] Removed group ${req.params.groupId} from node ${node.name}`);
-        res.json(node);
+        res.json(redactNode(node));
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

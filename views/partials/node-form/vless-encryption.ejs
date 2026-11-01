@@ -1,0 +1,102 @@
+<%# VLESS Encryption block shared by the main inbound and extra inbounds.
+    Server keys never reach the browser: only the client key is shown, and
+    regeneration is requested through a hidden flag handled on save.
+    Extra rows post parallel arrays; the checkbox and the regenerate flag carry
+    the row id, the same way uniqueName does. %>
+<%
+    const ve = inbound || {};
+    const veExtra = !!isExtra;
+    const veName = (field) => veExtra ? `xray_extra_${field}` : `xray.${field}`;
+    const veOn = ve.vlessEncryption === true;
+    const veAuth = ve.vlessEncryptionAuth === 'mlkem768' ? 'mlkem768' : 'x25519';
+    const veMode = ['native', 'xorpub', 'random'].includes(ve.vlessEncryptionMode) ? ve.vlessEncryptionMode : 'native';
+    const veTicket = ve.vlessEncryptionTicket || '600s';
+    const vePub = ve.vlessEncryptionPublicKey || '';
+%>
+<details class="nf-module vless-enc-module" <%= veOn ? 'open' : '' %>>
+    <summary class="nf-module__head">
+        <span class="nf-module__ico"><i class="ti ti-lock"></i></span>
+        <span class="nf-module__text">
+            <span class="nf-module__title"><%= t('nodes.xrayVlessEncTitle') %></span>
+            <span class="nf-module__sub"><a class="docs-hint-link" href="https://github.com/XTLS/Xray-core/pull/5067" target="_blank" rel="noopener noreferrer" title="VLESS Encryption">ⓘ</a><%= t('nodes.xrayVlessEncSub') %></span>
+        </span>
+        <i class="ti ti-chevron-down nf-module__chev"></i>
+    </summary>
+    <div class="nf-module__body">
+        <label class="nf-tag">
+            <input type="checkbox" class="vless-enc-toggle" name="<%= veName('vlessEncryption') %>"
+                   value="<%= veExtra ? (ve.id || '') : 'on' %>" <%= veOn ? 'checked' : '' %>
+                   onchange="updateVlessEncryptionUI(this, true)">
+            <span><%= t('nodes.xrayVlessEncEnable') %></span>
+        </label>
+
+        <% if (typeof oldXray !== 'undefined' && oldXray) { %>
+            <div class="nf-info is-warning" style="margin-top:12px;">
+                <i class="ti ti-alert-triangle"></i>
+                <div><small><%= t('nodes.xrayVlessEncOldXray') %></small></div>
+            </div>
+        <% } %>
+
+        <div class="vless-enc-fields" style="<%= veOn ? '' : 'display:none' %>;margin-top:12px;">
+            <div class="form-row-3">
+                <div class="form-group">
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayVlessEncAuth') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayVlessEncAuthHelp', scope: 'both', t }) %>
+                    </div>
+                    <select class="vless-enc-auth" name="<%= veName('vlessEncryptionAuth') %>"
+                            data-saved="<%= veAuth %>" onchange="updateVlessEncryptionAuth(this)">
+                        <option value="x25519" <%= veAuth === 'x25519' ? 'selected' : '' %>><%= t('nodes.xrayVlessEncAuthX25519') %></option>
+                        <option value="mlkem768" <%= veAuth === 'mlkem768' ? 'selected' : '' %>><%= t('nodes.xrayVlessEncAuthMlkem') %></option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayVlessEncMode') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayVlessEncModeHelp', scope: 'both', t }) %>
+                    </div>
+                    <select name="<%= veName('vlessEncryptionMode') %>">
+                        <option value="native" <%= veMode === 'native' ? 'selected' : '' %>>native</option>
+                        <option value="xorpub" <%= veMode === 'xorpub' ? 'selected' : '' %>>xorpub</option>
+                        <option value="random" <%= veMode === 'random' ? 'selected' : '' %>>random</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <div class="nf-label-row">
+                        <label><%= t('nodes.xrayVlessEncTicket') %></label>
+                        <%- include('field-help', { textKey: 'nodes.xrayVlessEncTicketHelp', scope: 'server', t }) %>
+                    </div>
+                    <input type="text" name="<%= veName('vlessEncryptionTicket') %>" value="<%= veTicket %>"
+                           maxlength="32" autocomplete="off" spellcheck="false" placeholder="600s"
+                           oninput="validateVlessEncryptionTicket(this)">
+                    <small class="vless-enc-ticket-error" style="display:none;color:var(--danger, #e5484d);"><%= t('nodes.xrayVlessEncTicketInvalid') %></small>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <div class="nf-label-row">
+                    <label><%= t('nodes.xrayVlessEncPublicKey') %></label>
+                    <%- include('field-help', { textKey: 'nodes.xrayVlessEncPublicKeyHelp', scope: 'client', t }) %>
+                </div>
+                <div class="input-with-button">
+                    <input type="text" class="vless-enc-pub" value="<%= vePub %>" readonly
+                           data-saved="<%= vePub %>"
+                           placeholder="<%= t('nodes.xrayVlessEncKeyPending') %>" spellcheck="false">
+                    <button type="button" class="btn btn-sm" onclick="copyVlessEncryptionKey(this)" title="<%= t('common.copy') %>"><i class="ti ti-copy"></i></button>
+                    <button type="button" class="btn btn-sm" onclick="regenerateVlessEncryptionKey(this)" title="<%= t('nodes.xrayVlessEncRegenerate') %>"><i class="ti ti-refresh"></i></button>
+                </div>
+                <input type="hidden" class="vless-enc-regenerate" name="<%= veName('vlessEncryptionRegenerate') %>" value="">
+            </div>
+
+            <div class="nf-info">
+                <i class="ti ti-info-circle"></i>
+                <div>
+                    <small><%= t('nodes.xrayVlessEncNoteClients') %></small>
+                    <small><%= t('nodes.xrayVlessEncNoteRefresh') %></small>
+                    <small><%= t('nodes.xrayVlessEncNoteFallback') %></small>
+                    <small class="vless-enc-mlkem-note" style="<%= veAuth === 'mlkem768' ? '' : 'display:none' %>"><%= t('nodes.xrayVlessEncNoteMlkem') %></small>
+                </div>
+            </div>
+        </div>
+    </div>
+</details>

@@ -27,6 +27,7 @@ const webhookService = require('../services/webhookService');
 const { isServerlessNode } = require('../utils/nodeTypes');
 const { isValidXhttpRange, isAllZeroRange } = require('../utils/xhttpOptions');
 const { distributeFingerprints, pickFingerprint } = require('../utils/fingerprints');
+const { buildClientEncryption } = require('../utils/vlessEncryption');
 const {
     isInboundFronted,
     isFrontActive,
@@ -528,10 +529,15 @@ function getXrayPublishedInbounds(node) {
         xhttpSessionIDLength: xray.xhttpSessionIDLength,
         xhttpSeqPlacement: xray.xhttpSeqPlacement,
         xhttpSeqKey: xray.xhttpSeqKey,
+        // Client `encryption` string or null; CDN and front copies inherit it.
+        vlessEncryption: buildClientEncryption(xray),
     };
 
+    // An encrypted inbound without a usable client key is withheld: publishing
+    // it as plain VLESS would hand out links the server rejects.
+    const encryptionUsable = (inbound, encryption) => inbound.vlessEncryption !== true || !!encryption;
     const extras = (Array.isArray(xray.extraInbounds) ? xray.extraInbounds : [])
-        .filter(i => i && i.port)
+        .filter(i => i && i.port && encryptionUsable(i, buildClientEncryption(i)))
         .map(i => ({
             address: node.domain || node.ip,
             port: i.port,
@@ -584,10 +590,11 @@ function getXrayPublishedInbounds(node) {
             xhttpSessionIDLength: i.xhttpSessionIDLength,
             xhttpSeqPlacement: i.xhttpSeqPlacement,
             xhttpSeqKey: i.xhttpSeqKey,
+            vlessEncryption: buildClientEncryption(i),
         }));
 
     const frontActive = isFrontActive(xray);
-    return [main, ...extras]
+    return [...(encryptionUsable(xray, main.vlessEncryption) ? [main] : []), ...extras]
         // Desired front settings are saved before the remote cutover. Do not
         // leak their loopback ports, nor advertise Caddy before smoke tests
         // have promoted the front to active.
@@ -849,6 +856,7 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
     // clients and silently falls back to tcp, breaking the connection.
     params.set('type', transport);
     params.set('security', security);
+    if (inbound.vlessEncryption) params.set('encryption', inbound.vlessEncryption);
 
     if (security === 'reality') {
         if (inbound.flow && transport === 'tcp') params.set('flow', inbound.flow);
@@ -1401,6 +1409,11 @@ function _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel = _pas
     port: ${inbound.port || node.port || 443}
     uuid: "${user.xrayUuid}"
     udp: true`;
+    // Mihomo >= 1.19.13; older cores ignore the key and fail to connect.
+    if (inbound.vlessEncryption) {
+        proxy += `
+    encryption: "${inbound.vlessEncryption}"`;
+    }
 
     if (security === 'reality') {
         const sni = inbound.realitySni && inbound.realitySni[0] ? inbound.realitySni[0] : host;
@@ -1610,6 +1623,11 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound) {
     const fingerprint = inbound.fingerprint || 'chrome';
     const tag = _xrayInboundName(node, inbound);
 
+    if (inbound.vlessEncryption) {
+        logger.debug(`[Sub] sing-box: skipped "${node.name}" inbound — VLESS Encryption is not supported`);
+        return { tag, outbound: null };
+    }
+
     const outbound = {
         type: 'vless',
         tag,
@@ -1794,7 +1812,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
                 }
             }
 
-            const vnextUser = { id: user.xrayUuid, encryption: 'none' };
+            const vnextUser = { id: user.xrayUuid, encryption: inbound.vlessEncryption || 'none' };
             if (transport === 'tcp' && (security === 'reality' || security === 'tls') && inbound.flow) {
                 vnextUser.flow = inbound.flow;
             }
@@ -3680,4 +3698,6 @@ module.exports.vlessURIForInbound = generateVlessURIForInbound;
 module.exports.singboxVlessOutboundForInbound = _buildSingboxVlessOutboundForInbound;
 module.exports.clashVlessProxyForInbound = _buildClashVlessProxyForInbound;
 module.exports.v2rayOutboundsForNode = _buildV2rayOutboundsForNode;
+module.exports.singboxJSON = generateSingboxJSON;
+module.exports.clashYAML = generateClashYAML;
 module.exports.resolveCdnOrigins = resolveCdnOrigins;

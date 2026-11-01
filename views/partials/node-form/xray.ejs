@@ -11,7 +11,11 @@
     const xrMainFronted = xrFrontOn && xrFrontIds.includes('main');
     const xrTlsModuleOn = xrAnyTls || xrFrontOn;
     const xrExtras = node?.xray?.extraInbounds || [];
-    const xrFallbackVisible = (node?.xray?.transport === 'tcp' || !node?.xray?.transport) && node?.xray?.security === 'tls';
+    const xrFallbackVisible = (node?.xray?.transport === 'tcp' || !node?.xray?.transport) && node?.xray?.security === 'tls'
+        && node?.xray?.vlessEncryption !== true;
+    // VLESS Encryption needs Xray >= 25.9.5; an unknown version is not flagged.
+    const xrVer = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(node?.xrayVersion || '').trim());
+    const xrVlessEncOldXray = !!xrVer && (Number(xrVer[1]) * 1e6 + Number(xrVer[2]) * 1e3 + Number(xrVer[3])) < 25009005;
 %>
 <div class="nf-pane" data-pane="xr-inbounds" data-types="xray">
     <div class="nf-pane__head">
@@ -144,6 +148,10 @@
                    value="<%= node?.xray?.fallbackDest || '' %>"
                    placeholder="<%= t('nodes.xrayFallbackDestPlaceholder') %>"
                    maxlength="253" autocomplete="off" spellcheck="false">
+        </div>
+
+        <div id="xrayVlessEncryption">
+            <%- include('vless-encryption', { inbound: node?.xray || {}, isExtra: false, oldXray: xrVlessEncOldXray, t }) %>
         </div>
 
         <%# WebSocket-specific fields %>
@@ -365,13 +373,13 @@
 
         <div id="extraInboundsContainer">
             <% xrExtras.forEach(function(extra, idx) { %>
-                <%- include('xray-extra-inbound', { extra: extra, idx: idx, t: t, frontOn: xrFrontOn, frontIds: xrFrontIds }) %>
+                <%- include('xray-extra-inbound', { extra: extra, idx: idx, t: t, frontOn: xrFrontOn, frontIds: xrFrontIds, oldXray: xrVlessEncOldXray }) %>
             <% }); %>
         </div>
 
         <%# Hidden template cloned client-side by addExtraInbound() %>
         <template id="extraInboundTemplate">
-            <%- include('xray-extra-inbound', { extra: {}, idx: 0, t: t, frontOn: false, frontIds: [] }) %>
+            <%- include('xray-extra-inbound', { extra: {}, idx: 0, t: t, frontOn: false, frontIds: [], oldXray: xrVlessEncOldXray }) %>
         </template>
 
         <div class="nf-actions">

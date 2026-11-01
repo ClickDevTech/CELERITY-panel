@@ -130,6 +130,24 @@ class CryptoService {
 
         return { privateKey: b64url(privRaw), publicKey: b64url(pubRaw) };
     }
+
+    /**
+     * Derive the raw x25519 public key from a raw base64url private key, in
+     * the same unpadded base64url form generateX25519KeysLocal() emits.
+     *
+     * @param {string} privateKey - 32-byte raw key, base64url
+     * @returns {string} base64url public key
+     */
+    deriveX25519PublicKey(privateKey) {
+        const raw = Buffer.from(String(privateKey || ''), 'base64url');
+        if (raw.length !== 32) throw new Error('x25519 private key must be 32 bytes');
+        const der = Buffer.concat([X25519_PKCS8_PREFIX, raw]);
+        const keyObject = crypto.createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
+        const pubDer = crypto.createPublicKey(keyObject).export({ format: 'der', type: 'spki' });
+        return pubDer.subarray(pubDer.length - 32).toString('base64url');
+    }
 }
+
+const X25519_PKCS8_PREFIX = Buffer.from('302e020100300506032b656e04220420', 'hex');
 
 module.exports = new CryptoService();

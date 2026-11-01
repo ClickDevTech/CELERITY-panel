@@ -557,7 +557,8 @@ class SyncService {
         try {
             configContent = configGenerator.generateXrayConfig(node, users);
         } catch (genErr) {
-            if (genErr.code === 'PANEL_CERT_UNAVAILABLE' || genErr.code === 'MANUAL_CERT_UNAVAILABLE') {
+            if (genErr.code === 'PANEL_CERT_UNAVAILABLE' || genErr.code === 'MANUAL_CERT_UNAVAILABLE'
+                || genErr.code === 'VLESS_ENCRYPTION_KEY_INVALID') {
                 logger.error(`[Xray Sync] Node ${node.name}: skipping push — ${genErr.message}`);
                 await HyNode.updateOne({ _id: node._id }, {
                     $set: {

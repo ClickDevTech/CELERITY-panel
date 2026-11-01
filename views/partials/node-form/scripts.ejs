@@ -606,7 +606,10 @@ const i18n = {
     frontSiteUploadFailed: <%- JSON.stringify(t("nodes.frontSiteUploadFailed")) %>,
     frontLockedTransport: <%- JSON.stringify(t("nodes.frontLockedTransport")) %>,
     xrayExtraInbound: <%- JSON.stringify(t("nodes.xrayExtraInbound")) %>,
-    xrayRemoveInboundConfirm: <%- JSON.stringify(t("nodes.xrayRemoveInboundConfirm")) %>
+    xrayRemoveInboundConfirm: <%- JSON.stringify(t("nodes.xrayRemoveInboundConfirm")) %>,
+    xrayVlessEncFallbackConfirm: <%- JSON.stringify(t("nodes.xrayVlessEncFallbackConfirm")) %>,
+    xrayVlessEncRegenerateConfirm: <%- JSON.stringify(t("nodes.xrayVlessEncRegenerateConfirm")) %>,
+    xrayVlessEncRegeneratePending: <%- JSON.stringify(t("nodes.xrayVlessEncRegeneratePending")) %>
 };
 const i18nConfig = {
     copied: <%- JSON.stringify(t("common.copied")) %>,
@@ -864,13 +867,90 @@ function onCascadeRoleChange() {
 
 // ==================== Xray UI ====================
 
-// VLESS fallbacks: tcp+tls only.
+// VLESS fallbacks: tcp+tls only, and never together with VLESS Encryption.
 function _refreshMainFallbackVisibility() {
     const fb = document.getElementById('xrayFallbackGroup');
     if (!fb) return;
     const transport = document.getElementById('xrayTransport')?.value || 'tcp';
     const security = document.getElementById('xraySecurity')?.value || 'reality';
-    fb.style.display = (transport === 'tcp' && security === 'tls') ? '' : 'none';
+    const encrypted = !!document.querySelector('#xrayVlessEncryption .vless-enc-toggle')?.checked;
+    fb.style.display = (transport === 'tcp' && security === 'tls' && !encrypted) ? '' : 'none';
+}
+
+// ==================== VLESS Encryption ====================
+
+function _vlessEncScope(el) {
+    const card = _findExtraCard(el);
+    return {
+        card,
+        module: el.closest('.vless-enc-module'),
+        fallback: card
+            ? card.querySelector('input[name="xray_extra_fallbackDest"]')
+            : document.getElementById('xrayFallbackDest'),
+    };
+}
+
+function updateVlessEncryptionUI(cb, userAction) {
+    const scope = _vlessEncScope(cb);
+    if (userAction && cb.checked && scope.fallback && scope.fallback.value.trim()) {
+        if (!confirm(i18n.xrayVlessEncFallbackConfirm)) {
+            cb.checked = false;
+            return;
+        }
+        scope.fallback.value = '';
+    }
+    const fields = scope.module?.querySelector('.vless-enc-fields');
+    if (fields) fields.style.display = cb.checked ? '' : 'none';
+    if (scope.card) _refreshExtraFallbackVisibility(scope.card);
+    else _refreshMainFallbackVisibility();
+}
+
+// The server generates a new key when the type changes; hide the stale one.
+function updateVlessEncryptionAuth(select) {
+    const module = select.closest('.vless-enc-module');
+    const pub = module?.querySelector('.vless-enc-pub');
+    const regenerate = module?.querySelector('.vless-enc-regenerate');
+    if (pub) pub.value = (select.value === select.dataset.saved && !regenerate?.value) ? (pub.dataset.saved || '') : '';
+    const note = module?.querySelector('.vless-enc-mlkem-note');
+    if (note) note.style.display = select.value === 'mlkem768' ? '' : 'none';
+}
+
+function validateVlessEncryptionTicket(input) {
+    const value = input.value.trim().toLowerCase();
+    const match = /^(\d{1,5})(?:-(\d{1,5}))?s$/.exec(value);
+    let valid = value === '' || !!match;
+    if (match) {
+        const from = Number(match[1]);
+        const to = match[2] === undefined ? null : Number(match[2]);
+        valid = to === null ? from <= 86400 : (from >= 1 && to >= from && to <= 86400);
+    }
+    const error = input.parentElement.querySelector('.vless-enc-ticket-error');
+    if (error) error.style.display = valid ? 'none' : '';
+}
+
+async function copyVlessEncryptionKey(btn) {
+    const pub = btn.closest('.vless-enc-module')?.querySelector('.vless-enc-pub');
+    if (!pub || !pub.value) return;
+    try {
+        await navigator.clipboard.writeText(pub.value);
+    } catch (_) {
+        pub.select();
+        document.execCommand('copy');
+    }
+}
+
+function regenerateVlessEncryptionKey(btn) {
+    if (!confirm(i18n.xrayVlessEncRegenerateConfirm)) return;
+    const module = btn.closest('.vless-enc-module');
+    const flag = module?.querySelector('.vless-enc-regenerate');
+    if (!flag) return;
+    const card = _findExtraCard(btn);
+    flag.value = card ? (card.querySelector('input[name="xray_extra_id"]')?.value || '') : '1';
+    const pub = module.querySelector('.vless-enc-pub');
+    if (pub) {
+        pub.value = '';
+        pub.placeholder = i18n.xrayVlessEncRegeneratePending;
+    }
 }
 
 function updateXrayTransportUI() {
@@ -1142,6 +1222,11 @@ function addExtraInbound() {
         paddingObfsCb.value = id;
         paddingObfsCb.checked = false;
     }
+    const vlessEncCb = root.querySelector('input[name="xray_extra_vlessEncryption"]');
+    if (vlessEncCb) {
+        vlessEncCb.value = id;
+        vlessEncCb.checked = false;
+    }
 
     const titleSpan = root.querySelector('.extra-inbound-title');
     if (titleSpan) titleSpan.textContent = (i18n.xrayExtraInbound || 'Extra inbound') + ' #' + (container.children.length + 1);
@@ -1175,7 +1260,8 @@ function _refreshExtraFallbackVisibility(card) {
     if (!fb) return;
     const transport = card.querySelector('select[name="xray_extra_transport"]')?.value || 'tcp';
     const security = card.querySelector('select[name="xray_extra_security"]')?.value || 'reality';
-    fb.style.display = (transport === 'tcp' && security === 'tls') ? '' : 'none';
+    const encrypted = !!card.querySelector('.vless-enc-toggle')?.checked;
+    fb.style.display = (transport === 'tcp' && security === 'tls' && !encrypted) ? '' : 'none';
 }
 
 function updateExtraXrayTransportUI(selectEl) {

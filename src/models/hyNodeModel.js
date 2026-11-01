@@ -166,6 +166,20 @@ function xhttpAdvancedFields() {
     };
 }
 
+// VLESS Encryption (src/utils/vlessEncryption.js). Keys are panel-generated:
+// the server key is stored encrypted with ENCRYPTION_KEY and must never be
+// returned by APIs; the public key is what subscriptions publish.
+function vlessEncryptionFields() {
+    return {
+        vlessEncryption: { type: Boolean, default: false },
+        vlessEncryptionAuth: { type: String, enum: ['x25519', 'mlkem768'], default: 'x25519' },
+        vlessEncryptionMode: { type: String, enum: ['native', 'xorpub', 'random'], default: 'native' },
+        vlessEncryptionTicket: { type: String, default: '600s', match: /^\d{1,5}(-\d{1,5})?s$/ },
+        vlessEncryptionPrivateKey: { type: String, default: '' },
+        vlessEncryptionPublicKey: { type: String, default: '', match: /^[A-Za-z0-9_-]*$/ },
+    };
+}
+
 // Per-inbound stream/security settings shared by the main inbound and extras.
 // Extras add `id`, `label`, `port` and reuse their own `inboundTag` instead of
 // the node-level fields.
@@ -220,6 +234,7 @@ const xrayExtraInboundSchema = new mongoose.Schema({
 
     // VLESS fallbacks[].dest — emitted only on tcp+tls; empty = no fallback.
     fallbackDest: { type: String, default: '', trim: true, maxlength: 253 },
+    ...vlessEncryptionFields(),
 }, { _id: false });
 
 // Caddy front owning the public port: fronted inbounds move to loopback with
@@ -324,6 +339,7 @@ const xrayConfigSchema = new mongoose.Schema({
 
     // VLESS fallbacks[].dest — emitted only on tcp+tls; empty = no fallback.
     fallbackDest: { type: String, default: '', trim: true, maxlength: 253 },
+    ...vlessEncryptionFields(),
 
     // TLS provisioning strategy (security==='tls'):
     //   panel       — inline panel's LE cert (PANEL_DOMAIN); no node files.

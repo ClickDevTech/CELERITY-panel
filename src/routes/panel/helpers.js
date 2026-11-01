@@ -35,6 +35,7 @@ const {
     normalizeFingerprintPool,
 } = require('../../utils/fingerprints');
 const { normalizeXrayFront, xrayNeedsTls } = require('../../utils/xrayFront');
+const vlessEncryption = require('../../utils/vlessEncryption');
 const { version: appVersion } = require('../../../package.json');
 
 // Compiled template cache (production only)
@@ -131,6 +132,33 @@ function _splitCsv(raw, { keepEmpty = false } = {}) {
 
 const _sanitizeXhttpRange = sanitizeXhttpRange;
 
+// Keys are never read from the form: applyVlessEncryptionToXray() keeps or
+// generates them server-side.
+function parseVlessEncryptionFields(enabled, auth, mode, ticket) {
+    return {
+        vlessEncryption: !!enabled,
+        vlessEncryptionAuth: _pickEnum(auth, vlessEncryption.AUTH_VALUES, vlessEncryption.DEFAULT_AUTH),
+        vlessEncryptionMode: _pickEnum(mode, vlessEncryption.MODE_VALUES, vlessEncryption.DEFAULT_MODE),
+        vlessEncryptionTicket: String(ticket ?? '').trim().slice(0, 32),
+    };
+}
+
+/**
+ * Inbounds whose VLESS Encryption key the operator asked to regenerate:
+ * 'main' for the main inbound, otherwise extraInbounds[].id.
+ */
+function parseVlessEncryptionRegenerateIds(body) {
+    const ids = [];
+    if (body['xray.vlessEncryptionRegenerate'] === '1') ids.push('main');
+    const extra = body.xray_extra_vlessEncryptionRegenerate;
+    if (extra !== undefined) {
+        for (const id of (Array.isArray(extra) ? extra : [extra])) {
+            if (id) ids.push(String(id));
+        }
+    }
+    return ids;
+}
+
 /**
  * Parse the `xray.extraInbounds[]` array out of parallel form arrays
  * (xray_extra_id[], xray_extra_port[], xray_extra_*[]). Each index across the
@@ -198,6 +226,10 @@ function parseExtraInbounds(body) {
     const xhttpSeqPlacements = arr('xray_extra_xhttpSeqPlacement');
     const xhttpSeqKeys = arr('xray_extra_xhttpSeqKey');
     const fallbackDests = arr('xray_extra_fallbackDest');
+    const vlessEncryptionIds = new Set(arr('xray_extra_vlessEncryption').map(v => String(v || '')));
+    const vlessEncryptionAuths = arr('xray_extra_vlessEncryptionAuth');
+    const vlessEncryptionModes = arr('xray_extra_vlessEncryptionMode');
+    const vlessEncryptionTickets = arr('xray_extra_vlessEncryptionTicket');
 
     const result = [];
     for (let i = 0; i < idArr.length; i++) {
@@ -268,6 +300,15 @@ function parseExtraInbounds(body) {
             xhttpSeqKey: String(xhttpSeqKeys[i] || '').trim().slice(0, 64),
             fallbackDest: String(fallbackDests[i] || '').trim().slice(0, 253),
         };
+        // Rows rendered without the encryption block keep their stored settings.
+        if (vlessEncryptionAuths[i] !== undefined) {
+            Object.assign(inbound, parseVlessEncryptionFields(
+                vlessEncryptionIds.has(id),
+                vlessEncryptionAuths[i],
+                vlessEncryptionModes[i],
+                vlessEncryptionTickets[i]
+            ));
+        }
         // Empty short-id list is invalid for Reality; restore the empty marker.
         if (inbound.realityShortIds.length === 0) inbound.realityShortIds = [''];
         result.push(inbound);
@@ -369,6 +410,14 @@ function parseXrayFormFields(body) {
 
     if (body['xray.fallbackDest'] !== undefined) {
         xray.fallbackDest = String(body['xray.fallbackDest']).trim().slice(0, 253);
+    }
+    if (body['xray.vlessEncryptionAuth'] !== undefined) {
+        Object.assign(xray, parseVlessEncryptionFields(
+            body['xray.vlessEncryption'] === 'on',
+            body['xray.vlessEncryptionAuth'],
+            body['xray.vlessEncryptionMode'],
+            body['xray.vlessEncryptionTicket']
+        ));
     }
 
     // TLS source / manual cert+key (only meaningful when security==='tls').
@@ -703,6 +752,7 @@ function sanitizeXrayForRender(xray) {
         plain.front = { ...plain.front, siteHtmlBytes: bufferByteLength(plain.front.siteHtml) };
         delete plain.front.siteHtml;
     }
+    vlessEncryption.stripVlessEncryptionKeys(plain, { keepPublic: true });
     return plain;
 }
 
@@ -1503,6 +1553,8 @@ function buildClonedNodePrefill(source) {
             return copy;
         });
     }
+    // The clone gets its own VLESS Encryption keys when it is saved.
+    vlessEncryption.stripVlessEncryptionKeys(xray);
 
     const name = String(source.name || 'node').trim() || 'node';
     return {
@@ -1562,6 +1614,7 @@ module.exports = {
     connectNodeSSH,
     parseXrayFormFields,
     parseExtraInbounds,
+    parseVlessEncryptionRegenerateIds,
     parseXrayFront,
     mergeRealityGuard,
     normalizeRealityGuardMode,

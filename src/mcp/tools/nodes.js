@@ -33,6 +33,7 @@ const {
     applyFrontPatch,
     captureFrontRollbackState,
 } = require('../../services/edgeFront/frontConfig');
+const vlessEncryption = require('../../utils/vlessEncryption');
 
 async function invalidateNodesCache() {
     await cache.invalidateNodes();
@@ -48,7 +49,7 @@ function getSyncService() {
 const sshSessions = new Map();
 
 // Fields excluded from all node queries returned to MCP clients
-const NODE_SAFE_SELECT = '-ssh.password -ssh.privateKey -xray.realityPrivateKey -statsSecret';
+const NODE_SAFE_SELECT = `-ssh.password -ssh.privateKey -xray.realityPrivateKey -statsSecret ${vlessEncryption.PRIVATE_KEY_EXCLUDE}`;
 
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
@@ -116,6 +117,12 @@ const xrayInboundCommonZ = {
     xhttpSeqPlacement: z.enum(XHTTP_PLACEMENT_VALUES).optional(),
     xhttpSeqKey: z.string().max(64).optional(),
     fallbackDest: z.string().optional().describe('VLESS fallbacks[].dest — emitted only on tcp+tls'),
+    // Keys are panel-generated and never accepted from callers.
+    vlessEncryption: z.boolean().optional().describe('VLESS Encryption (mlkem768x25519plus); requires Xray >= 25.9.5 and no fallbackDest. sing-box subscriptions skip encrypted inbounds'),
+    vlessEncryptionAuth: z.enum(['x25519', 'mlkem768']).optional().describe('Server key type: x25519 (default, short client key) or mlkem768 (post-quantum auth, ~1.6 KB client key)'),
+    vlessEncryptionMode: z.enum(['native', 'xorpub', 'random']).optional().describe('Wire appearance (default native)'),
+    vlessEncryptionTicket: z.string().max(32).optional().describe('0-RTT ticket lifetime: "600s" (default), "300-600s", or "0s" to disable 0-RTT'),
+    vlessEncryptionRegenerate: z.boolean().optional().describe('Generate a new key; clients must refresh the subscription'),
 };
 
 const xrayExtraInboundZ = z.object({
@@ -366,7 +373,7 @@ async function queryNodes(args) {
         const node = await HyNode.findById(parsed.id).select(NODE_SAFE_SELECT).populate('groups', 'name color');
         if (!node) return { error: `Node '${parsed.id}' not found`, code: 404 };
 
-        const result = { ...node.toObject() };
+        const result = vlessEncryption.redactNode(node);
 
         if (parsed.includeUsers) {
             result.users = await HyUser.find({ nodes: node._id, enabled: true, isProbe: { $ne: true } })
@@ -381,7 +388,7 @@ async function queryNodes(args) {
                 const config = require('../../../config');
                 const baseUrl = process.env.BASE_URL || `http://localhost:${config.PORT}`;
                 result.config = node.type === 'xray'
-                    ? configGenerator.generateXrayConfig(node, [])
+                    ? configGenerator.generateXrayConfig(node, [], { redactSecrets: true })
                     : configGenerator.generateNodeConfig(node, `${baseUrl}/api/auth`);
             }
         }
@@ -439,6 +446,11 @@ async function manageNode(args, emit) {
                         const frontError = applyFrontPatch(data.xray, frontNode, null);
                         if (frontError) return { error: frontError, code: 400 };
                         data.port = frontNode.port;
+                    }
+                    if (data.xray) {
+                        vlessEncryption.takeRegenerateIds(data.xray);
+                        const encryptionError = await vlessEncryption.applyVlessEncryptionToXray(data.xray, null);
+                        if (encryptionError) return { error: encryptionError, code: 400 };
                     }
                 }
                 const existing = await HyNode.findOne({ ip: data.ip, type: nodeType });
@@ -531,7 +543,7 @@ async function manageNode(args, emit) {
             getSyncService().maybePushCdnOrigins(null, node);
             await invalidateNodesCache();
             logger.info(`[MCP] Created ${nodeType} node ${data.name} (${isServerlessNode(nodeType) ? nodeType : data.ip})`);
-            return { success: true, node };
+            return { success: true, node: vlessEncryption.redactNode(node) };
         }
 
         case 'update': {
@@ -559,6 +571,7 @@ async function manageNode(args, emit) {
 
             // Xray: partial update via dot-paths so unsent secrets (realityPrivateKey,
             // realityPublicKey, manualKey) are preserved instead of wiped by a full $set.
+            const regenerateIds = vlessEncryption.takeRegenerateIds(data.xray);
             if (data.xray && typeof data.xray === 'object') {
                 for (const [k, v] of Object.entries(data.xray)) {
                     // front is owned by the xray branch below: it merges the
@@ -576,6 +589,21 @@ async function manageNode(args, emit) {
                 .select(FRONT_HIDDEN_SELECT)
                 .lean();
             if (!existing) return { error: `Node '${id}' not found`, code: 404 };
+
+            if (data.xray && typeof data.xray === 'object') {
+                const merged = { ...(existing.xray || {}), ...data.xray };
+                const encryptionError = await vlessEncryption.applyVlessEncryptionToXray(
+                    merged,
+                    existing.xray,
+                    regenerateIds
+                ) || vlessEncryption.versionError(merged, existing.xrayVersion, existing.name);
+                if (encryptionError) return { error: encryptionError, code: 400 };
+                // Main-inbound keys live on `merged`; extras were settled in place.
+                for (const key of vlessEncryption.FIELDS) {
+                    data.xray[key] = merged[key];
+                    updates[`xray.${key}`] = merged[key];
+                }
+            }
 
             // Renames only — pre-existing duplicates stay editable (see panel route).
             if (updates.name !== undefined
@@ -690,7 +718,7 @@ async function manageNode(args, emit) {
             getSyncService().maybePushCdnOrigins(existing, node);
 
             logger.info(`[MCP] Updated node ${node.name}`);
-            return { success: true, node };
+            return { success: true, node: vlessEncryption.redactNode(node) };
         }
 
         case 'delete': {

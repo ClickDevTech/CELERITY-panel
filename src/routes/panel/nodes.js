@@ -43,10 +43,12 @@ const frontProvisionService = require('../../services/edgeFront/provisionService
 const { MAX_CUSTOM_BYTES, validateCustomHtml } = require('../../utils/decoyPage');
 const config = require('../../../config');
 const logger = require('../../utils/logger');
+const vlessEncryption = require('../../utils/vlessEncryption');
 
 const {
     render,
     parseXrayFormFields,
+    parseVlessEncryptionRegenerateIds,
     mergeRealityGuard,
     validateXrayFormFields,
     ensureExtraInboundRealityKeys,
@@ -623,7 +625,8 @@ router.post('/nodes', async (req, res) => {
         if (nodeType === 'xray') {
             nodeData.xray = parseXrayFormFields(req.body);
             applyFrontLayout(nodeData.xray, nodeData, null);
-            const xrayError = validateXrayFormFields(nodeData.xray, nodeData);
+            const xrayError = validateXrayFormFields(nodeData.xray, nodeData)
+                || await vlessEncryption.applyVlessEncryptionToXray(nodeData.xray, null);
             if (xrayError) {
                 return sendNodeFormResult(req, res, '/panel/nodes/add', xrayError);
             }
@@ -1154,7 +1157,13 @@ router.post('/nodes/:id', async (req, res) => {
             attachFrontRollbackState(updates.xray, frontRollbackState, existingXray.front);
             // The front takes over the public port, so the inbound moves.
             updates.port = nodeForValidate.port;
-            const xrayError = validateXrayFormFields(updates.xray, nodeForValidate);
+            const xrayError = validateXrayFormFields(updates.xray, nodeForValidate)
+                || await vlessEncryption.applyVlessEncryptionToXray(
+                    updates.xray,
+                    existingXray,
+                    parseVlessEncryptionRegenerateIds(req.body)
+                )
+                || vlessEncryption.versionError(updates.xray, existingNode.xrayVersion, existingNode.name);
             if (xrayError) {
                 return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, xrayError);
             }

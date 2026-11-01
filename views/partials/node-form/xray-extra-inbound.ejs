@@ -143,7 +143,7 @@
             </div>
 
             <%# VLESS fallbacks[].dest — TCP+TLS only %>
-            <div class="form-group extra-fallback-group" style="<%= (transport === 'tcp' && security === 'tls') ? '' : 'display:none' %>">
+            <div class="form-group extra-fallback-group" style="<%= (transport === 'tcp' && security === 'tls' && e.vlessEncryption !== true) ? '' : 'display:none' %>">
                 <div class="nf-label-row">
                     <label><%= t('nodes.xrayFallbackDestLabel') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
                     <%- include('field-help', { textKey: 'nodes.xrayFallbackDestHint', scope: 'server', t }) %>
@@ -152,6 +152,8 @@
                        placeholder="<%= t('nodes.xrayFallbackDestPlaceholder') %>"
                        maxlength="253" autocomplete="off" spellcheck="false">
             </div>
+
+            <%- include('vless-encryption', { inbound: e, isExtra: true, oldXray: typeof oldXray !== 'undefined' && oldXray, t }) %>
 
             <%# WebSocket fields %>
             <div class="extra-ws-fields" style="<%= transport === 'ws' ? '' : 'display:none' %>">

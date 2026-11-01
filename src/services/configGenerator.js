@@ -10,6 +10,7 @@ const appConfig = require('../../config');
 const { isValidXhttpRange } = require('../utils/xhttpOptions');
 const { isServerlessNode } = require('../utils/nodeTypes');
 const { KCP_DEFAULTS, normalizeTransport } = require('../utils/cascadeTransport');
+const { buildServerDecryption } = require('../utils/vlessEncryption');
 
 // Canonical on-node path for the Xray access log when the opt-in access-logs
 // module is enabled. The cc-agent tails exactly this file.
@@ -805,15 +806,17 @@ function buildXrayClients(users, inbound) {
  * Build a VLESS inbound entry from a per-inbound config. Used both for the
  * main inbound and each item in `extraInbounds[]`.
  */
-function buildVlessInbound(inbound, users, node) {
+function buildVlessInbound(inbound, users, node, options = {}) {
+    const decryption = buildServerDecryption(inbound, options);
     const settings = {
         clients: buildXrayClients(users, inbound),
-        decryption: 'none',
+        decryption,
     };
 
-    // VLESS fallbacks: TCP+TLS only per Xray spec.
+    // VLESS fallbacks: TCP+TLS only per Xray spec. Xray refuses fallbacks
+    // together with VLESS Encryption, so they are dropped for encrypted inbounds.
     const fallbackDest = (inbound.fallbackDest || '').trim();
-    if (fallbackDest && inbound.transport === 'tcp' && inbound.security === 'tls') {
+    if (fallbackDest && decryption === 'none' && inbound.transport === 'tcp' && inbound.security === 'tls') {
         settings.fallbacks = [{ dest: fallbackDest }];
     }
 
@@ -847,9 +850,11 @@ function buildConnIdlePolicy(value) {
  * Generate Xray JSON config for a node with all its users
  * @param {Object} node - Node document (with xray sub-object)
  * @param {Array} users - Array of user documents (with xrayUuid)
+ * @param {Object} [options]
+ * @param {boolean} [options.redactSecrets] - Replace VLESS Encryption keys with a placeholder (previews)
  * @returns {string} JSON string
  */
-function generateXrayConfig(node, users) {
+function generateXrayConfig(node, users, options = {}) {
     const xray = node.xray || {};
     const apiPort = xray.apiPort || 61000;
     const mainInboundTag = xray.inboundTag || 'vless-in';
@@ -894,6 +899,11 @@ function generateXrayConfig(node, users) {
         xhttpSeqPlacement: xray.xhttpSeqPlacement,
         xhttpSeqKey: xray.xhttpSeqKey,
         fallbackDest: xray.fallbackDest,
+        vlessEncryption: xray.vlessEncryption,
+        vlessEncryptionAuth: xray.vlessEncryptionAuth,
+        vlessEncryptionMode: xray.vlessEncryptionMode,
+        vlessEncryptionTicket: xray.vlessEncryptionTicket,
+        vlessEncryptionPrivateKey: xray.vlessEncryptionPrivateKey,
     };
 
     const extraInbounds = Array.isArray(xray.extraInbounds) ? xray.extraInbounds : [];
@@ -929,8 +939,8 @@ function generateXrayConfig(node, users) {
                 settings: { address: '127.0.0.1' },
                 tag: 'API_INBOUND',
             },
-            buildVlessInbound(mainInbound, users, node),
-            ...extraInbounds.map(extra => buildVlessInbound(extra, users, node)),
+            buildVlessInbound(mainInbound, users, node, options),
+            ...extraInbounds.map(extra => buildVlessInbound(extra, users, node, options)),
         ],
         outbounds: [
             { protocol: 'freedom', tag: 'direct' },

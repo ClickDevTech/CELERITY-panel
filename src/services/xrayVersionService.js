@@ -670,6 +670,15 @@ async function startVersionChange(nodeId, version) {
         throw error;
     }
 
+    const node = await HyNode.findById(key).select('name xray.vlessEncryption xray.extraInbounds.vlessEncryption').lean();
+    const encryptionError = require('../utils/vlessEncryption')
+        .versionError(node?.xray, release.version, node?.name);
+    if (encryptionError) {
+        const error = new Error(`${encryptionError}; disable it before switching to this release`);
+        error.statusCode = 400;
+        throw error;
+    }
+
     const task = {
         id: crypto.randomUUID(),
         nodeId: key,
