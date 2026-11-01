@@ -670,14 +670,17 @@ router.post('/nodes', async (req, res) => {
 
 // POST /panel/nodes/scan-sni - Stream TLS 1.3+H2 scan results as SSE
 router.post('/nodes/scan-sni', sniScanLimiter, async (req, res) => {
-    const ip      = String(req.body.ip      || '').trim();
+    const target  = String(req.body.ip      || '').trim().slice(0, 253);
     const port    = Math.min(65535, Math.max(1,   parseInt(req.body.port,    10) || 443));
     const threads = Math.min(200,   Math.max(1,   parseInt(req.body.threads, 10) || 50));
     const timeout = Math.min(30,    Math.max(2,   parseInt(req.body.timeout, 10) || 5));
 
-    if (!sniScanner.isValidIpv4(ip)) {
-        return res.status(400).json({ error: 'Invalid IPv4 address' });
+    // Accepts an IPv4 or a hostname (the node address field may hold either).
+    const resolved = await sniScanner.resolveScanIp(target);
+    if (resolved.error) {
+        return res.status(400).json({ error: resolved.error });
     }
+    const ip = resolved.ip;
 
     res.setHeader('Content-Type',      'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control',     'no-cache');
@@ -698,6 +701,7 @@ router.post('/nodes/scan-sni', sniScanLimiter, async (req, res) => {
     };
 
     try {
+        send('start', { ip });
         await sniScanner.scanRange({
             ip,
             port,

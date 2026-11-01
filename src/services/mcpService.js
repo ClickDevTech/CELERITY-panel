@@ -117,7 +117,7 @@ const TOOLS = {
     },
 
     scan_sni: {
-        description: 'Scan a host IP for working TLS SNI domains (for Reality/masquerade). Streams progress and results. Does not require a node — give a raw IP.',
+        description: 'Scan the /24 around a public IPv4 (or a hostname resolved to one) for working TLS SNI domains (for Reality/masquerade). Streams progress and results. Does not require a node. Private and reserved ranges are refused.',
         requiredScope: 'nodes:read',
         inputSchema: zodToInputSchema(nodesTools.schemas.scanSni),
     },

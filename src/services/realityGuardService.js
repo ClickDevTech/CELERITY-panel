@@ -36,6 +36,7 @@ const webhook = require('./webhookService');
 const cache = require('./cacheService');
 const nodeSetupLock = require('../utils/nodeSetupLock');
 const logger = require('../utils/logger');
+const { isValidHostname, isPrivateIp } = require('../utils/netAddress');
 
 const LOG = '[Reality Guard]';
 
@@ -89,32 +90,6 @@ function normalizeMode(value) {
 
 function clip(value) {
     return String(value || '').slice(0, MAX_TEXT);
-}
-
-const HOSTNAME_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-
-/**
- * Strict hostname check for values coming from remote certificates.
- * Rejects wildcards, IPs, single labels and anything outside [a-z0-9.-].
- */
-function isValidHostname(value) {
-    return typeof value === 'string' && HOSTNAME_RE.test(value.toLowerCase());
-}
-
-function isPrivateIp(host) {
-    const version = net.isIP(host);
-    if (version === 4) {
-        const [a, b] = host.split('.').map(Number);
-        return a === 127 || a === 10 || a === 0
-            || (a === 172 && b >= 16 && b <= 31)
-            || (a === 192 && b === 168)
-            || (a === 169 && b === 254);
-    }
-    if (version === 6) {
-        const lower = host.toLowerCase();
-        return lower === '::1' || lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe80');
-    }
-    return false;
 }
 
 /**
@@ -708,16 +683,16 @@ async function loadUsedDomains() {
  * Scan the node /24 and return domains that pass the strict panel check,
  * a couple more than needed so the node check can still reject some.
  */
-async function scanCandidates(node, needed, used, memo) {
+async function scanCandidates(scanIp, needed, used, memo) {
     const scanned = await sniScanner.scanRange({
-        ip: node.ip,
+        ip: scanIp,
         port: SCAN_PORT,
         threads: SCAN_THREADS,
         timeout: SCAN_TIMEOUT_SEC,
     });
 
     const picked = [];
-    const candidates = filterScanResults(scanned, used, node.ip).slice(0, MAX_CANDIDATE_CHECKS);
+    const candidates = filterScanResults(scanned, used, scanIp).slice(0, MAX_CANDIDATE_CHECKS);
     for (const candidate of candidates) {
         if (picked.length >= needed + SCAN_SPARE_CANDIDATES) break;
         const result = await checkDest({ host: candidate.domain, port: SCAN_PORT, snis: [candidate.domain] }, memo);
@@ -787,10 +762,15 @@ async function rotate(node, fresh, failed, ssh, now = Date.now()) {
         reserveFailed = mergeReserveFailed(guard, checked, now);
     }
 
-    if (domains.length < targets.length && sniScanner.isValidIpv4(node.ip)) {
-        logger.info(`${LOG} ${node.name}: scanning ${node.ip}/24 for ${targets.length - domains.length} replacement(s)`);
+    // The node address may be a hostname: the scan needs its public IPv4.
+    const scanTarget = domains.length < targets.length ? await sniScanner.resolveScanIp(node.ip) : null;
+    if (scanTarget?.error) {
+        logger.warn(`${LOG} ${node.name}: /24 scan skipped for address "${clip(node.ip)}": ${scanTarget.error}`);
+    }
+    if (scanTarget?.ip) {
+        logger.info(`${LOG} ${node.name}: scanning ${scanTarget.ip}/24 for ${targets.length - domains.length} replacement(s)`);
         for (const d of domains) used.add(d);
-        const scanned = await scanCandidates(node, targets.length - domains.length, used, memo);
+        const scanned = await scanCandidates(scanTarget.ip, targets.length - domains.length, used, memo);
         if (scanned.length) {
             const checked = await verifyCandidates(scanned, ssh, memo);
             for (const domain of scanned) {

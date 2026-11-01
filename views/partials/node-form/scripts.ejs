@@ -2991,6 +2991,7 @@ const sniI18n = {
 };
 
 let _sniReader = null; // active SSE reader (for cancellation)
+let _sniScanIp = '';   // IPv4 actually scanned, reported by the server (input may be a hostname)
 
 function openSniScanner() {
     const modal = document.getElementById('sniScanModal');
@@ -3049,7 +3050,7 @@ function _sniAddRow(result) {
         if (parseInt(row.dataset.ping, 10) > newPing) { insertBefore = row; break; }
     }
 
-    const scanSubnet = (document.getElementById('sniScanIp')?.value || '').split('.').slice(0,3).join('.');
+    const scanSubnet = _sniScanIp.split('.').slice(0,3).join('.');
     const ipSubnet   = (result.ip || '').split('.').slice(0,3).join('.');
     const isNeighbor = scanSubnet && ipSubnet && scanSubnet === ipSubnet;
     const ipBadge    = isNeighbor
@@ -3090,12 +3091,14 @@ async function startSniScan() {
     const threads = parseInt(document.getElementById('sniScanThreads')?.value || '50',  10);
     const timeout = parseInt(document.getElementById('sniScanTimeout')?.value || '5',   10);
 
-    if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+    // IPv4 or hostname; the server resolves and validates it.
+    if (!ip || ip.length > 253 || !/^[A-Za-z0-9.-]+$/.test(ip)) {
         _sniSetStatus(sniI18n.errInvalidIp);
         return;
     }
 
     // Reset UI
+    _sniScanIp = '';
     document.getElementById('sniScanTableBody').innerHTML = '';
     document.getElementById('sniScanResults').style.display = 'none';
     document.getElementById('sniScanEmpty').style.display   = 'none';
@@ -3140,7 +3143,9 @@ async function startSniScan() {
                 let evt;
                 try { evt = JSON.parse(line.slice(6)); } catch { continue; }
 
-                if (evt.type === 'verifying') {
+                if (evt.type === 'start') {
+                    _sniScanIp = String(evt.ip || '');
+                } else if (evt.type === 'verifying') {
                     _sniSetStatus(sniI18n.verifying);
                 } else if (evt.type === 'progress') {
                     _sniSetProgress(evt.done, evt.total);

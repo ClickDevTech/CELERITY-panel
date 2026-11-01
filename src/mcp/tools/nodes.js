@@ -319,7 +319,7 @@ const manageNodeSchema = z.object({
 });
 
 const scanSniSchema = z.object({
-    ip: z.string().describe('Target IPv4 address. The whole /24 around it is scanned'),
+    ip: z.string().max(253).describe('Target public IPv4 address or hostname (resolved to IPv4). The whole /24 around it is scanned'),
     port: z.number().int().min(1).max(65535).default(443).describe('TLS port to probe'),
     threads: z.number().int().min(1).max(200).default(50).describe('Concurrent probes'),
     timeout: z.number().int().min(2).max(30).default(5).describe('Per-host timeout in seconds'),
@@ -842,13 +842,15 @@ async function scanSni(args, emit) {
     const parsed = scanSniSchema.parse(args);
     const sniScanner = require('../../services/sniScanner');
 
-    if (!sniScanner.isValidIpv4(parsed.ip)) {
-        return { error: 'Invalid IPv4 address', code: 400 };
+    const resolved = await sniScanner.resolveScanIp(parsed.ip);
+    if (resolved.error) {
+        return { error: resolved.error, code: 400 };
     }
+    const ip = resolved.ip;
 
     const controller = new AbortController();
     const results = await sniScanner.scanRange({
-        ip: parsed.ip,
+        ip,
         port: parsed.port,
         threads: parsed.threads,
         timeout: parsed.timeout,
@@ -857,7 +859,7 @@ async function scanSni(args, emit) {
         onProgress: (done, total) => emit('progress', { done, total }),
     });
 
-    return { success: true, ip: parsed.ip, port: parsed.port, count: results.length, results };
+    return { success: true, ip, port: parsed.port, count: results.length, results };
 }
 
 async function executeSsh(args, emit) {

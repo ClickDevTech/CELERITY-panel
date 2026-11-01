@@ -7,9 +7,11 @@
 
 const tls = require('tls');
 const dns = require('dns').promises;
+const { isValidHostname, isPrivateIp } = require('../utils/netAddress');
 
 // Hard cap: only scan /24 subnets (254 hosts) to keep it lightweight
 const MAX_PREFIX = 24;
+const RESOLVE_TIMEOUT_MS = 3000;
 
 // ── IP helpers ────────────────────────────────────────────────────────────────
 
@@ -26,6 +28,52 @@ function isValidIpv4(ip) {
     const parts = ip.split('.');
     if (parts.length !== 4) return false;
     return parts.every(p => /^\d{1,3}$/.test(p) && parseInt(p, 10) <= 255);
+}
+
+/**
+ * Turn a scan target (IPv4 or hostname, e.g. the node address field) into a
+ * public IPv4 to scan. Private and reserved ranges are refused so a hostname
+ * pointing inwards cannot make the panel sweep its own network.
+ * Never throws.
+ *
+ * @param {string} host
+ * @param {object} [opts]
+ * @param {number} [opts.timeoutMs=3000] - DNS lookup cap
+ * @returns {Promise<{ip: string}|{error: string}>}
+ */
+async function resolveScanIp(host, { timeoutMs = RESOLVE_TIMEOUT_MS } = {}) {
+    const value = String(host || '').trim().toLowerCase();
+    if (!value) return { error: 'Address is empty' };
+
+    let ip;
+    if (isValidIpv4(value)) {
+        // Canonical form: net.isIP rejects leading zeros, which would let
+        // "010.0.0.1" slip past the private-range check.
+        ip = value.split('.').map(Number).join('.');
+    } else if (isValidHostname(value)) {
+        let timer;
+        try {
+            const timeout = new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error('timeout')), timeoutMs);
+            });
+            ({ address: ip } = await Promise.race([dns.lookup(value, { family: 4 }), timeout]));
+        } catch (err) {
+            return {
+                error: err.message === 'timeout'
+                    ? `DNS lookup for ${value} timed out`
+                    : `Cannot resolve ${value} to an IPv4 address`,
+            };
+        } finally {
+            clearTimeout(timer);
+        }
+    } else {
+        return { error: 'Not a valid IPv4 address or hostname' };
+    }
+
+    if (!isValidIpv4(ip) || isPrivateIp(ip)) {
+        return { error: `${ip} is a private or reserved address and cannot be scanned` };
+    }
+    return { ip };
 }
 
 /** Derive the /24 CIDR from any IP in that subnet. */
@@ -236,4 +284,4 @@ async function scanRange({ ip, port = 443, threads = 50, timeout = 5, onResult, 
     return results;
 }
 
-module.exports = { scanRange, probeHost, expandCidr, ipToCidr24, isValidIpv4 };
+module.exports = { scanRange, probeHost, expandCidr, ipToCidr24, isValidIpv4, resolveScanIp };

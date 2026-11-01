@@ -564,10 +564,10 @@
                 <div class="sni-params">
                     <div class="form-group" style="margin:0">
                         <div class="nf-label-row">
-                            <label for="sniScanIp"><%= t('nodes.ipAddress') %></label>
+                            <label for="sniScanIp"><%= t('nodes.sniScanTarget') %></label>
                             <%- include('field-help', { textKey: 'nodes.sniScanIpHelp', scope: 'panel' }) %>
                         </div>
-                        <input type="text" id="sniScanIp" placeholder="185.100.200.1" autocomplete="off">
+                        <input type="text" id="sniScanIp" placeholder="185.100.200.1 / node.example.com" maxlength="253" autocomplete="off">
                     </div>
                     <div class="form-group" style="margin:0">
                         <div class="nf-label-row">

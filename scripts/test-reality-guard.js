@@ -14,6 +14,8 @@
  *   - portal nodes are guarded, bridge and relay nodes are not,
  *   - replacements come from the reserve list first, then from the /24 scan,
  *     never reuse a domain already taken by any node and never edit the list,
+ *   - a hostname node address is resolved before the /24 scan, and a target
+ *     in a private range is never scanned (the skip is logged),
  *   - a successful rotation writes the new dest and emits the webhook,
  *   - a failed config push reverts the database to the previous dest.
  */
@@ -126,8 +128,15 @@ async function withStubs(state, run) {
 
     const sniScanner = {
         isValidIpv4: ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip),
-        async scanRange() {
+        async resolveScanIp(host) {
+            const ip = /^\d+\.\d+\.\d+\.\d+$/.test(host) ? host : (state.dns || {})[host];
+            if (!ip) return { error: `Cannot resolve ${host} to an IPv4 address` };
+            if (/^(10|127)\./.test(ip)) return { error: `${ip} is a private or reserved address and cannot be scanned` };
+            return { ip };
+        },
+        async scanRange({ ip }) {
             state.scans++;
+            state.scannedIps.push(ip);
             return state.scanResults || [];
         },
     };
@@ -152,7 +161,7 @@ async function withStubs(state, run) {
 
     const cache = { async invalidateNodes() { state.cacheInvalidations++; } };
     const helpers = { async invalidateNodesCache() { state.fullInvalidations++; } };
-    const logger = { debug() {}, info() {}, warn() {}, error() {} };
+    const logger = { debug() {}, info() {}, warn(msg) { state.warnings.push(String(msg)); }, error() {} };
     const tls = makeTls(state);
     const NodeSSH = makeNodeSSH(state);
 
@@ -199,6 +208,8 @@ function freshState(overrides = {}) {
         webhooks: [],
         pushes: [],
         scans: 0,
+        scannedIps: [],
+        warnings: [],
         pushResult: true,
         cacheInvalidations: 0,
         fullInvalidations: 0,
@@ -659,6 +670,50 @@ function guardSets(state) {
             assert.strictEqual(state.scans, 1);
             const destUpdate = state.updates.find(u => u.update.$set['xray.realityDest']);
             assert.strictEqual(destUpdate.update.$set['xray.realityDest'], 'fresh.example.com:443');
+        });
+    }
+
+    // Hostname in the node address: resolved to IPv4, then its /24 is scanned
+    // and the node's own IP is excluded from the candidates.
+    {
+        const node = xrayNode('h1', { realityGuard: { status: 'failing', failCount: 2 } }, { ip: 'node.example.net' });
+        const state = freshState({
+            nodes: [node],
+            docs: { h1: node },
+            dns: { 'node.example.net': '203.0.113.10' },
+            tls: { 'dead.example.com': { error: 'ECONNREFUSED' } },
+            nodeTls: { 'dead.example.com': { error: 'connect' } },
+            scanResults: [
+                { ip: '203.0.113.10', domain: 'self.example.com', ping: 1 },
+                { ip: '203.0.113.31', domain: 'fresh.example.com', ping: 8 },
+            ],
+        });
+        await withStubs(state, async (svc) => {
+            await svc._internals.tick();
+            assert.deepStrictEqual(state.scannedIps, ['203.0.113.10'], 'the resolved IPv4 is scanned');
+            const destUpdate = state.updates.find(u => u.update.$set['xray.realityDest']);
+            assert.strictEqual(destUpdate.update.$set['xray.realityDest'], 'fresh.example.com:443',
+                'the node itself is not offered as a replacement');
+        });
+    }
+
+    // Hostname pointing at a private address: no scan, the reason is logged.
+    {
+        const node = xrayNode('h2', { realityGuard: { status: 'failing', failCount: 2 } }, { ip: 'inside.example.net' });
+        const state = freshState({
+            nodes: [node],
+            docs: { h2: node },
+            dns: { 'inside.example.net': '10.1.2.3' },
+            tls: { 'dead.example.com': { error: 'ECONNREFUSED' } },
+            nodeTls: { 'dead.example.com': { error: 'connect' } },
+            scanResults: [{ ip: '10.1.2.31', domain: 'fresh.example.com', ping: 8 }],
+        });
+        await withStubs(state, async (svc) => {
+            await svc._internals.tick();
+            assert.strictEqual(state.scans, 0, 'private ranges are never scanned');
+            assert.ok(state.warnings.some(w => w.includes('scan skipped') && w.includes('private')),
+                'the skipped scan is logged with its reason');
+            assert.ok(guardSets(state).some(s => s['xray.realityGuard.status'] === 'no_candidate'));
         });
     }
 

@@ -737,7 +737,8 @@
         "panel_unreachable": "面板无法连接 dest，但从节点访问正常",
         "node_check_unavailable": "无法从节点检查，已采用面板的检查结果"
     },
-    "sniScanIpHelp": "要扫描其 /24 子网的 IPv4 地址。填充按钮使用当前节点 IP。",
+    "sniScanTarget": "IP 或域名",
+    "sniScanIpHelp": "要扫描其 /24 子网的公网 IPv4 地址或域名（由面板解析为 IPv4）。该字段默认填入节点地址。私有和保留地址段不会被扫描。",
     "sniScanPortHelp": "用于测试候选的 TLS 端口。即使扫描其他端口，“应用”按钮目前仍始终把 443 写入 REALITY target。",
     "sniScanThreadsHelp": "并发地址检查数，范围 1–200。值越大扫描越快，但网络和 CPU 负载越高。",
     "sniScanTimeoutHelp": "检查单个地址的超时，范围 2–30 秒。",
@@ -759,7 +760,7 @@
     "sniScanScanning": "扫描中...",
     "sniScanVerifying": "正在验证域名...",
     "sniScanDone": "完成",
-    "sniScanErrIp": "请输入有效的 IPv4 地址",
+    "sniScanErrIp": "请输入有效的 IPv4 地址或域名",
     "xrayPrivateKey": "私钥",
     "xrayPrivateKeyHelp": "服务器端 REALITY X25519 私钥。Celerity 只将其发送到入站；客户端获得相邻字段中的公钥。手动输入时不会检查密钥对是否对应。",
     "xrayPublicKey": "公钥",
