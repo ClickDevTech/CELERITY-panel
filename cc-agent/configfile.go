@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -217,6 +218,25 @@ func clientKey(m map[string]any) string {
 	return id + "\x00" + email + "\x00" + flow
 }
 
+// targetFileAttrs returns the mode and ownership a rewritten file must keep.
+// Xray runs unprivileged and reads config.json through its group, so an
+// existing file keeps its own mode/owner; a missing one gets 0640 and the
+// group of its directory. -1 leaves the uid/gid unchanged in os.Chown.
+func targetFileAttrs(path string) (os.FileMode, int, int) {
+	if fi, err := os.Stat(path); err == nil {
+		if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+			return fi.Mode().Perm(), int(st.Uid), int(st.Gid)
+		}
+		return fi.Mode().Perm(), -1, -1
+	}
+	if di, err := os.Stat(filepath.Dir(path)); err == nil {
+		if st, ok := di.Sys().(*syscall.Stat_t); ok {
+			return 0640, -1, int(st.Gid)
+		}
+	}
+	return 0640, -1, -1
+}
+
 // atomicWriteFile writes data to a temp file in the same directory, fsyncs it,
 // then renames it over the target so a crash/power loss never leaves a partial
 // config.json.
@@ -240,7 +260,11 @@ func atomicWriteFile(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp: %w", err)
 	}
-	if err := os.Chmod(tmpName, 0644); err != nil {
+	mode, uid, gid := targetFileAttrs(path)
+	if err := os.Chown(tmpName, uid, gid); err != nil {
+		return fmt.Errorf("chown temp: %w", err)
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
 		return fmt.Errorf("chmod temp: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {

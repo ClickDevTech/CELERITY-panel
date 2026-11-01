@@ -36,6 +36,38 @@ async function cacheDel(key) {
     try { if (cache.redis?.del) await cache.redis.del(key); } catch {}
 }
 
+const BRIDGE_CONFIG_DIR = '/usr/local/etc/xray-bridge';
+
+/**
+ * Pin config permissions for User=nobody, then (re)start xray-bridge.
+ * TLS bridge links also read certificates from /usr/local/etc/xray, which the
+ * upstream installer creates as 750 root:xray, so both directories are fixed.
+ * Throws with the remote output when any step fails.
+ */
+async function restartBridgeService(ssh, nodeName) {
+    const nodeSetup = require('./nodeSetup');
+    const result = await ssh.exec(
+        `${nodeSetup.buildXrayPermsScript(BRIDGE_CONFIG_DIR)}\n${nodeSetup.XRAY_PERMS_SNIPPET}\n`
+        + 'systemctl daemon-reload && systemctl enable xray-bridge && systemctl restart xray-bridge'
+    );
+    if (result.code !== 0) {
+        const tail = String(result.stdout || result.stderr || '').trim().split('\n').slice(-4).join(' | ');
+        throw new Error(`xray-bridge start failed on ${nodeName} (exit ${result.code}): ${tail.slice(0, 500)}`);
+    }
+}
+
+/**
+ * Pin permissions of the main Xray config after it was rewritten over SSH.
+ */
+async function pinXrayConfigPerms(ssh, nodeName) {
+    const nodeSetup = require('./nodeSetup');
+    const result = await ssh.exec(nodeSetup.XRAY_PERMS_SNIPPET);
+    if (result.code !== 0) {
+        const tail = String(result.stdout || result.stderr || '').trim().split('\n').slice(-4).join(' | ');
+        throw new Error(`Xray config on ${nodeName} is not readable by the service user: ${tail.slice(0, 500)}`);
+    }
+}
+
 class CascadeService {
     /**
      * Deploy a single cascade link: upload configs to both Portal and Bridge,
@@ -452,7 +484,7 @@ class CascadeService {
             await ssh.exec('mkdir -p /usr/local/etc/xray-bridge');
             await ssh.uploadContent(relayConfig, '/usr/local/etc/xray-bridge/config.json');
             await ssh.uploadContent(serviceUnit, '/etc/systemd/system/xray-bridge.service');
-            await ssh.exec('systemctl daemon-reload && systemctl enable xray-bridge && systemctl restart xray-bridge');
+            await restartBridgeService(ssh, node.name);
 
             logger.info(`[Cascade] Relay config deployed to ${node.name}`);
         } finally {
@@ -488,7 +520,7 @@ class CascadeService {
             await ssh.exec('mkdir -p /usr/local/etc/xray-bridge');
             await ssh.uploadContent(bridgeConfig, '/usr/local/etc/xray-bridge/config.json');
             await ssh.uploadContent(serviceUnit, '/etc/systemd/system/xray-bridge.service');
-            await ssh.exec('systemctl daemon-reload && systemctl enable xray-bridge && systemctl restart xray-bridge');
+            await restartBridgeService(ssh, node.name);
 
             logger.info(`[Cascade] Bridge config deployed to ${node.name}`);
         } finally {
@@ -534,7 +566,7 @@ class CascadeService {
             await ssh.exec('mkdir -p /usr/local/etc/xray-bridge');
             await ssh.uploadContent(hopConfig, '/usr/local/etc/xray-bridge/config.json');
             await ssh.uploadContent(serviceUnit, '/etc/systemd/system/xray-bridge.service');
-            await ssh.exec('systemctl daemon-reload && systemctl enable xray-bridge && systemctl restart xray-bridge');
+            await restartBridgeService(ssh, node.name);
 
             const statusResult = await ssh.exec('sleep 1 && systemctl is-active xray-bridge');
             const isActive = (statusResult.stdout || '').trim() === 'active';
@@ -902,6 +934,9 @@ class CascadeService {
                     ? '/usr/local/etc/xray/config.json'
                     : (portalNode.paths?.config || '/etc/hysteria/config.yaml');
                 await ssh.uploadContent(finalConfig, configPath);
+                if (portalNode.type === 'xray') {
+                    await pinXrayConfigPerms(ssh, portalNode.name);
+                }
                 logger.info(`[Cascade] Portal config uploaded to ${portalNode.name} at ${configPath}`);
             } finally {
                 ssh.disconnect();
@@ -976,7 +1011,7 @@ class CascadeService {
             await ssh.uploadContent(bridgeConfig, '/usr/local/etc/xray-bridge/config.json');
             await ssh.uploadContent(serviceUnit, '/etc/systemd/system/xray-bridge.service');
 
-            await ssh.exec('systemctl daemon-reload && systemctl enable xray-bridge && systemctl restart xray-bridge');
+            await restartBridgeService(ssh, bridgeNode.name);
 
             // Verify the service started
             const statusResult = await ssh.exec('sleep 1 && systemctl is-active xray-bridge');

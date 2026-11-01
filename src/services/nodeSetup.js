@@ -427,6 +427,18 @@ function execSSH(conn, command) {
     });
 }
 
+/**
+ * Build the error raised when a service is not active after a restart.
+ * The restart scripts print status and journal output before the final
+ * `systemctl is-active` check, so the tail of the output explains the failure.
+ */
+function serviceStartError(service, result) {
+    const tail = String(result.output || '').trim().split('\n')
+        .map(l => l.trim()).filter(Boolean).slice(-5).join(' | ');
+    return new Error(`${service} is not active after restart (${result.error || 'unknown exit code'}). `
+        + `Last log lines: ${tail.slice(0, 800) || 'none'}`);
+}
+
 function resolveNodeServiceCandidates(node) {
     if (!node || isServerlessNode(node)) return [];
     if (node.type === 'xray') return ['xray'];
@@ -693,7 +705,11 @@ ls -la /etc/hysteria/*.pem
 echo "=== Setting up for ACME ==="
 
 mkdir -p /etc/hysteria/acme
-chmod 777 /etc/hysteria/acme
+# ACME private keys live here: owner-only, handed to the service user when present.
+if id hysteria >/dev/null 2>&1; then
+    chown hysteria:hysteria /etc/hysteria/acme
+fi
+chmod 700 /etc/hysteria/acme
 chmod 755 /etc/hysteria
 echo "Done: ACME directory created with correct permissions"
 
@@ -794,14 +810,14 @@ systemctl status hysteria-server --no-pager -l || true
 echo ""
 echo "Journal logs (last 20 lines):"
 journalctl -u hysteria-server -n 20 --no-pager || true
+systemctl is-active --quiet hysteria-server
             `);
             logs.push(restartResult.output);
-            
+
             if (!restartResult.success) {
-                log(`Service restart warning: ${restartResult.error}`);
-            } else {
-                log('Service restarted');
+                throw serviceStartError('hysteria-server', restartResult);
             }
+            log('Service restarted');
         }
         
         log('Setup completed successfully!');
@@ -855,6 +871,95 @@ async function getNodeLogs(node, lines = 50) {
 
 // ==================== XRAY SETUP ====================
 
+/**
+ * Shell snippet that pins ownership and modes of an Xray config directory.
+ *
+ * The systemd unit runs Xray as User=nobody, while the upstream installer
+ * creates the config directory as 750 root:xray, which nobody cannot enter.
+ * Secrets (config, key, rollback copy) end up 640 root:<nobody group>, so only
+ * root and the service can read them. The primary group of nobody differs by
+ * distro (nogroup on Debian/Ubuntu, nobody on RHEL), hence `id -gn`.
+ *
+ * Exits non-zero when nobody still cannot read config.json, e.g. because a
+ * parent directory such as /usr/local/etc is locked down.
+ *
+ * @param {string} [dir='/usr/local/etc/xray'] - Absolute directory path (trusted constant)
+ * @returns {string} bash snippet
+ */
+function buildXrayPermsScript(dir = '/usr/local/etc/xray') {
+    if (!/^\/[A-Za-z0-9._\/-]+$/.test(dir)) {
+        throw new Error(`buildXrayPermsScript: unsafe directory path: ${dir}`);
+    }
+    return `
+XRAY_DIR='${dir}'
+XRAY_GROUP="$(id -gn nobody 2>/dev/null || echo nogroup)"
+if [ -d "$XRAY_DIR" ]; then
+    chown root:"$XRAY_GROUP" "$XRAY_DIR" && chmod 750 "$XRAY_DIR" || exit 20
+    for f in config.json config.json.prev key.pem; do
+        if [ -f "$XRAY_DIR/$f" ]; then
+            chown root:"$XRAY_GROUP" "$XRAY_DIR/$f" && chmod 640 "$XRAY_DIR/$f" || exit 20
+        fi
+    done
+    if [ -f "$XRAY_DIR/cert.pem" ]; then
+        chown root:"$XRAY_GROUP" "$XRAY_DIR/cert.pem" && chmod 644 "$XRAY_DIR/cert.pem" || exit 20
+    fi
+    if [ -f "$XRAY_DIR/config.json" ] && command -v runuser >/dev/null 2>&1; then
+        if ! runuser -u nobody -- test -r "$XRAY_DIR/config.json"; then
+            echo "ERROR: user nobody cannot read $XRAY_DIR/config.json. Check permissions of every parent directory:"
+            ls -ld /usr/local /usr/local/etc "$XRAY_DIR" 2>&1
+            exit 21
+        fi
+    fi
+    echo "Done: permissions pinned on $XRAY_DIR (root:$XRAY_GROUP)"
+fi
+`;
+}
+
+/**
+ * Shell snippet that moves xray.service onto User=nobody when it runs as
+ * another account.
+ *
+ * Nodes that only ever ran the upstream installer (cascade bridges and relays)
+ * keep its unit with User=xray. Once the config directory belongs to the nobody
+ * group, that unit can no longer read the config on its next start (sync, core
+ * update, reboot), so it is replaced with the panel's unit. Enabled and running
+ * state are kept: a running process switches user on its next restart. Units
+ * running as root or nobody, and nodes without the unit, are left alone.
+ *
+ * `systemctl show` is parsed without --value, which systemd < 230 lacks. The
+ * unit travels as base64, so its text needs no shell quoting.
+ *
+ * @param {string} [unitDir='/etc/systemd/system'] - Absolute directory path (trusted constant)
+ * @returns {string} bash snippet, exits 22 when the unit cannot be switched
+ */
+function buildXrayUnitUserScript(unitDir = '/etc/systemd/system') {
+    if (!/^\/[A-Za-z0-9._\/-]+$/.test(unitDir)) {
+        throw new Error(`buildXrayUnitUserScript: unsafe directory path: ${unitDir}`);
+    }
+    const unit = Buffer.from(configGenerator.generateXraySystemdService()).toString('base64');
+    return `
+xray_unit_prop() { systemctl show -p "$1" xray 2>/dev/null | sed -n "s/^$1=//p"; }
+XRAY_UNIT_FILE='${unitDir}/xray.service'
+XRAY_UNIT_USER="$(xray_unit_prop User)"
+if [ "$(xray_unit_prop LoadState)" = "loaded" ] && [ -n "$XRAY_UNIT_USER" ] && [ "$XRAY_UNIT_USER" != "nobody" ]; then
+    echo '${unit}' | base64 -d > "$XRAY_UNIT_FILE.tmp" \\
+        && chmod 644 "$XRAY_UNIT_FILE.tmp" \\
+        && mv -f "$XRAY_UNIT_FILE.tmp" "$XRAY_UNIT_FILE" \\
+        && systemctl daemon-reload \\
+        || { rm -f "$XRAY_UNIT_FILE.tmp"; echo "ERROR: cannot replace xray.service (User=$XRAY_UNIT_USER)"; exit 22; }
+    XRAY_UNIT_GROUP="$(xray_unit_prop Group)"
+    if [ "$(xray_unit_prop User)" != "nobody" ] \\
+       || { [ -n "$XRAY_UNIT_GROUP" ] && [ "$XRAY_UNIT_GROUP" != "$(id -gn nobody 2>/dev/null || echo nogroup)" ]; }; then
+        echo "ERROR: xray.service still runs as $(xray_unit_prop User):$XRAY_UNIT_GROUP, a drop-in in /etc/systemd/system/xray.service.d overrides User= or Group="
+        exit 22
+    fi
+    echo "Done: xray.service switched from User=$XRAY_UNIT_USER to User=nobody"
+fi
+`;
+}
+
+const XRAY_PERMS_SNIPPET = buildXrayUnitUserScript() + buildXrayPermsScript();
+
 const XRAY_INSTALL_SCRIPT = `#!/bin/bash
 
 echo "=== [1/4] Installing Xray-core ==="
@@ -890,6 +995,7 @@ else
 fi
 
 mkdir -p /usr/local/etc/xray
+${XRAY_PERMS_SNIPPET}
 echo "Done: Directory /usr/local/etc/xray ready"
 `;
 
@@ -957,20 +1063,20 @@ fi
 
 mkdir -p /usr/local/etc/xray
 
-# Xray runs as User=nobody; acme.sh writes as root → chown is required for the
-# unprivileged service to read the key. Re-applied via --reloadcmd on renewal.
-# 'nobody' primary group differs by distro (nogroup on Debian/Ubuntu).
-NOBODY_GROUP="\$(id -gn nobody 2>/dev/null || echo nobody)"
-RELOAD_CMD="chown 'nobody:\${NOBODY_GROUP}' '\${KEY_PATH}' '\${CERT_PATH}' 2>/dev/null || true; chmod 644 '\${CERT_PATH}' 2>/dev/null || true; chmod 600 '\${KEY_PATH}' 2>/dev/null || true; systemctl reload xray 2>/dev/null || systemctl restart xray 2>/dev/null || true"
+# Xray runs as User=nobody; acme.sh writes as root, so the key is handed to
+# the primary group of nobody (root stays the owner). Re-applied via
+# --reloadcmd on renewal. The group differs by distro (nogroup on Debian/Ubuntu).
+NOBODY_GROUP="\$(id -gn nobody 2>/dev/null || echo nogroup)"
+RELOAD_CMD="chown 'root:\${NOBODY_GROUP}' '\${KEY_PATH}' '\${CERT_PATH}' 2>/dev/null || true; chmod 644 '\${CERT_PATH}' 2>/dev/null || true; chmod 640 '\${KEY_PATH}' 2>/dev/null || true; systemctl reload xray 2>/dev/null || systemctl restart xray 2>/dev/null || true"
 
 "\${ACME}" --install-cert -d "\${DOMAIN}" --ecc \\
     --key-file       "\${KEY_PATH}" \\
     --fullchain-file "\${CERT_PATH}" \\
     --reloadcmd "\${RELOAD_CMD}"
 
-chown "nobody:\${NOBODY_GROUP}" "\${KEY_PATH}" "\${CERT_PATH}" 2>/dev/null || true
+chown "root:\${NOBODY_GROUP}" "\${KEY_PATH}" "\${CERT_PATH}" 2>/dev/null || true
 chmod 644 "\${CERT_PATH}" 2>/dev/null || true
-chmod 600 "\${KEY_PATH}"  2>/dev/null || true
+chmod 640 "\${KEY_PATH}"  2>/dev/null || true
 
 if crontab -l 2>/dev/null | grep -q '\\.acme\\.sh/acme\\.sh.*--cron'; then
     echo "Done: cert installed; acme.sh cron is active."
@@ -1128,8 +1234,9 @@ async function setupXrayNode(node, options = {}) {
         }
         const configPath = '/usr/local/etc/xray/config.json';
 
-        // Xray runs as nobody and must still read its config.
-        await uploadFile(conn, configContent, configPath, 0o644);
+        // The config holds the Reality private key and every user UUID, so it
+        // is not world-readable; XRAY_PERMS_SNIPPET below grants group access.
+        await uploadFile(conn, configContent, configPath, 0o640);
         log(`Config uploaded to ${configPath} (${users.length} users)`);
         logs.push('--- Config preview ---');
         logs.push(configContent.substring(0, 500) + (configContent.length > 500 ? '\n...' : ''));
@@ -1198,6 +1305,14 @@ fi
             log(`TLS source: ${xrayCfg.tlsSource || 'panel'} — certificate inlined in config.json (no on-node openssl)`);
         }
 
+        log('Pinning ownership and modes of /usr/local/etc/xray...');
+        const permsResult = await execSSH(conn, XRAY_PERMS_SNIPPET);
+        logs.push(permsResult.output);
+        if (!permsResult.success) {
+            const tail = (permsResult.output || '').trim().split('\n').slice(-4).join(' | ');
+            throw new Error(`Cannot make the Xray config readable by the service user: ${tail || permsResult.error}`);
+        }
+
         // Collect externally bound client-facing ports. Loopback listeners and
         // apiPort do not need host firewall rules.
         const mainPort = node.port || 443;
@@ -1257,13 +1372,13 @@ systemctl status xray --no-pager -l || true
 echo ""
 echo "Journal (last 15 lines):"
 journalctl -u xray -n 15 --no-pager || true
+systemctl is-active --quiet xray
             `);
             logs.push(restartResult.output);
             if (!restartResult.success) {
-                log(`Service restart warning: ${restartResult.error}`);
-            } else {
-                log('Xray service started');
+                throw serviceStartError('xray', restartResult);
             }
+            log('Xray service started');
         }
 
         log('Xray setup completed successfully!');
@@ -1758,4 +1873,7 @@ module.exports = {
     getPanelCertificates,
     isSameVpsAsPanel,
     isLoopbackAddress,
+    buildXrayPermsScript,
+    buildXrayUnitUserScript,
+    XRAY_PERMS_SNIPPET,
 };

@@ -38,6 +38,7 @@ const HEALTH_FAILURE_THRESHOLD = 3;
 
 // Where the installer puts Xray; the systemd unit points at the same path.
 const XRAY_BIN = '/usr/local/bin/xray';
+const XRAY_PERMS_FAILED_CODE = 90;
 
 // Fields whose change requires regenerating the runtime config on the node.
 // Anything not listed here (name, groups, flag, rankingCoefficient, ssh.*, ...)
@@ -674,7 +675,9 @@ class SyncService {
                 // Keep the running config aside first: systemd does not roll a
                 // failed start back, so without a copy a rejected config leaves
                 // the node with nothing to fall back to.
-                await ssh.exec(`cp -f ${xrayConfigPath} ${xrayConfigPath}.prev 2>/dev/null || true`);
+                // -p keeps owner and mode, so a rollback via mv restores a
+                // file the service user can still read.
+                await ssh.exec(`cp -fp ${xrayConfigPath} ${xrayConfigPath}.prev 2>/dev/null || true`);
                 await ssh.uploadContent(configContent, xrayConfigPath);
                 logger.info(`[Xray Sync] Node ${node.name}: config uploaded to ${xrayConfigPath}`);
 
@@ -683,9 +686,17 @@ class SyncService {
                 // exits without touching the running instance. A node without
                 // the binary at the expected path skips the check rather than
                 // failing it — there is nothing to protect there yet.
+                // Permissions are pinned in the same round-trip; exit code 90
+                // marks a permission failure, which a rollback would not fix.
                 const test = await ssh.exec(
-                    `[ -x ${XRAY_BIN} ] || exit 0; ${XRAY_BIN} run -test -config ${xrayConfigPath} 2>&1`
+                    `PERMS_OUT="$(${nodeSetup.XRAY_PERMS_SNIPPET} 2>&1)" || { echo "$PERMS_OUT"; exit ${XRAY_PERMS_FAILED_CODE}; }; `
+                    + `[ -x ${XRAY_BIN} ] || exit 0; ${XRAY_BIN} run -test -config ${xrayConfigPath} 2>&1`
                 );
+                if (test.code === XRAY_PERMS_FAILED_CODE) {
+                    const reason = String(test.stdout || test.stderr || '')
+                        .trim().split('\n').slice(-3).join(' ').slice(0, 300);
+                    throw new Error(`config is not readable by the Xray service user: ${reason}`);
+                }
                 if (test.code !== 0) {
                     const reason = String(test.stdout || test.stderr || '')
                         .trim().split('\n').slice(-3).join(' ').slice(0, 300);

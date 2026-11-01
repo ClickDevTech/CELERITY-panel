@@ -30,7 +30,10 @@ class FakeSSH {
     }
     async exec(command) {
         sshCommands.push(command);
-        if (command.includes('run -test')) return { code: 0, stdout: '' };
+        if (command.includes('run -test')) {
+            if (scenario.permsFails) return { code: 90, stdout: 'ERROR: user nobody cannot read /usr/local/etc/xray/config.json' };
+            return { code: 0, stdout: '' };
+        }
         if (command === 'systemctl restart xray' && scenario.restartFails) {
             return { code: 1, stderr: 'injected restart failure' };
         }
@@ -108,6 +111,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
         return {
             getPanelCertificates: () => null,
             isSameVpsAsPanel: () => false,
+            XRAY_PERMS_SNIPPET: '# xray-perms-snippet',
         };
     }
     return originalLoad(request, parent, isMain);
@@ -174,6 +178,25 @@ async function run() {
             'disable failure resumes the previous Caddy after restoring Xray');
         assert.strictEqual(scenario.xrayRollback, true);
         assert.strictEqual(scenario.dbRollback, true, 'disable failure restores MongoDB state');
+
+        sshCommands.length = 0;
+        scenario = { frontEnabled: true, unchangedFront: true };
+        assert.strictEqual(await sync.updateXrayNodeConfig(node()), true);
+        assert.ok(sshCommands.some(c => c.startsWith('cp -fp /usr/local/etc/xray/config.json ')),
+            'the rollback copy keeps owner and mode');
+        const testCmd = sshCommands.find(c => c.includes('run -test'));
+        assert.ok(testCmd.indexOf('# xray-perms-snippet') !== -1
+            && testCmd.indexOf('# xray-perms-snippet') < testCmd.indexOf('run -test'),
+            'permissions are pinned in the same round-trip, before the config test');
+
+        sshCommands.length = 0;
+        scenario = { frontEnabled: true, unchangedFront: true, permsFails: true };
+        assert.strictEqual(await sync.updateXrayNodeConfig(node()), false,
+            'an unreadable config fails the sync');
+        assert.ok(!sshCommands.some(c => c.startsWith('mv -f /usr/local/etc/xray/config.json.prev')),
+            'a permission failure does not roll back a valid config');
+        assert.ok(!sshCommands.some(c => c === 'systemctl restart xray'),
+            'Xray is not restarted onto an unreadable config');
 
         console.log('edge front cutover fault tests passed');
     } finally {
