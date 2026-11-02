@@ -111,6 +111,7 @@ async function simulateVersionChange({
     syncSuccess,
     scriptFailure = 'none',
     syncFailureReason = null,
+    onFinish = null,
 }) {
     const HyNode = require('../src/models/hyNodeModel');
     const nodeSetup = require('../src/services/nodeSetup');
@@ -147,6 +148,7 @@ async function simulateVersionChange({
         logs: [],
         startedAt: new Date().toISOString(),
         finishedAt: null,
+        onFinish,
     };
 
     try {
@@ -259,6 +261,67 @@ async function simulateVersionChange({
     assert.strictEqual(selfHealed.task.state, 'error');
     assert.strictEqual(selfHealed.task.nodeUnchanged, false);
     assert.strictEqual(selfHealed.task.rollbackSucceeded, true);
+
+    // Bulk runs wait on onFinish, so it must fire exactly once on both outcomes,
+    // after the node lock is released, and a throwing callback must not leak.
+    const nodeSetupLock = require('../src/utils/nodeSetupLock');
+    const finished = [];
+    const recordFinish = (snapshot) => {
+        finished.push({ state: snapshot.state, lockFree: !nodeSetupLock.holder(snapshot.nodeId), logs: snapshot.logs });
+    };
+    await simulateVersionChange({ currentVersion: '1.8.24', release: releases[1], syncSuccess: true, onFinish: recordFinish });
+    await simulateVersionChange({ currentVersion: '26.7.28', release: releases[1], syncSuccess: false, onFinish: recordFinish });
+    assert.deepStrictEqual(finished.map(item => item.state), ['done', 'error']);
+    assert.ok(finished.every(item => item.lockFree));
+    assert.ok(finished.every(item => Array.isArray(item.logs)));
+    const throwing = await simulateVersionChange({
+        currentVersion: '1.8.24',
+        release: releases[1],
+        syncSuccess: true,
+        onFinish: () => { throw new Error('callback boom'); },
+    });
+    assert.strictEqual(throwing.task.state, 'done');
+
+    assert.deepStrictEqual(service.getTaskProgress('507f1f77bcf86cd799439099'), { state: 'idle', step: null });
+
+    // Bulk preview decides from stored data only: no SSH, one verdict per node.
+    const lockedId = '507f1f77bcf86cd7994390a5';
+    assert.ok(nodeSetupLock.acquire(lockedId, 'Node setup'));
+    try {
+        const ssh = { password: 'encrypted' };
+        const verdicts = service.bulkPreview([
+            { _id: '507f1f77bcf86cd7994390a1', name: 'ok', type: 'xray', status: 'online', xrayVersion: '26.3.27', ssh, xray: {} },
+            { _id: '507f1f77bcf86cd7994390a2', name: 'hy', type: 'hysteria', status: 'online', ssh, xray: {} },
+            { _id: '507f1f77bcf86cd7994390a3', name: 'nossh', type: 'xray', status: 'online', ssh: {}, xray: {} },
+            { _id: '507f1f77bcf86cd7994390a4', name: 'same', type: 'xray', status: 'online', xrayVersion: '26.7.28', ssh, xray: {} },
+            { _id: lockedId, name: 'busy', type: 'xray', status: 'online', ssh, xray: {} },
+            { _id: '507f1f77bcf86cd7994390a6', name: 'off', type: 'xray', status: 'offline', ssh, xray: {} },
+            { _id: '507f1f77bcf86cd7994390a7', name: 'warn', type: 'xray', status: 'error', ssh, xray: {} },
+        ], releases[0]);
+        const byName = Object.fromEntries(verdicts.map((v, i) => [['ok', 'hy', 'nossh', 'same', 'busy', 'off', 'warn'][i], v]));
+        assert.strictEqual(byName.ok.ready, true);
+        assert.deepStrictEqual(byName.ok.warnings, []);
+        assert.match(byName.hy.reason, /Not an Xray node/);
+        assert.match(byName.nossh.reason, /SSH credentials/);
+        assert.match(byName.same.reason, /Already on 26\.7\.28/);
+        assert.match(byName.busy.reason, /Node is busy: Node setup/);
+        assert.match(byName.off.reason, /offline/);
+        assert.strictEqual(byName.warn.ready, true);
+        assert.strictEqual(byName.warn.warnings.length, 2);
+
+        const downgrade = { ...releases[1], version: '25.1.1' };
+        const encrypted = service.bulkPreview([
+            { _id: '507f1f77bcf86cd7994390b1', name: 'enc', type: 'xray', status: 'online', xrayVersion: '26.3.27', ssh, xray: { vlessEncryption: true } },
+            { _id: '507f1f77bcf86cd7994390b2', name: 'kcp', type: 'xray', status: 'online', xrayVersion: '26.7.28', ssh, xray: {} },
+            { _id: '507f1f77bcf86cd7994390b3', name: 'plain', type: 'xray', status: 'online', xrayVersion: '26.7.28', ssh, xray: {} },
+        ], downgrade, new Set(['507f1f77bcf86cd7994390b2']));
+        assert.match(encrypted[0].reason, /VLESS Encryption requires/);
+        assert.match(encrypted[1].reason, /mKCP requires/);
+        assert.strictEqual(encrypted[2].ready, true);
+        assert.deepStrictEqual(encrypted[2].warnings, ['Downgrade from 26.7.28']);
+    } finally {
+        nodeSetupLock.release(lockedId);
+    }
 
     // The version list must stay lightweight: changelog bodies are fetched
     // per release instead of being shipped with every status response.

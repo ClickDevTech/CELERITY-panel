@@ -489,6 +489,66 @@
         .cron-result-node { color: var(--text-primary); font-weight: 600; }
         .cron-result-message { color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; word-break: break-word; }
 
+        /* ── Bulk jobs ───────────────────────────────────────────────────── */
+        .jobs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+        .jobs-grid .form-group.hidden { display: none; }
+        .jobs-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            font-size: 12.5px;
+            color: var(--text-secondary);
+        }
+        .jobs-row {
+            display: grid;
+            grid-template-columns: minmax(140px, 220px) auto 1fr;
+            gap: 10px;
+            align-items: start;
+            padding: 10px;
+            border-radius: var(--radius-sm);
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--glass-border);
+            font-size: 12.5px;
+        }
+        .jobs-row.ok      { border-color: rgba(34,197,94,0.45); }
+        .jobs-row.fail    { border-color: rgba(239,68,68,0.45); }
+        .jobs-row.active  { border-color: rgba(234,179,8,0.45); }
+        .jobs-row.muted   { opacity: 0.6; }
+        .jobs-row-log {
+            grid-column: 1 / -1;
+            margin: 0;
+            max-height: 240px;
+            overflow: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11.5px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: #d4d4d8;
+        }
+        .jobs-log-btn {
+            background: none;
+            border: 0;
+            padding: 0;
+            color: #a5b4fc;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .node-chip .chip-ver {
+            display: none;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .node-selector.jobs-xray .node-chip .chip-ver { display: inline; }
+        .node-selector.jobs-xray .node-chip:not([data-type="xray"]) { opacity: 0.35; }
+        body.mode-no-terminal #connectingOverlay,
+        body.mode-no-terminal #errorOverlay { display: none; }
+
         /* ── Output area ─────────────────────────────────────────────────── */
         .output-area {
             flex: 1;
@@ -741,6 +801,7 @@
             .cron-actions { justify-content: stretch; }
             .cron-actions .btn { flex: 1; }
             .cron-result-row { grid-template-columns: 1fr; }
+            .jobs-row { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -784,7 +845,25 @@
         cronRunFailed:      typeof t !== 'undefined' ? t('broadcast.cronRunFailed')     : 'Run failed',
         cronSelectNodes:    typeof t !== 'undefined' ? t('broadcast.cronSelectNodes')   : 'Select at least one node',
         cronEmpty:          typeof t !== 'undefined' ? t('broadcast.cronEmpty')         : 'Save a cron block to see per-node results',
+        sessionExpired:     typeof t !== 'undefined' ? t('auth.sessionExpired')         : 'Session expired, please login again',
+        serverError:        typeof t !== 'undefined' ? t('errors.serverError')          : 'Server error',
     };
+    [
+        'jobsTab', 'jobsTitle', 'jobsSubtitle', 'jobsAction', 'jobsActionXray', 'jobsActionSync',
+        'jobsVersion', 'jobsPrerelease', 'jobsPassword', 'jobsTotp', 'jobsPreview', 'jobsStart',
+        'jobsStop', 'jobsResults', 'jobsEmpty', 'jobsLoading', 'jobsPreviewFirst',
+        'jobsPasswordRequired', 'jobsTotpRequired', 'jobsConfirm', 'jobsReady', 'jobsPreviewSummary',
+        'jobsStateQueued', 'jobsStateRunning', 'jobsStateDone', 'jobsStateError', 'jobsStateSkipped',
+        'jobsStateCancelled', 'jobsBatchRunning', 'jobsBatchStopping', 'jobsBatchDone',
+        'jobsBatchStopped', 'jobsBatchCancelled', 'jobsStopCanary', 'jobsStopFailures',
+        'jobsStopCancel', 'jobsStopError', 'jobsRollbackOk', 'jobsUnchanged', 'jobsStartedBy',
+        'jobsStepPreflight', 'jobsStepDownload', 'jobsStepSync', 'jobsStepVerify', 'jobsStepRollback',
+        'jobsShowLog',
+    ].forEach(function (key) {
+        i18nKeys[key] = typeof t !== 'undefined' ? t('broadcast.' + key) : key;
+    });
+    const jobActions = typeof bulkActions !== 'undefined' && Array.isArray(bulkActions) ? bulkActions : [];
+    const jobsTotpEnabled = typeof totpEnabled !== 'undefined' && totpEnabled === true;
     %>
 
     <!-- Header -->
@@ -802,6 +881,9 @@
                 </button>
                 <button type="button" class="broadcast-tab" data-mode="cron" onclick="switchBroadcastMode('cron')">
                     <i class="ti ti-clock-cog"></i> <%- i18nKeys.cronTab %> <span class="beta-badge"><%- i18nKeys.betaBadge %></span>
+                </button>
+                <button type="button" class="broadcast-tab" data-mode="jobs" onclick="switchBroadcastMode('jobs')">
+                    <i class="ti ti-stack-2"></i> <%= i18nKeys.jobsTab %>
                 </button>
             </div>
         </div>
@@ -833,11 +915,13 @@
                     <% nodes.forEach(function(node) { %>
                     <div class="node-chip selected"
                          id="chip-<%= node._id %>"
+                         data-type="<%= node.type %>"
                          onclick="toggleNode('<%= node._id %>')"
                          title="<%= node.ip %>:<%= node.sshPort %> (<%= node.sshUsername %>)">
                         <span class="chip-dot"></span>
                         <% if (node.flag) { %><span class="chip-flag"><%= node.flag %></span><% } %>
                         <span class="chip-name"><%= node.name %></span>
+                        <% if (node.xrayVersion) { %><span class="chip-ver">v<%= node.xrayVersion %></span><% } %>
                     </div>
                     <% }); %>
                 </div>
@@ -922,6 +1006,65 @@
                         <div class="empty-state" style="padding:24px 12px">
                             <i class="ti ti-clock-cog"></i>
                             <span><%- i18nKeys.cronEmpty %></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mode-panel hidden" id="jobsPanel">
+            <div class="glass-surface cron-panel">
+                <div class="cron-panel-header">
+                    <div>
+                        <div class="cron-panel-title"><i class="ti ti-stack-2"></i> <%= i18nKeys.jobsTitle %></div>
+                        <div class="cron-panel-subtitle"><%= i18nKeys.jobsSubtitle %></div>
+                    </div>
+                    <div class="cron-actions">
+                        <button type="button" class="btn" id="btnJobsPreview" onclick="previewJob()">
+                            <i class="ti ti-list-search"></i> <%= i18nKeys.jobsPreview %>
+                        </button>
+                        <button type="button" class="btn btn-primary" id="btnJobsStart" onclick="startJob()" disabled>
+                            <i class="ti ti-player-play"></i> <%= i18nKeys.jobsStart %>
+                        </button>
+                        <button type="button" class="btn btn-danger" id="btnJobsStop" onclick="cancelJob()" style="display:none">
+                            <i class="ti ti-player-stop"></i> <%= i18nKeys.jobsStop %>
+                        </button>
+                    </div>
+                </div>
+                <div class="jobs-grid">
+                    <div class="form-group">
+                        <label for="jobsAction"><%= i18nKeys.jobsAction %></label>
+                        <select id="jobsAction" class="cron-field" onchange="onJobsActionChange()">
+                            <% jobActions.forEach(function(action) { %>
+                            <option value="<%= action.id %>"><%= action.id === 'xray_version' ? i18nKeys.jobsActionXray : (action.id === 'sync' ? i18nKeys.jobsActionSync : action.id) %></option>
+                            <% }); %>
+                        </select>
+                    </div>
+                    <div class="form-group" id="jobsVersionGroup">
+                        <label for="jobsVersion"><%= i18nKeys.jobsVersion %></label>
+                        <select id="jobsVersion" class="cron-field" onchange="invalidateJobsPreview()"></select>
+                    </div>
+                    <div class="form-group" id="jobsPasswordGroup">
+                        <label for="jobsPassword"><%= i18nKeys.jobsPassword %></label>
+                        <input type="password" id="jobsPassword" class="cron-field" autocomplete="current-password">
+                    </div>
+                    <% if (jobsTotpEnabled) { %>
+                    <div class="form-group" id="jobsTotpGroup">
+                        <label for="jobsTotp"><%= i18nKeys.jobsTotp %></label>
+                        <input type="text" id="jobsTotp" class="cron-field" inputmode="numeric" autocomplete="one-time-code" maxlength="10">
+                    </div>
+                    <% } %>
+                </div>
+                <div>
+                    <div class="node-selector-title" style="margin-bottom:8px">
+                        <i class="ti ti-list-check" style="font-size:14px"></i>
+                        <span><%= i18nKeys.jobsResults %></span>
+                    </div>
+                    <div class="jobs-meta" id="jobsMeta" style="margin-bottom:8px"></div>
+                    <div class="cron-results" id="jobsResults">
+                        <div class="empty-state" style="padding:24px 12px">
+                            <i class="ti ti-stack-2"></i>
+                            <span><%= i18nKeys.jobsEmpty %></span>
                         </div>
                     </div>
                 </div>
@@ -1028,6 +1171,7 @@
                 document.getElementById('chip-' + id).classList.add('selected');
             }
             syncSelectAllBtn();
+            invalidateJobsPreview();
         }
 
         function toggleSelectAll() {
@@ -1041,6 +1185,7 @@
                 });
             }
             syncSelectAllBtn();
+            invalidateJobsPreview();
         }
 
         function syncSelectAllBtn() {
@@ -1263,6 +1408,12 @@
             });
             document.getElementById('terminalPanel').classList.toggle('hidden', mode !== 'terminal');
             document.getElementById('cronPanel').classList.toggle('hidden', mode !== 'cron');
+            document.getElementById('jobsPanel').classList.toggle('hidden', mode !== 'jobs');
+            // Terminal WebSocket overlays must not block the other tabs.
+            document.body.classList.toggle('mode-no-terminal', mode !== 'terminal');
+            jobsMode = mode === 'jobs';
+            syncJobsChipHint();
+            if (jobsMode) onJobsActionChange(true);
         }
 
         function setCronBusy(value) {
@@ -1355,6 +1506,370 @@
             }
         }
 
+        // ── Bulk jobs ─────────────────────────────────────────────────────
+        const JOBS_BASE = '/panel/broadcast/jobs';
+        const JOB_ACTIONS = <%- JSON.stringify(jobActions) %>;
+        const JOBS_TOTP_ENABLED = <%- jobsTotpEnabled ? 'true' : 'false' %>;
+        const JOBS_POLL_MS = 2000;
+        const JOB_STATE_LABELS = {
+            queued: i18n.jobsStateQueued, running: i18n.jobsStateRunning, done: i18n.jobsStateDone,
+            error: i18n.jobsStateError, skipped: i18n.jobsStateSkipped, cancelled: i18n.jobsStateCancelled,
+        };
+        const JOB_BATCH_LABELS = {
+            running: i18n.jobsBatchRunning, stopping: i18n.jobsBatchStopping, done: i18n.jobsBatchDone,
+            stopped: i18n.jobsBatchStopped, cancelled: i18n.jobsBatchCancelled,
+        };
+        const JOB_STOP_LABELS = {
+            canary: i18n.jobsStopCanary, failures: i18n.jobsStopFailures,
+            cancel: i18n.jobsStopCancel, error: i18n.jobsStopError,
+        };
+        const JOB_STEP_LABELS = {
+            preflight: i18n.jobsStepPreflight, download: i18n.jobsStepDownload, sync: i18n.jobsStepSync,
+            verify: i18n.jobsStepVerify, rollback: i18n.jobsStepRollback,
+        };
+        let jobsMode = false;
+        let jobsBusy = false;
+        let jobsActive = false;
+        let jobsPreviewReady = 0;
+        let jobsReleasesLoaded = false;
+        let jobsPollTimer = null;
+
+        function currentJobAction() {
+            const value = document.getElementById('jobsAction').value;
+            return JOB_ACTIONS.find(action => action.id === value) || null;
+        }
+
+        function jobActionLabel(id) {
+            if (id === 'xray_version') return i18n.jobsActionXray;
+            if (id === 'sync') return i18n.jobsActionSync;
+            return id;
+        }
+
+        function syncJobsChipHint() {
+            const isXray = jobsMode && currentJobAction()?.id === 'xray_version';
+            document.getElementById('nodeSelector').classList.toggle('jobs-xray', isXray);
+        }
+
+        function syncJobsButtons() {
+            const start = document.getElementById('btnJobsStart');
+            const stop = document.getElementById('btnJobsStop');
+            document.getElementById('btnJobsPreview').disabled = jobsBusy;
+            start.disabled = jobsBusy || jobsActive || jobsPreviewReady === 0;
+            start.style.display = jobsActive ? 'none' : '';
+            stop.style.display = jobsActive ? '' : 'none';
+            stop.disabled = jobsBusy;
+        }
+
+        function invalidateJobsPreview() {
+            jobsPreviewReady = 0;
+            syncJobsButtons();
+        }
+
+        function onJobsActionChange(keepPreview) {
+            const action = currentJobAction();
+            const isXray = action?.id === 'xray_version';
+            document.getElementById('jobsVersionGroup').classList.toggle('hidden', !isXray);
+            document.getElementById('jobsPasswordGroup').classList.toggle('hidden', !action?.requiresReauth);
+            const totpGroup = document.getElementById('jobsTotpGroup');
+            if (totpGroup) totpGroup.classList.toggle('hidden', !action?.requiresReauth);
+            syncJobsChipHint();
+            if (keepPreview !== true) invalidateJobsPreview();
+            if (isXray && !jobsReleasesLoaded) loadJobsReleases();
+        }
+
+        async function jobsRequest(path, options) {
+            const response = await fetch(JOBS_BASE + path, {
+                credentials: 'same-origin',
+                ...(options || {}),
+                headers: { 'Content-Type': 'application/json', ...((options && options.headers) || {}) },
+            });
+            // An expired session redirects to the login page, which fetch follows.
+            if (response.redirected) throw new Error(i18n.sessionExpired);
+            let data = null;
+            try { data = await response.json(); } catch (_) {}
+            if (!response.ok) throw new Error(data?.error || i18n.serverError);
+            if (!data || typeof data !== 'object') throw new Error(i18n.serverError);
+            return data;
+        }
+
+        async function loadJobsReleases() {
+            const select = document.getElementById('jobsVersion');
+            select.textContent = '';
+            const loading = document.createElement('option');
+            loading.textContent = i18n.jobsLoading;
+            loading.value = '';
+            select.appendChild(loading);
+            select.disabled = true;
+            try {
+                const data = await jobsRequest('/xray-releases');
+                const releases = Array.isArray(data.releases) ? data.releases : [];
+                select.textContent = '';
+                releases.forEach((release) => {
+                    const option = document.createElement('option');
+                    option.value = release.version;
+                    option.textContent = 'v' + release.version + (release.prerelease ? ' (' + i18n.jobsPrerelease + ')' : '');
+                    select.appendChild(option);
+                });
+                const preferred = releases.find(release => !release.prerelease) || releases[0];
+                if (preferred) select.value = preferred.version;
+                jobsReleasesLoaded = releases.length > 0;
+                if (!releases.length && data.error) renderJobsMessage(data.error);
+            } catch (error) {
+                select.textContent = '';
+                renderJobsMessage(error.message);
+            } finally {
+                select.disabled = false;
+            }
+        }
+
+        function renderJobsMessage(message) {
+            const results = document.getElementById('jobsResults');
+            results.textContent = '';
+            const row = document.createElement('div');
+            row.className = 'empty-state';
+            row.style.padding = '24px 12px';
+            const icon = document.createElement('i');
+            icon.className = 'ti ti-stack-2';
+            const text = document.createElement('span');
+            text.textContent = message;
+            row.appendChild(icon);
+            row.appendChild(text);
+            results.appendChild(row);
+        }
+
+        function setJobsMeta(parts) {
+            const meta = document.getElementById('jobsMeta');
+            meta.textContent = '';
+            parts.filter(Boolean).forEach((part) => {
+                const pill = document.createElement('span');
+                pill.className = 'summary-stat' + (part.cls ? ' ' + part.cls : '');
+                pill.textContent = part.text;
+                meta.appendChild(pill);
+            });
+        }
+
+        function nodeLabel(item) {
+            const node = ALL_NODES.find(n => String(n._id) === item.nodeId);
+            const name = item.name || node?.name || item.nodeId;
+            const flag = item.flag || node?.flag || '';
+            const version = item.xrayVersion ? ' · v' + item.xrayVersion : '';
+            return (flag ? flag + ' ' : '') + name + version;
+        }
+
+        function appendJobsRow({ label, badge, badgeCls, message, rowCls, logNodeId }) {
+            const row = document.createElement('div');
+            row.className = 'jobs-row' + (rowCls ? ' ' + rowCls : '');
+
+            const name = document.createElement('div');
+            name.className = 'cron-result-node';
+            name.textContent = label;
+
+            const status = document.createElement('span');
+            status.className = 'node-card-badge badge-' + (badgeCls || 'connected');
+            status.textContent = badge;
+
+            const text = document.createElement('div');
+            text.className = 'cron-result-message';
+            text.textContent = message || '';
+            if (logNodeId) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'jobs-log-btn';
+                button.textContent = (message ? ' ' : '') + i18n.jobsShowLog;
+                button.addEventListener('click', () => toggleJobLog(row, logNodeId));
+                text.appendChild(button);
+            }
+
+            row.appendChild(name);
+            row.appendChild(status);
+            row.appendChild(text);
+            document.getElementById('jobsResults').appendChild(row);
+        }
+
+        async function toggleJobLog(row, nodeId) {
+            const existing = row.querySelector('.jobs-row-log');
+            if (existing) {
+                existing.remove();
+                return;
+            }
+            const pre = document.createElement('pre');
+            pre.className = 'jobs-row-log';
+            pre.textContent = i18n.jobsLoading;
+            row.appendChild(pre);
+            try {
+                const response = await fetch('/panel/nodes/' + encodeURIComponent(nodeId) + '/xray-version-task', { credentials: 'same-origin' });
+                const task = await response.json();
+                if (!response.ok) throw new Error(task.error || i18n.wsError);
+                pre.textContent = Array.isArray(task.logs) && task.logs.length ? task.logs.join('\n') : '—';
+            } catch (error) {
+                pre.textContent = error.message;
+            }
+        }
+
+        function renderJobsPreview(data) {
+            document.getElementById('jobsResults').textContent = '';
+            setJobsMeta([
+                { text: i18n.jobsPreviewSummary.replace('{ready}', data.ready).replace('{skipped}', data.skipped), cls: data.ready ? 'ok' : 'fail' },
+            ]);
+            const items = (data.items || []).slice().sort((a, b) => Number(b.ready) - Number(a.ready));
+            items.forEach((item) => {
+                const warnings = (item.warnings || []).join('; ');
+                appendJobsRow({
+                    label: nodeLabel(item),
+                    badge: item.ready ? i18n.jobsReady : i18n.jobsStateSkipped,
+                    badgeCls: item.ready ? 'ok' : 'connected',
+                    message: item.ready ? warnings : item.reason,
+                    rowCls: item.ready ? 'ok' : 'muted',
+                });
+            });
+            if (!items.length) renderJobsMessage(i18n.jobsEmpty);
+        }
+
+        function renderJobsStatus(batch) {
+            jobsActive = batch.state === 'running' || batch.state === 'stopping';
+            const counts = batch.counts || {};
+            setJobsMeta([
+                { text: jobActionLabel(batch.action) + (batch.params?.version ? ' → v' + batch.params.version : '') },
+                { text: JOB_BATCH_LABELS[batch.state] || batch.state, cls: batch.state === 'done' ? 'ok' : (jobsActive ? '' : 'fail') },
+                { text: i18n.jobsStateDone + ': ' + (counts.done || 0), cls: 'ok' },
+                { text: i18n.jobsStateError + ': ' + (counts.error || 0), cls: counts.error ? 'fail' : '' },
+                { text: i18n.jobsStateSkipped + ': ' + (counts.skipped || 0) },
+                counts.cancelled ? { text: i18n.jobsStateCancelled + ': ' + counts.cancelled } : null,
+                batch.stopReason ? { text: JOB_STOP_LABELS[batch.stopReason] || batch.stopReason, cls: 'fail' } : null,
+                { text: i18n.jobsStartedBy + ': ' + batch.startedBy },
+            ]);
+
+            document.getElementById('jobsResults').textContent = '';
+            (batch.items || []).forEach((item) => {
+                const parts = [];
+                if (item.state === 'running' && item.step) parts.push(JOB_STEP_LABELS[item.step] || item.step);
+                if (item.error) parts.push(item.error);
+                if (item.details?.rollbackSucceeded) parts.push(i18n.jobsRollbackOk);
+                else if (item.details?.nodeUnchanged && item.state === 'error') parts.push(i18n.jobsUnchanged);
+                const badgeCls = { done: 'ok', error: 'fail', running: 'running', queued: 'connected', skipped: 'connected', cancelled: 'connected' }[item.state];
+                const rowCls = { done: 'ok', error: 'fail', running: 'active', skipped: 'muted', cancelled: 'muted' }[item.state] || '';
+                const hasTask = batch.action === 'xray_version' && (item.state === 'running' || item.state === 'done' || item.state === 'error');
+                appendJobsRow({
+                    label: nodeLabel(item),
+                    badge: JOB_STATE_LABELS[item.state] || item.state,
+                    badgeCls,
+                    message: parts.join(' · '),
+                    rowCls,
+                    logNodeId: hasTask && item.state !== 'running' ? item.nodeId : null,
+                });
+            });
+            syncJobsButtons();
+        }
+
+        function scheduleJobsPoll() {
+            clearTimeout(jobsPollTimer);
+            jobsPollTimer = null;
+            if (!jobsActive || document.hidden) return;
+            jobsPollTimer = setTimeout(refreshJobsStatus, JOBS_POLL_MS);
+        }
+
+        async function refreshJobsStatus() {
+            try {
+                const batch = await jobsRequest('/status');
+                if (batch.state === 'idle') {
+                    jobsActive = false;
+                } else {
+                    renderJobsStatus(batch);
+                }
+            } catch (_) {
+                // Keep the last snapshot; the next poll retries.
+            }
+            syncJobsButtons();
+            scheduleJobsPoll();
+        }
+
+        async function previewJob() {
+            const action = currentJobAction();
+            if (!action || jobsBusy) return;
+            if (selectedNodeIds.size === 0) {
+                renderJobsMessage(i18n.cronSelectNodes);
+                return;
+            }
+            jobsBusy = true;
+            jobsPreviewReady = 0;
+            syncJobsButtons();
+            renderJobsMessage(i18n.jobsLoading);
+            try {
+                const data = await jobsRequest('/' + encodeURIComponent(action.id) + '/preview', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        nodeIds: Array.from(selectedNodeIds),
+                        version: document.getElementById('jobsVersion').value,
+                    }),
+                });
+                jobsPreviewReady = data.ready || 0;
+                renderJobsPreview(data);
+            } catch (error) {
+                renderJobsMessage(error.message);
+            } finally {
+                jobsBusy = false;
+                syncJobsButtons();
+            }
+        }
+
+        async function startJob() {
+            const action = currentJobAction();
+            if (!action || jobsBusy || jobsActive) return;
+            if (!jobsPreviewReady) {
+                alert(i18n.jobsPreviewFirst);
+                return;
+            }
+            const passwordInput = document.getElementById('jobsPassword');
+            const totpInput = document.getElementById('jobsTotp');
+            const body = {
+                nodeIds: Array.from(selectedNodeIds),
+                version: document.getElementById('jobsVersion').value,
+            };
+            if (action.requiresReauth) {
+                if (!passwordInput.value) return alert(i18n.jobsPasswordRequired);
+                if (JOBS_TOTP_ENABLED && !totpInput?.value) return alert(i18n.jobsTotpRequired);
+                body.currentPassword = passwordInput.value;
+                body.totpToken = totpInput ? totpInput.value : '';
+            }
+            const label = jobActionLabel(action.id) + (action.id === 'xray_version' && body.version ? ' v' + body.version : '');
+            if (!confirm(i18n.jobsConfirm.replace('{action}', label).replace('{count}', jobsPreviewReady))) return;
+
+            jobsBusy = true;
+            syncJobsButtons();
+            try {
+                const batch = await jobsRequest('/' + encodeURIComponent(action.id) + '/start', {
+                    method: 'POST',
+                    body: JSON.stringify(body),
+                });
+                passwordInput.value = '';
+                if (totpInput) totpInput.value = '';
+                jobsPreviewReady = 0;
+                renderJobsStatus(batch);
+            } catch (error) {
+                if (totpInput) totpInput.value = '';
+                alert(error.message);
+            } finally {
+                jobsBusy = false;
+                syncJobsButtons();
+                scheduleJobsPoll();
+            }
+        }
+
+        async function cancelJob() {
+            if (jobsBusy || !jobsActive) return;
+            jobsBusy = true;
+            syncJobsButtons();
+            try {
+                renderJobsStatus(await jobsRequest('/cancel', { method: 'POST', body: '{}' }));
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                jobsBusy = false;
+                syncJobsButtons();
+                scheduleJobsPoll();
+            }
+        }
+
         // ── Textarea auto-resize ──────────────────────────────────────────
         function autoResize(el) {
             el.style.height = 'auto';
@@ -1404,6 +1919,10 @@
 
             syncSelectAllBtn();
             connect();
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden && jobsActive) refreshJobsStatus();
+            });
+            refreshJobsStatus();
         });
     </script>
 </body>

@@ -1134,12 +1134,12 @@ class SyncService {
      * Update config on a specific node (dispatches by type).
      * Virtual nodes have no remote server — sync is a no-op.
      */
-    async updateNodeConfig(node) {
+    async updateNodeConfig(node, opts = {}) {
         if (isServerlessNode(node)) return;
         if (node.type === 'xray') {
-            return this.updateXrayNodeConfig(node);
+            return this.updateXrayNodeConfig(node, opts);
         }
-        return this._updateHysteriaNodeConfig(node);
+        return this._updateHysteriaNodeConfig(node, opts);
     }
 
     /**
@@ -1206,7 +1206,7 @@ class SyncService {
     /**
      * Update Hysteria config on a specific node
      */
-    async _updateHysteriaNodeConfig(node) {
+    async _updateHysteriaNodeConfig(node, { report = null } = {}) {
         logger.info(`[Sync] Updating config for node ${node.name} (${node.ip})`);
         
         await HyNode.updateOne(
@@ -1285,6 +1285,7 @@ class SyncService {
             }
         } catch (error) {
             logger.error(`[Sync] Node ${node.name} error: ${error.message}`);
+            if (report) report.error = error.message;
             await HyNode.updateOne(
                 { _id: node._id },
                 { $set: { status: 'error', lastError: error.message, healthFailures: 0 } }

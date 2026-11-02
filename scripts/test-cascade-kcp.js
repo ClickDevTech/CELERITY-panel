@@ -184,6 +184,18 @@ async function runFilterTests() {
     const supported = { reverseLinks: [kcp('r2')], forwardLinks: [kcp('f2')], forwardHopLinks: [kcp('h1')] };
     assert.deepStrictEqual(await cascadeService.filterLinksForNodeXray(node, supported), supported);
     assert.strictEqual(marked.length, 2);
+
+    // Forward chain walk over preloaded links: pairwise A->B->C and head-defined hops.
+    const fwd = (id, portalNode, bridgeNode, priority) => ({ _id: id, portalNode, bridgeNode, priority });
+    const pairwise = [fwd('ab', 'A', 'B'), fwd('bc', 'B', 'C')];
+    assert.deepStrictEqual(cascadeService._walkForwardChain(pairwise, 'A').map(l => l._id), ['ab', 'bc']);
+    assert.deepStrictEqual(cascadeService._walkForwardChain(pairwise, 'B').map(l => l._id), ['bc']);
+    assert.deepStrictEqual(cascadeService._walkForwardChain(pairwise, 'C'), []);
+    const headDefined = [fwd('h2', 'H', 'Y', 2), fwd('h1', 'H', 'X', 1)];
+    assert.deepStrictEqual(cascadeService._walkForwardChain(headDefined, 'H').map(l => l._id), ['h1', 'h2']);
+    const cycle = [fwd('pq', 'P', 'Q'), fwd('qp', 'Q', 'P')];
+    assert.deepStrictEqual(cascadeService._walkForwardChain(cycle, 'P').map(l => l._id), ['pq', 'qp']);
+    assert.deepStrictEqual(cascadeService._walkForwardChain([], 'A'), []);
 }
 
 runFilterTests().then(() => {

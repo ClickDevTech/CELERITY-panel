@@ -1193,6 +1193,34 @@ const requireAuth = (req, res, next) => {
     next();
 };
 
+/**
+ * Re-check the current admin's password (and TOTP when enabled) before a
+ * remote binary change. Sends the JSON error itself.
+ * @returns {Promise<boolean>} true when the caller may proceed
+ */
+async function reauthenticateXrayVersionChange(req, res) {
+    const Admin = require('../../models/adminModel');
+    const password = String(req.body?.currentPassword || '');
+    const token = String(req.body?.totpToken || '');
+    const admin = await Admin.verifyPassword(req.session.adminUsername, password);
+    if (!admin) {
+        res.status(401).json({ error: res.locals.t?.('auth.invalidCurrentPassword') || 'Invalid current password' });
+        return false;
+    }
+    if (!admin.twoFactor?.enabled) return true;
+
+    const secret = totpService.decryptSecret(admin.twoFactor.secretEncrypted);
+    if (!secret) {
+        res.status(500).json({ error: res.locals.t?.('auth.totpConfigError') || 'TOTP configuration error' });
+        return false;
+    }
+    if (!(await totpService.verifyToken({ secret, token }))) {
+        res.status(401).json({ error: res.locals.t?.('auth.invalidCurrentTotp') || 'Invalid current TOTP code' });
+        return false;
+    }
+    return true;
+}
+
 // ─── Render Engine ───────────────────────────────────────────────────────────
 
 const render = (res, template, data = {}) => {
@@ -1636,6 +1664,7 @@ module.exports = {
     validateHysteriaFormFields,
     checkIpWhitelist,
     requireAuth,
+    reauthenticateXrayVersionChange,
     requireOnboarding,
     invalidateOnboardingCache,
     render,

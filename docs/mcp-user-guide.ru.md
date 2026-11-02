@@ -323,6 +323,41 @@ curl -X POST https://your-panel.com/api/mcp \
 
 ---
 
+### 📦 bulk_action — Массовые действия над нодами
+
+> Требуется scope: `nodes:write`
+
+Меняет версию ядра Xray или синхронизирует (отправляет конфиг и перезапускает) сразу много нод. Тот же механизм работает во вкладке **Broadcast → Массовые действия** в панели.
+
+**Операции (`op`):** `releases` | `preview` | `start` | `status` | `cancel`
+
+**Действия (`action`):** `xray_version` | `sync`
+
+- Одновременно идёт только один запуск. Первая готовая нода идёт одна как пробная, остальные следуют небольшими волнами.
+- После 2 ошибок новые ноды не запускаются; уже начатые доработают.
+- `preview` показывает каждую ноду и причину, по которой она будет пропущена (офлайн, занята, выключена, уже на этой версии, Xray слишком старый для VLESS Encryption или mKCP-связей). `start` проверяет это заново и запускает только готовые ноды.
+- `start` требует `confirm: true`. Ноды берутся из `nodeIds` (до 200) или `all: true`.
+- Состояние запуска хранится в памяти и теряется при перезапуске панели.
+
+<details>
+<summary>📖 Пример: Обновить Xray на всех Xray-нодах</summary>
+
+```json
+{ "name": "bulk_action", "arguments": { "op": "preview", "action": "xray_version", "all": true, "version": "26.3.27" } }
+```
+
+```json
+{ "name": "bulk_action", "arguments": { "op": "start", "action": "xray_version", "all": true, "version": "26.3.27", "confirm": true } }
+```
+
+```json
+{ "name": "bulk_action", "arguments": { "op": "status" } }
+```
+
+</details>
+
+---
+
 ### 🖥 ssh_session — Интерактивная SSH-сессия
 
 > Требуется scope: `nodes:write`

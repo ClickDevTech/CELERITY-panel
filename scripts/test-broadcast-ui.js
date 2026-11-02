@@ -80,7 +80,40 @@ assertIncludes(broadcastRoute, "router.get('/broadcast-terminal'", 'broadcast ro
 assertIncludes(broadcastRoute, "res.redirect('/panel/broadcast')", 'broadcast route');
 assertIncludes(broadcastRoute, "router.post('/broadcast/cron/apply'", 'broadcast route');
 assertIncludes(broadcastRoute, "res.render('broadcast-terminal'", 'broadcast route');
-assertIncludes(broadcastRoute, ".select('_id name ip type status flag ssh.port ssh.username groups')", 'broadcast route');
+assertIncludes(broadcastRoute, ".select('_id name ip type status flag ssh.port ssh.username groups xrayVersion')", 'broadcast route');
+
+[
+  'data-mode="jobs"',
+  'id="jobsPanel"',
+  'id="jobsAction"',
+  'id="jobsVersion"',
+  'id="jobsPassword"',
+  'id="btnJobsPreview"',
+  'id="btnJobsStart"',
+  'id="btnJobsStop"',
+  'id="jobsResults"',
+  "const JOBS_BASE = '/panel/broadcast/jobs'",
+  "jobsRequest('/xray-releases')",
+  "jobsRequest('/status')",
+  "'/cancel'",
+  "'/preview'",
+  "'/start'",
+  '/xray-version-task',
+  'document.hidden',
+  "document.body.classList.toggle('mode-no-terminal'",
+].forEach(expected => assertIncludes(broadcastView, expected, 'broadcast jobs tab'));
+
+const jobsPanelIndex = broadcastView.indexOf('id="jobsPanel"');
+assert(nodeSelectorIndex < jobsPanelIndex, 'node selector should appear before jobs panel');
+
+[
+  "router.get('/broadcast/jobs/xray-releases'",
+  "router.get('/broadcast/jobs/status'",
+  "router.post('/broadcast/jobs/cancel', jobsCancelLimiter",
+  "router.post('/broadcast/jobs/:action/preview', jobsPreviewLimiter",
+  "router.post('/broadcast/jobs/:action/start', jobsStartLimiter",
+  'reauthenticateXrayVersionChange',
+].forEach(expected => assertIncludes(broadcastRoute, expected, 'broadcast jobs route'));
 
 const panelNodesRoute = read('src/routes/panel/nodes.js');
 assert(!panelNodesRoute.includes("router.get('/broadcast-terminal'"), 'nodes route should not own broadcast-terminal');
@@ -110,6 +143,26 @@ const requiredBroadcastKeys = [
   'summaryTotal',
   'summaryOk',
   'summaryFailed',
+  'jobsTab',
+  'jobsTitle',
+  'jobsSubtitle',
+  'jobsActionXray',
+  'jobsActionSync',
+  'jobsPreview',
+  'jobsStart',
+  'jobsStop',
+  'jobsConfirm',
+  'jobsPreviewSummary',
+  'jobsStateQueued',
+  'jobsStateRunning',
+  'jobsStateDone',
+  'jobsStateError',
+  'jobsStateSkipped',
+  'jobsStateCancelled',
+  'jobsBatchStopping',
+  'jobsStopCanary',
+  'jobsStopFailures',
+  'jobsShowLog',
 ];
 
 [
@@ -131,6 +184,7 @@ const packageJson = readJson('package.json');
   'node scripts/test-multicast-cron-service.js',
   'node scripts/test-broadcast-panel.js',
   'node scripts/test-broadcast-ui.js',
+  'node scripts/test-bulk-actions.js',
 ].forEach(command => assertIncludes(packageJson.scripts.test, command, 'package npm test script'));
 
 console.log('broadcast UI tests passed');

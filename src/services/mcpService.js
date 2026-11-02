@@ -24,6 +24,7 @@ const statsTools = require('../mcp/tools/stats');
 const logsTools = require('../mcp/tools/logs');
 const accessLogsTools = require('../mcp/tools/accessLogs');
 const probesTools = require('../mcp/tools/probes');
+const bulkActionsTools = require('../mcp/tools/bulkActions');
 
 // ─── Schema generation ─────────────────────────────────────────────────────
 // Advertised tool `inputSchema`s are derived from the zod schemas that the
@@ -169,6 +170,13 @@ const TOOLS = {
         requiredScope: 'probes:read',
         inputSchema: zodToInputSchema(probesTools.schemas.queryProbes),
     },
+
+    bulk_action: {
+        description: bulkActionsTools.TOOL_DESCRIPTION,
+        // Same reach as execute_ssh, which already grants root on nodes.
+        requiredScope: 'nodes:write',
+        inputSchema: zodToInputSchema(bulkActionsTools.schemas.bulkAction),
+    },
 };
 
 // ─── Scope helpers ───────────────────────────────────────────────────────────
@@ -302,6 +310,9 @@ async function callTool(name, args, apiKey, emit) {
 
         case 'query_probes':
             return await probesTools.queryProbes(args);
+
+        case 'bulk_action':
+            return await bulkActionsTools.bulkAction(args, emit, apiKey);
 
         default:
             throw Object.assign(new Error(`Tool not implemented: ${name}`), { code: 501 });

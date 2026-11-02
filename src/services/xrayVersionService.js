@@ -413,6 +413,57 @@ function getTask(nodeId) {
     return taskSnapshot(tasks.get(String(nodeId)));
 }
 
+/**
+ * State and step only; avoids copying the log buffer on frequent polls.
+ */
+function getTaskProgress(nodeId) {
+    const task = tasks.get(String(nodeId));
+    return task ? { state: task.state, step: task.step } : { state: 'idle', step: null };
+}
+
+/**
+ * Decide, without SSH, which nodes can take `release` in a bulk run.
+ * @param {Array<Object>} nodes - lean HyNode docs (type, status, xrayVersion, ssh, xray)
+ * @param {Object} release - known release entry
+ * @param {Set<string>} kcpNodeIds - ids of nodes that terminate an mKCP cascade link
+ * @returns {Array<{nodeId: string, ready: boolean, reason: string|null, warnings: string[]}>}
+ */
+function bulkPreview(nodes, release, kcpNodeIds = new Set()) {
+    const vlessEncryption = require('../utils/vlessEncryption');
+    const cascadeService = require('./cascadeService');
+    return (nodes || []).map((node) => {
+        const nodeId = String(node._id);
+        const storedVersion = normalizeVersion(node.xrayVersion);
+        const result = { nodeId, ready: false, reason: null, warnings: [] };
+
+        let reason = null;
+        if (node.type !== 'xray') {
+            reason = 'Not an Xray node';
+        } else if (!node.ssh?.password && !node.ssh?.privateKey) {
+            reason = 'SSH credentials are required';
+        } else if (storedVersion && storedVersion === release.version) {
+            reason = `Already on ${release.version}`;
+        } else if (nodeSetupLock.holder(nodeId)) {
+            reason = `Node is busy: ${nodeSetupLock.holder(nodeId)} is running`;
+        } else if (node.status === 'offline') {
+            reason = 'Node is offline';
+        } else {
+            reason = vlessEncryption.versionError(node.xray, release.version, node.name)
+                || (kcpNodeIds.has(nodeId) ? cascadeService._kcpVersionError(node, release.version) : null);
+        }
+
+        if (reason) {
+            result.reason = reason;
+            return result;
+        }
+        result.ready = true;
+        if (node.status === 'error') result.warnings.push('Node is in error state');
+        if (!storedVersion) result.warnings.push('Current Xray version is unknown');
+        else if (compareVersions(release.version, storedVersion) < 0) result.warnings.push(`Downgrade from ${storedVersion}`);
+        return result;
+    });
+}
+
 function scheduleTaskCleanup(nodeId, taskId) {
     const timer = setTimeout(() => {
         const task = tasks.get(String(nodeId));
@@ -654,10 +705,17 @@ fi
         nodeSetupLock.release(task.nodeId);
         task.finishedAt = new Date().toISOString();
         scheduleTaskCleanup(task.nodeId, task.id);
+        if (typeof task.onFinish === 'function') {
+            try {
+                task.onFinish(taskSnapshot(task));
+            } catch (error) {
+                logger.warn(`[Xray Update] onFinish callback failed: ${error.message}`);
+            }
+        }
     }
 }
 
-async function startVersionChange(nodeId, version) {
+async function startVersionChange(nodeId, version, { onFinish = null } = {}) {
     const key = String(nodeId);
     const existing = tasks.get(key);
     if (existing?.state === 'running') {
@@ -695,6 +753,7 @@ async function startVersionChange(nodeId, version) {
         logs: [],
         startedAt: new Date().toISOString(),
         finishedAt: null,
+        onFinish,
     };
     if (!nodeSetupLock.acquire(key, 'Xray version change')) {
         const error = new Error(`Node is busy: ${nodeSetupLock.holder(key)} is running`);
@@ -719,6 +778,8 @@ module.exports = {
     getReleaseChangelog,
     detectInstalledVersion,
     getTask,
+    getTaskProgress,
+    bulkPreview,
     startVersionChange,
     _test: {
         runVersionChange,

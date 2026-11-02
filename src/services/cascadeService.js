@@ -823,6 +823,16 @@ class CascadeService {
             active: true,
         }).populate('bridgeNode')).filter(l => !excludeSet.has(String(l._id)));
 
+        return this._walkForwardChain(allForwardLinks, startNodeId);
+    }
+
+    /**
+     * Pure part of _getForwardChainLinks: walk preloaded active forward links.
+     * @param {Array} allForwardLinks - links with portalNode/bridgeNode as ids or docs
+     * @param {string|ObjectId} startNodeId
+     * @returns {Array}
+     */
+    _walkForwardChain(allForwardLinks, startNodeId) {
         if (allForwardLinks.length === 0) return [];
 
         const outgoingMap = new Map();

@@ -15,7 +15,6 @@ const configGenerator = require('../../services/configGenerator');
 const { discoverCdnAddresses } = require('../../services/cdnDiscoveryService');
 const nodeSetup = require('../../services/nodeSetup');
 const xrayVersionService = require('../../services/xrayVersionService');
-const totpService = require('../../services/totpService');
 const { isSameVpsAsPanel } = nodeSetup;
 const NodeSSH = require('../../services/nodeSSH');
 const sshKeyService = require('../../services/sshKeyService');
@@ -65,6 +64,7 @@ const {
     generateSshKeyLimiter,
     sniScanLimiter,
     buildClonedNodePrefill,
+    reauthenticateXrayVersionChange,
 } = require('./helpers');
 
 const sniScanner = require('../../services/sniScanner');
@@ -129,28 +129,6 @@ const cdnResolveLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
-
-async function reauthenticateXrayVersionChange(req, res) {
-    const password = String(req.body?.currentPassword || '');
-    const token = String(req.body?.totpToken || '');
-    const admin = await Admin.verifyPassword(req.session.adminUsername, password);
-    if (!admin) {
-        res.status(401).json({ error: res.locals.t?.('auth.invalidCurrentPassword') || 'Invalid current password' });
-        return false;
-    }
-    if (!admin.twoFactor?.enabled) return true;
-
-    const secret = totpService.decryptSecret(admin.twoFactor.secretEncrypted);
-    if (!secret) {
-        res.status(500).json({ error: res.locals.t?.('auth.totpConfigError') || 'TOTP configuration error' });
-        return false;
-    }
-    if (!(await totpService.verifyToken({ secret, token }))) {
-        res.status(401).json({ error: res.locals.t?.('auth.invalidCurrentTotp') || 'Invalid current TOTP code' });
-        return false;
-    }
-    return true;
-}
 
 /**
  * Parse virtual-node form fields and apply them to nodeData.

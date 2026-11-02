@@ -125,6 +125,9 @@ class NodeSSH {
                 port: this.node.ssh?.port || 22,
                 username: this.node.ssh?.username || 'root',
                 readyTimeout: getDirectReadyTimeoutMs(),
+                // Without keepalive a node that drops off mid-command leaves exec() pending forever.
+                keepaliveInterval: 15000,
+                keepaliveCountMax: 4,
             };
 
             if (this.node.ssh?.privateKey) {

@@ -60,9 +60,55 @@ const multicastCronService = {
   },
 };
 
+let adminTwoFactor = false;
+const Admin = {
+  findOne: () => ({
+    select() { return this; },
+    lean: async () => ({ twoFactor: { enabled: adminTwoFactor } }),
+  }),
+};
+
+const bulkCalls = [];
+const bulkActionService = {
+  MAX_NODES: 200,
+  listActions: () => [{ id: 'xray_version', requiresReauth: true }, { id: 'sync', requiresReauth: false }],
+  getAction(action) {
+    if (action === 'xray_version') return { requiresReauth: true };
+    if (action === 'sync') return { requiresReauth: false };
+    const error = new Error('Unknown bulk action');
+    error.statusCode = 400;
+    error.expose = true;
+    throw error;
+  },
+  preview: async (args) => {
+    bulkCalls.push({ op: 'preview', args: clone(args) });
+    return { action: args.action, ready: 1, skipped: 0, items: [] };
+  },
+  start: async (args) => {
+    bulkCalls.push({ op: 'start', args: clone(args) });
+    return { state: 'running', action: args.action };
+  },
+  cancel: (actor) => {
+    bulkCalls.push({ op: 'cancel', actor });
+    const error = new Error('No bulk action is running');
+    error.statusCode = 409;
+    error.expose = true;
+    throw error;
+  },
+  status: () => ({ state: 'idle' }),
+};
+
+let reauthResult = true;
+const reauthCalls = [];
+
 const stubs = {
+  '../../models/adminModel': Admin,
   '../../models/hyNodeModel': HyNode,
   '../../services/multicastCronService': multicastCronService,
+  '../../services/bulkActionService': bulkActionService,
+  '../../services/xrayVersionService': {
+    getVersionInfo: async () => ({ releases: [{ version: '26.7.28', prerelease: false }], error: null }),
+  },
   '../../utils/logger': {
     info: () => {},
     warn: () => {},
@@ -77,6 +123,14 @@ const stubs = {
     checkIpWhitelist: (_req, _res, next) => next(),
     requireAuth: (_req, _res, next) => next(),
     requireOnboarding: (_req, _res, next) => next(),
+    reauthenticateXrayVersionChange: async (req, res) => {
+      reauthCalls.push(clone(req.body));
+      if (!reauthResult) {
+        res.status(401).json({ error: 'Invalid current password' });
+        return false;
+      }
+      return true;
+    },
   },
   './auth': express.Router(),
   './wizard': express.Router(),
@@ -105,6 +159,10 @@ function reset() {
   rendered.length = 0;
   serviceCalls.length = 0;
   findError = null;
+  bulkCalls.length = 0;
+  reauthCalls.length = 0;
+  reauthResult = true;
+  adminTwoFactor = false;
 }
 
 function findRoute(router, method, path) {
@@ -150,12 +208,14 @@ function makeRes() {
   };
 }
 
-async function runRoute(method, path, { body = {} } = {}) {
+async function runRoute(method, path, { body = {}, params = {} } = {}) {
   const handlers = findRoute(broadcastRouter, method, path);
   const handler = handlers[handlers.length - 1];
   const req = {
     body,
+    params,
     ip: '127.0.0.1',
+    session: { adminUsername: 'root-admin' },
     get: () => undefined,
   };
   const res = makeRes();
@@ -189,7 +249,9 @@ async function runRoute(method, path, { body = {} } = {}) {
       ],
     },
   });
-  assert.deepStrictEqual(findCalls[1], { method: 'select', fields: '_id name ip type status flag ssh.port ssh.username groups' });
+  assert.deepStrictEqual(findCalls[1], { method: 'select', fields: '_id name ip type status flag ssh.port ssh.username groups xrayVersion' });
+  assert.deepStrictEqual(rendered[0].data.bulkActions.map(action => action.id), ['xray_version', 'sync']);
+  assert.strictEqual(rendered[0].data.totpEnabled, false);
   assert.deepStrictEqual(findCalls[2], { method: 'populate', path: 'groups', fields: 'name' });
   assert.deepStrictEqual(rendered[0].data.nodes.map(node => node._id), [id1, id3]);
   assert.strictEqual(rendered[0].data.nodes[0].sshPort, 2222);
@@ -276,6 +338,63 @@ async function runRoute(method, path, { body = {} } = {}) {
   });
   assert.strictEqual(res.statusCode, 400);
   assert.deepStrictEqual(res.body, { success: false, error: 'Invalid cron line 1' });
+
+  // Bulk jobs: every write route carries its own limiter.
+  assert(findRoute(broadcastRouter, 'post', '/broadcast/jobs/:action/preview').length > 1, 'jobs preview has a limiter');
+  assert(findRoute(broadcastRouter, 'post', '/broadcast/jobs/:action/start').length > 1, 'jobs start has a limiter');
+  assert(findRoute(broadcastRouter, 'post', '/broadcast/jobs/cancel').length > 1, 'jobs cancel has a limiter');
+  assert(findRoute(broadcastRouter, 'get', '/broadcast/jobs/status'));
+  assert(findRoute(broadcastRouter, 'get', '/broadcast/jobs/xray-releases'));
+
+  reset();
+  res = await runRoute('post', '/broadcast/jobs/:action/preview', {
+    params: { action: 'xray_version' },
+    body: { nodeIds: [id1], version: '26.7.28' },
+  });
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual(bulkCalls[0].args, { action: 'xray_version', nodeIds: [id1], params: { version: '26.7.28' } });
+  assert.strictEqual(reauthCalls.length, 0, 'preview never asks for credentials');
+
+  // Xray start requires re-authentication and never reaches the service on failure.
+  reset();
+  reauthResult = false;
+  res = await runRoute('post', '/broadcast/jobs/:action/start', {
+    params: { action: 'xray_version' },
+    body: { nodeIds: [id1], version: '26.7.28', currentPassword: 'bad' },
+  });
+  assert.strictEqual(res.statusCode, 401);
+  assert.strictEqual(bulkCalls.length, 0);
+
+  reset();
+  res = await runRoute('post', '/broadcast/jobs/:action/start', {
+    params: { action: 'xray_version' },
+    body: { nodeIds: [id1], version: '26.7.28', currentPassword: 'good', totpToken: '123456' },
+  });
+  assert.strictEqual(res.statusCode, 202);
+  assert.strictEqual(reauthCalls.length, 1);
+  assert.strictEqual(bulkCalls[0].args.actor, 'admin:root-admin (IP: 127.0.0.1)');
+  assert.strictEqual(bulkCalls[0].args.currentPassword, undefined, 'credentials are not passed to the service');
+
+  // Sync start needs no credentials.
+  reset();
+  res = await runRoute('post', '/broadcast/jobs/:action/start', { params: { action: 'sync' }, body: { nodeIds: [id1] } });
+  assert.strictEqual(res.statusCode, 202);
+  assert.strictEqual(reauthCalls.length, 0);
+
+  reset();
+  res = await runRoute('post', '/broadcast/jobs/:action/start', { params: { action: 'evil' }, body: { nodeIds: [id1] } });
+  assert.strictEqual(res.statusCode, 400);
+  assert.deepStrictEqual(res.body, { success: false, error: 'Unknown bulk action' });
+  assert.strictEqual(reauthCalls.length, 0);
+
+  reset();
+  res = await runRoute('post', '/broadcast/jobs/cancel');
+  assert.strictEqual(res.statusCode, 409);
+  assert.strictEqual(bulkCalls[0].actor, 'admin:root-admin (IP: 127.0.0.1)');
+
+  reset();
+  res = await runRoute('get', '/broadcast/jobs/status');
+  assert.deepStrictEqual(res.body, { state: 'idle' });
 
   console.log('broadcast panel tests passed');
 })().catch((error) => {

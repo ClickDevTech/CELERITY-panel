@@ -323,6 +323,41 @@ Executes a shell command on the server and returns the output.
 
 ---
 
+### 📦 bulk_action — Bulk Actions Over Nodes
+
+> `nodes:write` scope required
+
+Changes the Xray core version or syncs (pushes config and restarts) many nodes at once. The same engine backs the **Broadcast → Bulk actions** tab in the panel.
+
+**Operations (`op`):** `releases` | `preview` | `start` | `status` | `cancel`
+
+**Actions (`action`):** `xray_version` | `sync`
+
+- One batch runs at a time. The first ready node runs alone as a canary, the rest follow in small waves.
+- After 2 failed nodes no new nodes are started; nodes already running finish.
+- `preview` lists every node with the reason it would be skipped (offline, busy, disabled, already on the version, Xray too old for VLESS Encryption or mKCP links). `start` re-checks this and runs only ready nodes.
+- `start` requires `confirm: true`. Target nodes come from `nodeIds` (up to 200) or `all: true`.
+- Batch state is kept in memory and is lost when the panel restarts.
+
+<details>
+<summary>📖 Example: Update Xray on all Xray nodes</summary>
+
+```json
+{ "name": "bulk_action", "arguments": { "op": "preview", "action": "xray_version", "all": true, "version": "26.3.27" } }
+```
+
+```json
+{ "name": "bulk_action", "arguments": { "op": "start", "action": "xray_version", "all": true, "version": "26.3.27", "confirm": true } }
+```
+
+```json
+{ "name": "bulk_action", "arguments": { "op": "status" } }
+```
+
+</details>
+
+---
+
 ### 🖥 ssh_session — Interactive SSH Session
 
 > `nodes:write` scope required

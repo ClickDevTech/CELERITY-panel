@@ -387,6 +387,9 @@ function connectSSH(node) {
             port: node.ssh?.port || 22,
             username: node.ssh?.username || 'root',
             readyTimeout: 30000,
+            // Without keepalive a node that drops off mid-command leaves exec() pending forever.
+            keepaliveInterval: 15000,
+            keepaliveCountMax: 4,
         };
         
         if (node.ssh?.privateKey) {
