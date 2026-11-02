@@ -76,11 +76,31 @@ const xrayVersionCheckLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+// The UI parses every response as JSON, so a plain-text 429 would surface as
+// a cryptic parse error instead of the actual reason.
+const sendTooManyRequests = (req, res) => {
+    res.status(429).json({ error: res.locals.t?.('common.tooManyRequests') || 'Too many requests. Try again later.' });
+};
+
+// Version changes require password/TOTP re-authentication, so the admin-wide
+// cap also bounds guessing; the per-node bucket keeps one failing node from
+// locking out every other node.
+const xrayVersionApplyGlobalLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000,
+    max: 15,
+    keyGenerator: req => `admin:${req.session?.adminUsername || req.ip}`,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: sendTooManyRequests,
+});
+
 const xrayVersionApplyLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
     max: 3,
+    keyGenerator: req => `node:${req.session?.adminUsername || req.ip}:${req.params.id}`,
     standardHeaders: true,
     legacyHeaders: false,
+    handler: sendTooManyRequests,
 });
 
 const frontApplyLimiter = rateLimit({
@@ -856,7 +876,7 @@ router.get('/nodes/:id/xray-version-task', async (req, res) => {
     return res.json(xrayVersionService.getTask(req.params.id));
 });
 
-router.post('/nodes/:id/xray-version', xrayVersionApplyLimiter, async (req, res) => {
+router.post('/nodes/:id/xray-version', xrayVersionApplyGlobalLimiter, xrayVersionApplyLimiter, async (req, res) => {
     try {
         if (!mongoose.isValidObjectId(req.params.id)) {
             return res.status(400).json({ error: 'Invalid node id' });

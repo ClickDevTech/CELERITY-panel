@@ -481,14 +481,14 @@ async function detectInstalledVersion(node, { forceSsh = false } = {}) {
     return storedVersion;
 }
 
-async function synchronizeNode(node) {
+async function synchronizeNode(node, report) {
     if (node.cascadeRole === 'bridge') {
         const cascadeService = require('./cascadeService');
         await cascadeService.redeployAllLinksForNode(node._id);
         return true;
     }
     const syncService = require('./syncService');
-    return syncService.updateXrayNodeConfig(node, { lockHeld: true });
+    return syncService.updateXrayNodeConfig(node, { lockHeld: true, report });
 }
 
 async function runVersionChange(task, release) {
@@ -539,8 +539,11 @@ echo "VERSION=$VERSION"
 
         task.step = 'sync';
         const freshNode = await HyNode.findById(task.nodeId);
-        const synchronized = await synchronizeNode(freshNode);
-        if (!synchronized) throw new Error('Node configuration synchronization failed');
+        const syncReport = {};
+        const synchronized = await synchronizeNode(freshNode, syncReport);
+        if (!synchronized) {
+            throw new Error(`Node configuration synchronization failed: ${syncReport.error || 'unknown reason'}`);
+        }
 
         task.step = 'verify';
         conn = await nodeSetup.connectSSH(freshNode);

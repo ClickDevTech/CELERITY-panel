@@ -40,6 +40,17 @@ const HEALTH_FAILURE_THRESHOLD = 3;
 const XRAY_BIN = '/usr/local/bin/xray';
 const XRAY_PERMS_FAILED_CODE = 90;
 
+// systemd reports cc-agent active before the agent binds its port, so right
+// after a restart the first request can be refused. The readiness probe hits
+// the read-only /health endpoint and retries connection-level failures only;
+// HTTP errors (bad token, etc.) will not go away by waiting.
+const AGENT_READY_BUDGET_MS = 8000;
+const AGENT_READY_PROBE_TIMEOUT_MS = 2000;
+const AGENT_READY_BACKOFF_MS = [150, 300, 600, 1000];
+const AGENT_TRANSIENT_ERROR_CODES = new Set([
+    'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EPIPE',
+]);
+
 // Fields whose change requires regenerating the runtime config on the node.
 // Anything not listed here (name, groups, flag, rankingCoefficient, ssh.*, ...)
 // is treated as cosmetic and does not trigger an auto-push.
@@ -306,7 +317,7 @@ class SyncService {
      * Uses HTTPS if agentTls !== false, HTTP otherwise.
      * Self-signed certificates are accepted.
      */
-    async _agentRequest(node, method, path, body = null) {
+    async _agentRequest(node, method, path, body = null, { timeoutMs = 15000 } = {}) {
         const xray = node.xray || {};
         const useTls = xray.agentTls !== false;
         const port = xray.agentPort || 62080;
@@ -326,7 +337,7 @@ class SyncService {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
             },
-            timeout: 15000,
+            timeout: timeoutMs,
             validateStatus: null, // handle errors manually
         };
 
@@ -351,6 +362,60 @@ class SyncService {
         }
 
         return response;
+    }
+
+    /**
+     * Poll GET /health until the agent answers, so a request that must not be
+     * repeated (POST /restart) is sent only once the agent is reachable.
+     * Throws an error with code AGENT_NOT_READY when the budget runs out.
+     */
+    async _waitForAgentReady(node, { budgetMs = AGENT_READY_BUDGET_MS } = {}) {
+        const deadline = Date.now() + budgetMs;
+        for (let attempt = 0; ; attempt++) {
+            const remaining = deadline - Date.now();
+            try {
+                await this._agentRequest(node, 'GET', '/health', null, {
+                    timeoutMs: Math.max(250, Math.min(AGENT_READY_PROBE_TIMEOUT_MS, remaining)),
+                });
+                return;
+            } catch (error) {
+                if (!AGENT_TRANSIENT_ERROR_CODES.has(error.code)) throw error;
+                const delay = AGENT_READY_BACKOFF_MS[Math.min(attempt, AGENT_READY_BACKOFF_MS.length - 1)];
+                if (Date.now() + delay >= deadline) {
+                    const notReady = new Error(
+                        `cc-agent not reachable within ${Math.round(budgetMs / 1000)}s (${error.code})`
+                    );
+                    notReady.code = 'AGENT_NOT_READY';
+                    throw notReady;
+                }
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+
+    /**
+     * Tell "agent never bound its port" from "port is open on the node but
+     * the panel cannot reach it". Used only after a readiness failure.
+     * @returns {Promise<string>} human-readable hint, or '' when unknown
+     */
+    async _diagnoseAgentPort(node) {
+        if (!node.ssh?.password && !node.ssh?.privateKey) return '';
+        const port = parseInt(node.xray?.agentPort, 10) || 62080;
+        const ssh = new NodeSSH(node);
+        try {
+            await ssh.connect();
+            const result = await ssh.exec(
+                `command -v ss >/dev/null 2>&1 || exit 3; ss -Hltn "sport = :${port}" | head -n 1`
+            );
+            if (result.code !== 0) return '';
+            return String(result.stdout || '').trim()
+                ? `port ${port} is listening on the node but unreachable from the panel (firewall or routing)`
+                : `cc-agent is not listening on port ${port} on the node`;
+        } catch (_) {
+            return '';
+        } finally {
+            ssh.disconnect();
+        }
     }
 
     /**
@@ -533,13 +598,18 @@ class SyncService {
      *
      * `report.applied` is set once the new config is running on the node, so a
      * caller can tell "rejected and rolled back" from "running but the agent
-     * did not confirm health" — both return false.
+     * did not confirm health" — both return false. `report.error` carries the
+     * reason of any false return.
      */
     async updateXrayNodeConfig(node, { lockHeld = false, report = null } = {}) {
         const lockKey = String(node?._id || '');
         if (!lockHeld && !nodeSetupLock.acquire(lockKey, 'Xray config sync')) {
             throw new Error(`Node is busy: ${nodeSetupLock.holder(lockKey)} is running`);
         }
+        const fail = (reason) => {
+            if (report) report.error = reason;
+            return false;
+        };
         try {
         logger.info(`[Xray Sync] Updating config for node ${node.name} (${node.ip})`);
         await HyNode.updateOne({ _id: node._id }, { $set: { status: 'syncing' } });
@@ -569,7 +639,7 @@ class SyncService {
                 });
                 await invalidateNodesCache();
                 await frontService.rollbackFrontDatabaseState(node._id, genErr.message).catch(() => {});
-                return false;
+                return fail(genErr.message);
             }
             await frontService.rollbackFrontDatabaseState(node._id, genErr.message).catch(() => {});
             throw genErr;
@@ -586,7 +656,7 @@ class SyncService {
             });
             if (staged.error) {
                 logger.error(`[Xray Sync] Node ${node.name}: front preflight failed — ${staged.error}`);
-                return false;
+                return fail(`Front preflight failed: ${staged.error}`);
             }
             preparedFront = staged.prepared || null;
             publishFrontAfterSync = !!staged.publishAfterSync;
@@ -596,6 +666,7 @@ class SyncService {
         // then skipped so the node keeps serving the config it already runs.
         let configRejected = null;
         let configUploadFailed = null;
+        let agentReloaded = false;
 
         // Step 1: Upload config.json via SSH (only if SSH is configured)
         if (node.ssh?.password || node.ssh?.privateKey) {
@@ -711,6 +782,9 @@ class SyncService {
                 // after a rollback: the agent would then map inbounds that the
                 // restored config does not have.
                 if (node.xray?.agentToken && !configRejected) {
+                    // Set before the call: a failure midway may still have
+                    // restarted the agent.
+                    agentReloaded = true;
                     try {
                         await nodeSetup.reloadCcAgent(node, ssh);
                     } catch (reloadErr) {
@@ -741,7 +815,7 @@ class SyncService {
             });
             await invalidateNodesCache();
             await frontService.rollbackFrontDatabaseState(node._id, failure).catch(() => {});
-            return false;
+            return fail(failure);
         }
 
         // When disabling the front, release the public port before Xray binds
@@ -756,17 +830,18 @@ class SyncService {
                 const resumed = await frontService.setFrontSuspended(node, false)
                     .then(() => true)
                     .catch(() => false);
+                const message = `Front suspend failed: ${error.message}; rollback ${restored && resumed ? 'succeeded' : 'failed'}`;
                 await HyNode.updateOne({ _id: node._id }, {
                     $set: {
                         status: 'error',
-                        lastError: `Front suspend failed: ${error.message}; rollback ${restored && resumed ? 'succeeded' : 'failed'}`,
+                        lastError: message,
                     },
                 });
                 await frontService.rollbackFrontDatabaseState(
                     node._id,
                     `Front suspend failed: ${error.message}`
                 ).catch(() => {});
-                return false;
+                return fail(message);
             }
         }
 
@@ -775,10 +850,15 @@ class SyncService {
         let restartError = null;
         if (hasAgent) {
             try {
+                if (agentReloaded) await this._waitForAgentReady(node);
                 // /restart blocks until Xray is running and users are restored (~2-3s)
                 await this._agentRequest(node, 'POST', '/restart');
                 logger.info(`[Xray Sync] Node ${node.name}: restarted via agent`);
             } catch (error) {
+                if (error.code === 'AGENT_NOT_READY') {
+                    const hint = await this._diagnoseAgentPort(node);
+                    if (hint) error.message = `${error.message}; ${hint}`;
+                }
                 restartError = error;
                 logger.warn(`[Xray Sync] Node ${node.name}: agent restart failed: ${error.message}`);
             }
@@ -816,7 +896,7 @@ class SyncService {
                 $set: { status: 'error', lastSync: new Date(), lastError: message },
             });
             await frontService.rollbackFrontDatabaseState(node._id, message).catch(() => {});
-            return false;
+            return fail(message);
         }
 
         // Step 3: Sync users via Agent (builds the runtime user list in Xray without restart)
@@ -846,7 +926,7 @@ class SyncService {
             if (result.error) {
                 await restorePreviousXrayConfig(node).catch(() => false);
                 logger.warn(`[Xray Sync] Node ${node.name}: front activation failed: ${result.error}`);
-                return false;
+                return fail(`Front activation failed: ${result.error}`);
             }
             if (result.stale) {
                 keepFrontRollback = true;
@@ -860,21 +940,22 @@ class SyncService {
                 if (error.remoteDisableCompleted) {
                     await frontService.clearFrontRollbackState(node._id).catch(() => {});
                     logger.warn(`[Xray Sync] Node ${node.name}: front stopped but state persistence failed: ${error.message}`);
-                    return false;
+                    return fail(`Front stopped but state persistence failed: ${error.message}`);
                 }
                 const restored = await restorePreviousXrayConfig(node).catch(() => false);
                 const resumed = await frontService.setFrontSuspended(node, false)
                     .then(() => true)
                     .catch(() => false);
                 const rollback = restored && resumed ? 'succeeded' : 'failed';
+                const message = `Front disable failed: ${error.message}; rollback ${rollback}`;
                 await HyNode.updateOne({ _id: node._id }, {
-                    $set: { status: 'error', lastError: `Front disable failed: ${error.message}; rollback ${rollback}` },
+                    $set: { status: 'error', lastError: message },
                 });
                 await frontService.rollbackFrontDatabaseState(
                     node._id,
                     `Front disable failed: ${error.message}`
                 ).catch(() => {});
-                return false;
+                return fail(message);
             }
         } else {
             await removePreviousXrayConfig(node).catch(() => {});
@@ -900,7 +981,7 @@ class SyncService {
             if (!health.online && hasAgent) {
                 await HyNode.updateOne({ _id: node._id }, { $set: { lastSync: new Date() } });
                 await invalidateNodesCache();
-                return false;
+                return fail('Agent did not answer the health check after restart');
             }
         } catch (_) {}
 

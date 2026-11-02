@@ -105,7 +105,13 @@ assert.throws(() => service.buildUpdateScript({
 }), /Invalid Xray update parameters/);
 assert.throws(() => service.buildRollbackScript('../../etc'), /Invalid Xray update task id/);
 
-async function simulateVersionChange({ currentVersion, release, syncSuccess, scriptFailure = 'none' }) {
+async function simulateVersionChange({
+    currentVersion,
+    release,
+    syncSuccess,
+    scriptFailure = 'none',
+    syncFailureReason = null,
+}) {
     const HyNode = require('../src/models/hyNodeModel');
     const nodeSetup = require('../src/services/nodeSetup');
     const syncService = require('../src/services/syncService');
@@ -173,7 +179,10 @@ async function simulateVersionChange({ currentVersion, release, syncSuccess, scr
             }
             return { success: true, output: '' };
         };
-        syncService.updateXrayNodeConfig = async () => syncSuccess;
+        syncService.updateXrayNodeConfig = async (_node, { report } = {}) => {
+            if (!syncSuccess && report && syncFailureReason) report.error = syncFailureReason;
+            return syncSuccess;
+        };
         logger.info = () => {};
         logger.error = () => {};
         await service._test.runVersionChange(task, release);
@@ -214,6 +223,19 @@ async function simulateVersionChange({ currentVersion, release, syncSuccess, scr
     assert.strictEqual(rolledBack.task.rollbackSucceeded, true);
     assert.strictEqual(rolledBack.task.nodeUnchanged, false);
     assert.ok(rolledBack.commands.some(command => command.includes('previous Xray version restored')));
+    assert.match(rolledBack.task.error, /synchronization failed: unknown reason$/);
+
+    // The sync's own reason must reach the task instead of a generic message.
+    const restartReason = 'Xray restart failed: connect ECONNREFUSED 10.0.0.1:62080; rollback succeeded';
+    const reasoned = await simulateVersionChange({
+        currentVersion: '26.7.28',
+        release: releases[1],
+        syncSuccess: false,
+        syncFailureReason: restartReason,
+    });
+    assert.strictEqual(reasoned.task.state, 'error');
+    assert.ok(reasoned.task.error.endsWith(restartReason));
+    assert.ok(reasoned.task.logs.some(line => line.includes(restartReason)));
 
     // Failing before the swap must not be reported as a failed rollback: the
     // remote script never touched the binary.
