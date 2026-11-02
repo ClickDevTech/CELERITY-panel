@@ -91,6 +91,8 @@
         // Mode switcher
         initModeSwitcher('modeSwitcher', 'linkModeInput', 'modeHint');
         initModeSwitcher('quickModeSwitcher', 'quickLinkMode');
+        applyProtocolUi('reverse');
+        applyProtocolUi('reverse', document.getElementById('quickTunnelProtocol'));
 
         // Security change -> show/hide REALITY section + refresh warnings
         var secSel = document.getElementById('selectSecurity');
@@ -898,7 +900,6 @@
         form.tunnelProtocol.value = link.tunnelProtocol || 'vless';
         form.tunnelTransport.value = link.tunnelTransport === 'splithttp' ? 'xhttp' : (link.tunnelTransport || 'tcp');
         form.tunnelSecurity.value = link.tunnelSecurity || 'none';
-        form.tunnelDomain.value = link.tunnelDomain || 'reverse.tunnel.internal';
         form.muxEnabled.checked = !!link.muxEnabled;
         form.muxConcurrency.value = link.muxConcurrency || 8;
         form.priority.value = link.priority || 100;
@@ -929,8 +930,7 @@
         var realitySec = document.getElementById('realitySection');
         if (realitySec) realitySec.style.display = form.tunnelSecurity.value === 'reality' ? '' : 'none';
         applyTransportUi();
-        var domGroup = document.getElementById('tunnelDomainGroup');
-        if (domGroup) domGroup.style.display = form.mode.value === 'forward' ? 'none' : '';
+        applyProtocolUi(form.mode.value);
         var hint = document.getElementById('modeHint');
         if (hint) {
             hint.textContent = form.mode.value === 'forward'
@@ -963,10 +963,23 @@
         }
     }
 
+    // VLESS Reverse Proxy has no VMess counterpart.
+    function applyProtocolUi(mode, select) {
+        if (!select) {
+            var form = document.getElementById('addLinkForm');
+            select = form && form.tunnelProtocol;
+        }
+        var vmess = select && select.querySelector('option[value="vmess"]');
+        if (!vmess) return;
+        vmess.disabled = mode !== 'forward';
+        if (vmess.disabled && select.value === 'vmess') select.value = 'vless';
+    }
+
     function closeModal() {
         document.getElementById('addLinkModal').classList.remove('active');
         document.getElementById('addLinkForm').reset();
         applyTransportUi();
+        applyProtocolUi('reverse');
         linkModalMode = 'create';
         var title = document.getElementById('linkModalTitle');
         if (title) title.textContent = i18n.addLink || 'Add Link';
@@ -995,8 +1008,6 @@
         if (geoGeoip) geoGeoip.value = '';
         var geoFields = document.getElementById('geoRoutingFields');
         if (geoFields) geoFields.style.display = 'none';
-        var domGroup = document.getElementById('tunnelDomainGroup');
-        if (domGroup) domGroup.style.display = '';
     }
 
     async function onAddLinkSubmit(e) {
@@ -1019,11 +1030,6 @@
             muxConcurrency: parseInt(form.muxConcurrency?.value) || 8,
             priority:       parseInt(form.priority?.value) || 100,
         };
-
-        // Tunnel domain (reverse only)
-        if (form.tunnelDomain?.value) {
-            data.tunnelDomain = form.tunnelDomain.value;
-        }
 
         // REALITY fields
         if (data.tunnelSecurity === 'reality') {
@@ -1259,9 +1265,7 @@
                             : (i18n.modeReverseHint || 'Bridge initiates tunnel to Portal. Bridge can be behind NAT.');
                     }
                 }
-                // Show/hide tunnel domain field (reverse only)
-                var domGroup = document.getElementById('tunnelDomainGroup');
-                if (domGroup) domGroup.style.display = mode === 'forward' ? 'none' : '';
+                applyProtocolUi(mode, inputId === 'quickLinkMode' ? document.getElementById('quickTunnelProtocol') : null);
                 updateLinkFormWarnings();
             });
         });

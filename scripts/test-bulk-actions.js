@@ -9,7 +9,7 @@ const SSH = { password: 'encrypted' };
 let dbNodes = [];
 let dbLinks = [];
 let dbForwardLinks = [];
-let lastBulkPreviewKcp = null;
+let lastBulkPreviewLinks = null;
 const versionCalls = [];
 const pendingFinish = new Map();
 let inFlight = 0;
@@ -65,8 +65,8 @@ const cascadeService = {
 
 const xrayVersionService = {
     getKnownRelease: async version => (String(version).replace(/^v/, '') === '26.7.28' ? { version: '26.7.28', tag: 'v26.7.28' } : null),
-    bulkPreview(nodes, _release, kcpNodeIds) {
-        lastBulkPreviewKcp = kcpNodeIds;
+    bulkPreview(nodes, _release, nodeLinks) {
+        lastBulkPreviewLinks = nodeLinks;
         return nodes.map(node => ({
             nodeId: String(node._id),
             ready: !node.skip,
@@ -137,7 +137,7 @@ function reset() {
     dbNodes = [];
     dbLinks = [];
     dbForwardLinks = [];
-    lastBulkPreviewKcp = null;
+    lastBulkPreviewLinks = null;
     versionCalls.length = 0;
     pendingFinish.clear();
     inFlight = 0;
@@ -268,30 +268,28 @@ async function expectStatus(promise, statusCode, pattern) {
         { id: 'sync', requiresReauth: false },
     ]);
 
-    // Xray preview: mKCP link ends are passed on, missing nodes are reported.
+    // Xray preview: both ends of a link get it, missing nodes are reported.
     reset();
     dbNodes = xrayNodes(2);
     dbNodes[1].skip = 'Node is offline';
-    dbLinks = [{ portalNode: ids[0], bridgeNode: ids[7], tunnelTransport: 'kcp' }];
+    dbLinks = [{ _id: 'l1', portalNode: ids[0], bridgeNode: ids[7], tunnelTransport: 'kcp' }];
     let preview = await service.preview({ action: 'xray_version', nodeIds: [ids[0], ids[1], ids[6], ids[0]], params: { version: '26.7.28' } });
     assert.strictEqual(preview.items.length, 3, 'duplicate ids collapse');
     assert.deepStrictEqual([preview.ready, preview.skipped], [1, 2]);
     assert.strictEqual(preview.items[2].reason, 'Node not found');
-    assert.ok(lastBulkPreviewKcp.has(ids[0]) && lastBulkPreviewKcp.has(ids[7]));
+    assert.deepStrictEqual(lastBulkPreviewLinks.get(ids[0]).map(l => l._id), ['l1']);
+    assert.deepStrictEqual(lastBulkPreviewLinks.get(ids[7]).map(l => l._id), ['l1']);
 
-    // A forward-chain head needs mKCP when any hop down its chain uses it.
+    // A forward-chain head runs every hop down its chain, once each.
     dbLinks = [];
     dbForwardLinks = [
-        { portalNode: ids[0], bridgeNode: ids[1], tunnelTransport: 'tcp' },
-        { portalNode: ids[1], bridgeNode: ids[2], tunnelTransport: 'kcp' },
+        { _id: 'f1', portalNode: ids[0], bridgeNode: ids[1], tunnelTransport: 'tcp' },
+        { _id: 'f2', portalNode: ids[1], bridgeNode: ids[2], tunnelTransport: 'kcp' },
     ];
     dbNodes = xrayNodes(4);
     await service.preview({ action: 'xray_version', nodeIds: [ids[0], ids[3]], params: { version: '26.7.28' } });
-    assert.ok(lastBulkPreviewKcp.has(ids[0]), 'chain head is checked');
-    assert.ok(!lastBulkPreviewKcp.has(ids[3]), 'unrelated node is not');
-    dbForwardLinks[1].tunnelTransport = 'tcp';
-    await service.preview({ action: 'xray_version', nodeIds: [ids[0]], params: { version: '26.7.28' } });
-    assert.strictEqual(lastBulkPreviewKcp.size, 0);
+    assert.deepStrictEqual(lastBulkPreviewLinks.get(ids[0]).map(l => l._id), ['f1', 'f2'], 'chain head is checked');
+    assert.ok(!lastBulkPreviewLinks.has(ids[3]), 'unrelated node is not');
     dbNodes = xrayNodes(2);
     dbNodes[1].skip = 'Node is offline';
 
@@ -306,10 +304,11 @@ async function expectStatus(promise, statusCode, pattern) {
         { _id: ids[3], name: 'agent', type: 'xray', status: 'offline', ssh: {}, xray: { agentToken: 't' } },
         { _id: ids[4], name: 'busy', type: 'xray', status: 'online', ssh: SSH, xray: {} },
         { _id: ids[5], name: 'off', type: 'hysteria', status: 'offline', active: false, ssh: SSH },
+        { _id: ids[6], name: 'bridge', type: 'xray', status: 'offline', cascadeRole: 'bridge', ssh: SSH, xray: {} },
     ];
     assert.ok(nodeSetupLock.acquire(ids[4], 'Xray version change'));
     try {
-        preview = await service.preview({ action: 'sync', nodeIds: ids.slice(0, 6) });
+        preview = await service.preview({ action: 'sync', nodeIds: ids.slice(0, 7) });
     } finally {
         nodeSetupLock.release(ids[4]);
     }
@@ -321,6 +320,8 @@ async function expectStatus(promise, statusCode, pattern) {
     assert.deepStrictEqual(preview.items[3].warnings, ['Node is offline']);
     assert.match(reasons[4], /busy/);
     assert.strictEqual(reasons[5], 'Node is disabled');
+    assert.deepStrictEqual(preview.items[6].warnings, [], 'bridges are offline by design');
+    assert.ok(preview.items.every(item => !('deferred' in item)), 'deferred stays internal');
 
     syncService.isSyncing = true;
     preview = await service.preview({ action: 'sync', nodeIds: [ids[0]] });
@@ -356,6 +357,22 @@ async function expectStatus(promise, statusCode, pattern) {
     assert.strictEqual(snapshot.items[3].error, 'Node is disabled');
     assert.ok(!syncCalls.some(call => call.nodeId === ids[3]));
     assert.ok(syncCalls.every(call => call.opts && typeof call.opts.report === 'object'));
+
+    // Sync run: offline nodes go last and never act as the canary.
+    reset();
+    dbNodes = [
+        { _id: ids[0], name: 'down', type: 'hysteria', status: 'offline', ssh: SSH },
+        { _id: ids[1], name: 'up', type: 'hysteria', status: 'online', ssh: SSH },
+        { _id: ids[2], name: 'bridge', type: 'xray', status: 'offline', cascadeRole: 'bridge', ssh: SSH, xray: {} },
+    ];
+    syncBehavior = async node => String(node._id) !== ids[0];
+    await service.start({ action: 'sync', nodeIds: ids.slice(0, 3), actor: 'mcp:test' });
+    await flush(20);
+    assert.deepStrictEqual(syncCalls.map(call => call.nodeId), [ids[1], ids[2], ids[0]]);
+    snapshot = service.status();
+    assert.strictEqual(snapshot.state, 'done', 'a failed offline node is not a canary stop');
+    assert.deepStrictEqual(snapshot.items.map(item => item.state), ['error', 'done', 'done']);
+    assert.ok(snapshot.items.every(item => !('deferred' in item)));
 
     // Status is idle before any batch.
     reset();

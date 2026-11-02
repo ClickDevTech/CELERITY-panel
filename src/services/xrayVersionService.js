@@ -259,6 +259,7 @@ ARCHIVE_URL=${archiveUrl}
 DIGEST_URL=${digestUrl}
 BIN="/usr/local/bin/xray"
 CONFIG="/usr/local/etc/xray/config.json"
+BRIDGE_CONFIG="/usr/local/etc/xray-bridge/config.json"
 BACKUP_ROOT=${shellQuote(backupRoot)}
 TMP_DIR="$(mktemp -d /tmp/celerity-xray-update.XXXXXX)"
 SWAPPED=0
@@ -324,14 +325,29 @@ NEW_VERSION="\${NEW_VERSION#v}"
     exit 1
 }
 
-if ! XRAY_LOCATION_ASSET=/usr/local/share/xray "$NEW_BIN" run -test -config "$CONFIG" >"$TMP_DIR/config-test.log" 2>&1; then
-    if ! XRAY_LOCATION_ASSET=/usr/local/share/xray "$NEW_BIN" -test -config "$CONFIG" >>"$TMP_DIR/config-test.log" 2>&1; then
-        cat "$TMP_DIR/config-test.log"
-        echo "ERROR: current config is incompatible with Xray $TARGET"
-        exit 1
+test_config() {
+    if ! XRAY_LOCATION_ASSET=/usr/local/share/xray "$NEW_BIN" run -test -config "$1" >"$TMP_DIR/config-test.log" 2>&1; then
+        if ! XRAY_LOCATION_ASSET=/usr/local/share/xray "$NEW_BIN" -test -config "$1" >>"$TMP_DIR/config-test.log" 2>&1; then
+            cat "$TMP_DIR/config-test.log"
+            echo "ERROR: $2 is incompatible with Xray $TARGET"
+            exit 1
+        fi
     fi
+    echo "CONFIG: $2 is compatible with Xray $TARGET"
+}
+
+# The panel uploads the configs its next sync will push; they are what has
+# to run on the new core. Without them the configs on disk are checked.
+if [ -f "$BACKUP_ROOT/candidate-config.json" ]; then
+    test_config "$BACKUP_ROOT/candidate-config.json" "generated config"
+else
+    test_config "$CONFIG" "current config"
 fi
-echo "CONFIG: compatible with Xray $TARGET"
+if [ -f "$BACKUP_ROOT/candidate-bridge.json" ]; then
+    test_config "$BACKUP_ROOT/candidate-bridge.json" "generated cascade bridge config"
+elif systemctl is-active --quiet xray-bridge && [ -f "$BRIDGE_CONFIG" ]; then
+    test_config "$BRIDGE_CONFIG" "cascade bridge config"
+fi
 
 # Atomic rename; a running Xray keeps serving from the old inode until the
 # configuration sync restarts it, so the whole change costs one restart.
@@ -425,10 +441,10 @@ function getTaskProgress(nodeId) {
  * Decide, without SSH, which nodes can take `release` in a bulk run.
  * @param {Array<Object>} nodes - lean HyNode docs (type, status, xrayVersion, ssh, xray)
  * @param {Object} release - known release entry
- * @param {Set<string>} kcpNodeIds - ids of nodes that terminate an mKCP cascade link
+ * @param {Map<string, Array>} nodeLinks - node id -> cascade links its core has to run
  * @returns {Array<{nodeId: string, ready: boolean, reason: string|null, warnings: string[]}>}
  */
-function bulkPreview(nodes, release, kcpNodeIds = new Set()) {
+function bulkPreview(nodes, release, nodeLinks = new Map()) {
     const vlessEncryption = require('../utils/vlessEncryption');
     const cascadeService = require('./cascadeService');
     return (nodes || []).map((node) => {
@@ -445,11 +461,15 @@ function bulkPreview(nodes, release, kcpNodeIds = new Set()) {
             reason = `Already on ${release.version}`;
         } else if (nodeSetupLock.holder(nodeId)) {
             reason = `Node is busy: ${nodeSetupLock.holder(nodeId)} is running`;
-        } else if (node.status === 'offline') {
+        } else if (node.status === 'offline' && node.cascadeRole !== 'bridge') {
+            // Bridges are never health-checked and always stay 'offline'.
             reason = 'Node is offline';
         } else {
             reason = vlessEncryption.versionError(node.xray, release.version, node.name)
-                || (kcpNodeIds.has(nodeId) ? cascadeService._kcpVersionError(node, release.version) : null);
+                || (nodeLinks.get(nodeId) || [])
+                    .map(link => cascadeService.linkVersionError(link, node, release.version))
+                    .find(Boolean)
+                || null;
         }
 
         if (reason) {
@@ -532,14 +552,54 @@ async function detectInstalledVersion(node, { forceSsh = false } = {}) {
     return storedVersion;
 }
 
-async function synchronizeNode(node, report) {
-    if (node.cascadeRole === 'bridge') {
-        const cascadeService = require('./cascadeService');
-        await cascadeService.redeployAllLinksForNode(node._id);
-        return true;
-    }
+/**
+ * Upload the configs the post-update sync will push, so the update script
+ * tests them instead of the ones on disk (which may still use syntax the new
+ * core dropped and the sync is about to replace). A config that cannot be
+ * built is skipped: the script then tests the file on disk.
+ */
+async function stageCandidateConfigs(conn, node, release, task) {
+    const cascadeService = require('./cascadeService');
     const syncService = require('./syncService');
-    return syncService.updateXrayNodeConfig(node, { lockHeld: true, report });
+    const dir = `/var/lib/celerity-xray-updates/${task.id}`;
+    const candidates = [];
+    if (node.cascadeRole !== 'bridge') {
+        try {
+            candidates.push(['candidate-config.json', await syncService.buildXrayConfigCandidate(node, release.version)]);
+        } catch (error) {
+            appendLog(task, `WARN: could not build the node config for the test, checking the one on disk: ${error.message}`);
+        }
+    }
+    try {
+        const bridgeConfig = await cascadeService.buildBridgeServiceConfig(node);
+        if (bridgeConfig) candidates.push(['candidate-bridge.json', bridgeConfig]);
+    } catch (error) {
+        appendLog(task, `WARN: could not build the cascade bridge config for the test: ${error.message}`);
+    }
+    if (candidates.length === 0) return;
+
+    await execRequired(conn, `mkdir -p -m 700 ${shellQuote(dir)}`, 'Candidate config staging');
+    for (const [name, content] of candidates) {
+        await nodeSetup.uploadFile(conn, content, `${dir}/${name}`, 0o600);
+    }
+}
+
+async function synchronizeNode(node, report) {
+    const cascadeService = require('./cascadeService');
+    if (node.cascadeRole !== 'bridge') {
+        const syncService = require('./syncService');
+        const synced = await syncService.updateXrayNodeConfig(node, { lockHeld: true, report });
+        if (!synced || node.cascadeRole !== 'relay') return synced;
+    }
+    // Bridges and relays also run xray-bridge, which only a link deploy rewrites.
+    const errors = await cascadeService.redeployAllLinksForNode(node._id, {
+        asBridgeOnly: node.cascadeRole === 'relay',
+    });
+    if (errors.length > 0) {
+        if (report) report.error = `cascade redeploy failed: ${errors.join('; ')}`;
+        return false;
+    }
+    return true;
 }
 
 async function runVersionChange(task, release) {
@@ -576,6 +636,8 @@ echo "VERSION=$VERSION"
             throw new Error(`Release ${release.tag} has no verified asset for ${preflight.architecture || 'this architecture'}`);
         }
 
+        await stageCandidateConfigs(conn, node, release, task);
+
         task.step = 'download';
         appendLog(task, `Installing Xray ${release.tag} for ${preflight.architecture}`);
         const updateOutput = await execRequired(
@@ -587,6 +649,8 @@ echo "VERSION=$VERSION"
         appendLog(task, updateOutput);
         conn.end();
         conn = null;
+        // The sync below filters cascade links by the stored version.
+        await HyNode.updateOne({ _id: task.nodeId }, { $set: { xrayVersion: release.version } });
 
         task.step = 'sync';
         const freshNode = await HyNode.findById(task.nodeId);
@@ -594,6 +658,10 @@ echo "VERSION=$VERSION"
         const synchronized = await synchronizeNode(freshNode, syncReport);
         if (!synchronized) {
             throw new Error(`Node configuration synchronization failed: ${syncReport.error || 'unknown reason'}`);
+        }
+        // A rollback would not fix the far end of a link; failed links are marked as errors.
+        for (const cascadeError of syncReport.cascadeErrors || []) {
+            appendLog(task, `WARN: cascade link redeploy failed: ${cascadeError}`);
         }
 
         task.step = 'verify';
@@ -673,6 +741,9 @@ fi
                 );
                 appendLog(task, rollbackOutput);
                 rollbackSucceeded = true;
+                if (task.currentVersion) {
+                    await HyNode.updateOne({ _id: task.nodeId }, { $set: { xrayVersion: task.currentVersion } });
+                }
             } catch (rollbackError) {
                 appendLog(task, rollbackError.remoteOutput);
                 appendLog(task, `ROLLBACK ERROR: ${rollbackError.message}`);
@@ -736,6 +807,14 @@ async function startVersionChange(nodeId, version, { onFinish = null } = {}) {
         .versionError(node?.xray, release.version, node?.name);
     if (encryptionError) {
         const error = new Error(`${encryptionError}; disable it before switching to this release`);
+        error.statusCode = 400;
+        throw error;
+    }
+    const cascadeError = node
+        ? await require('./cascadeService').nodeLinkVersionError(node, release.version)
+        : null;
+    if (cascadeError) {
+        const error = new Error(`${cascadeError}; this release cannot run the node's cascade links`);
         error.statusCode = 400;
         throw error;
     }

@@ -15,7 +15,9 @@ const logger = require('../utils/logger');
 const webhook = require('./webhookService');
 const {
     MIN_KCP_XRAY_VERSION,
+    CASCADE_CONFIG_FORMAT,
     isKcpTransport,
+    linkXrayRequirement,
     tunnelSocketProtocol,
     findHysteriaUdpConflict,
 } = require('../utils/cascadeTransport');
@@ -37,6 +39,9 @@ async function cacheDel(key) {
 }
 
 const BRIDGE_CONFIG_DIR = '/usr/local/etc/xray-bridge';
+
+// Link ids being redeployed by redeployOutdatedLinks; both ends may sync at once.
+const formatRedeploys = new Set();
 
 /**
  * Pin config permissions for User=nobody, then (re)start xray-bridge.
@@ -118,6 +123,7 @@ class CascadeService {
                     lastError:       note || '',
                     lastHealthCheck: new Date(),
                     latencyMs:       latencyMs,
+                    configFormat:    CASCADE_CONFIG_FORMAT,
                 },
             });
 
@@ -208,18 +214,96 @@ class CascadeService {
      * Redeploy all cascade links associated with a given node.
      * Called when a node's configuration changes.
      */
-    async redeployAllLinksForNode(nodeId) {
+    async redeployAllLinksForNode(nodeId, { asBridgeOnly = false } = {}) {
         const links = await CascadeLink.find({
-            $or: [{ portalNode: nodeId }, { bridgeNode: nodeId }],
+            $or: asBridgeOnly ? [{ bridgeNode: nodeId }] : [{ portalNode: nodeId }, { bridgeNode: nodeId }],
             active: true,
             status: { $in: ['deployed', 'online', 'offline'] },
         }).populate('portalNode bridgeNode');
 
+        const errors = [];
         for (const link of links) {
-            await this.deployLink(link).catch(err => {
-                logger.error(`[Cascade] Redeploy link ${link.name}: ${err.message}`);
-            });
+            const result = await this.deployLink(link).catch(err => ({ success: false, error: err.message }));
+            if (!result.success) {
+                logger.error(`[Cascade] Redeploy link ${link.name}: ${result.error}`);
+                errors.push(`${link.name}: ${result.error}`);
+            }
         }
+        return errors;
+    }
+
+    /**
+     * Redeploy, both ends at once, the links of `node` and of its forward
+     * chain that were deployed in an older CASCADE_CONFIG_FORMAT. A node sync
+     * regenerates only that node, and an old-format far end cannot talk to it.
+     * @returns {Promise<string[]>} one entry per link whose redeploy failed
+     */
+    async redeployOutdatedLinks(node) {
+        const deployedStatuses = ['deployed', 'online', 'offline'];
+        const [endpointLinks, chainLinks] = await Promise.all([
+            CascadeLink.find({
+                active: true,
+                status: { $in: deployedStatuses },
+                configFormat: { $ne: CASCADE_CONFIG_FORMAT },
+                $or: [{ portalNode: node._id }, { bridgeNode: node._id }],
+            }).populate('portalNode bridgeNode'),
+            this._getForwardChainLinks(node._id),
+        ]);
+        const links = new Map(endpointLinks.map(l => [String(l._id), l]));
+        for (const l of chainLinks) {
+            if (l.configFormat === CASCADE_CONFIG_FORMAT || !deployedStatuses.includes(l.status)) continue;
+            if (!links.has(String(l._id))) links.set(String(l._id), l);
+        }
+
+        const errors = [];
+        for (const [id, link] of links) {
+            if (formatRedeploys.has(id)) continue;
+            formatRedeploys.add(id);
+            try {
+                logger.info(`[Cascade] Link ${link.name} was deployed in an older config format, redeploying both ends`);
+                const result = await this.deployLink(link).catch(err => ({ success: false, error: err.message }));
+                if (!result.success) errors.push(`${link.name}: ${result.error}`);
+            } finally {
+                formatRedeploys.delete(id);
+            }
+        }
+        return errors;
+    }
+
+    /**
+     * Config a deploy would write to /usr/local/etc/xray-bridge for `node`,
+     * or null when the node runs no separate bridge service.
+     * Mirrors _deployBridgeConfig and _deployForwardHopConfig.
+     */
+    async buildBridgeServiceConfig(node) {
+        const reverseAsBridge = await CascadeLink.find({
+            bridgeNode: node._id, mode: { $ne: 'forward' }, active: true,
+        });
+        if (reverseAsBridge.length > 0) {
+            const upstream = reverseAsBridge[0];
+            const upstreamPortal = await HyNode.findById(upstream.portalNode);
+            if (!upstreamPortal) return null;
+            const downstream = await CascadeLink.find({ portalNode: node._id, active: true });
+            return downstream.length > 0
+                ? configGenerator.generateRelayConfig(upstream, upstreamPortal, downstream)
+                : configGenerator.generateBridgeConfig(upstream, upstreamPortal);
+        }
+        if (node.type === 'xray' && node.active && node.status !== 'error') return null;
+        const hopLinks = await CascadeLink.find({ bridgeNode: node._id, mode: 'forward', active: true });
+        return hopLinks.length > 0 ? configGenerator.generateForwardHopConfig(hopLinks) : null;
+    }
+
+    /**
+     * Why Xray `version` on `node` cannot run one of the cascade links the
+     * node takes part in (forward-chain heads run every downstream hop), or null.
+     */
+    async nodeLinkVersionError(node, version) {
+        const [endpointLinks, forwardLinks] = await Promise.all([
+            CascadeLink.find({ active: true, $or: [{ portalNode: node._id }, { bridgeNode: node._id }] }).lean(),
+            CascadeLink.find({ mode: 'forward', active: true }).lean(),
+        ]);
+        const links = [...endpointLinks, ...this._walkForwardChain(forwardLinks, node._id)];
+        return links.map(link => this.linkVersionError(link, node, version)).find(Boolean) || null;
     }
 
     /**
@@ -304,6 +388,12 @@ class CascadeService {
         await this._invalidateTopologyCache();
 
         const success = errors.length === 0;
+        if (success) {
+            await CascadeLink.updateMany(
+                { _id: { $in: orderedLinks.map(l => l._id) } },
+                { $set: { configFormat: CASCADE_CONFIG_FORMAT } }
+            );
+        }
         logger.info(`[Cascade] Chain deployment complete: ${deployed} nodes, ${errors.length} errors`);
 
         return { success, deployed, errors };
@@ -1171,7 +1261,7 @@ class CascadeService {
      * @param {Map} [versionCache] - nodeId -> detected version, reused across links
      */
     async _assertTransportSupport(link, nodes, versionCache = new Map()) {
-        if (!isKcpTransport(link.tunnelTransport)) return;
+        if (!linkXrayRequirement(link)) return;
 
         const xrayVersionService = require('./xrayVersionService');
         for (const ref of nodes) {
@@ -1181,22 +1271,29 @@ class CascadeService {
             if (!versionCache.has(key)) {
                 versionCache.set(key, await xrayVersionService.detectInstalledVersion(node));
             }
-            const reason = this._kcpVersionError(node, versionCache.get(key));
+            const reason = this.linkVersionError(link, node, versionCache.get(key));
             if (reason) throw new Error(reason);
         }
     }
 
     /**
-     * @returns {string|null} why the node's Xray cannot run mKCP, or null if it can
+     * Why `version` of Xray on `node` cannot run `link`, or null if it can.
+     * An unknown version only fails mKCP: other requirements are still
+     * guarded by the sync-time `xray -test`.
+     * @returns {string|null}
      */
-    _kcpVersionError(node, version) {
+    linkVersionError(link, node, version) {
+        const need = linkXrayRequirement(link);
+        if (!need) return null;
         const xrayVersionService = require('./xrayVersionService');
         const normalized = xrayVersionService.normalizeVersion(version || '');
         if (!normalized) {
-            return `Cannot detect Xray version on ${node.name}; mKCP requires Xray >= ${MIN_KCP_XRAY_VERSION}`;
+            return isKcpTransport(link.tunnelTransport)
+                ? `Cannot detect Xray version on ${node.name}; mKCP requires Xray >= ${MIN_KCP_XRAY_VERSION}`
+                : null;
         }
-        if (xrayVersionService.compareVersions(normalized, MIN_KCP_XRAY_VERSION) < 0) {
-            return `mKCP requires Xray >= ${MIN_KCP_XRAY_VERSION}, ${node.name} runs ${normalized}`;
+        if (xrayVersionService.compareVersions(normalized, need.version) < 0) {
+            return `${need.feature} requires Xray >= ${need.version}, ${node.name} runs ${normalized}`;
         }
         return null;
     }
@@ -1218,44 +1315,59 @@ class CascadeService {
     }
 
     /**
-     * Drop mKCP links the node's Xray core cannot parse before they reach its
-     * main config: one rejected config blocks every later sync of the node.
-     * Uses the stored version (no SSH) so it stays cheap on every sync.
-     * A forward chain is dropped whole, since its head carries outbounds for
-     * every hop and a partial chain would route traffic into a dead end.
+     * Drop links the node's Xray core cannot run (linkVersionError) before
+     * they reach its main config: one rejected config blocks every later sync
+     * of the node. Uses the stored version (no SSH) so it stays cheap on every
+     * sync. A forward chain is dropped whole, since its head carries outbounds
+     * for every hop and a partial chain would route traffic into a dead end.
      * Dropped links are marked as errors so the operator sees the reason.
      * @param {Object} node - HyNode document
      * @param {{reverseLinks?: Array, forwardLinks?: Array, forwardHopLinks?: Array}} groups
+     * @param {Object} [opts]
+     * @param {string} [opts.version] - check against this version instead of the stored one
+     * @param {boolean} [opts.dryRun] - do not mark dropped links as errors
      * @returns {Promise<{reverseLinks: Array, forwardLinks: Array, forwardHopLinks: Array}>}
      */
-    async filterLinksForNodeXray(node, { reverseLinks = [], forwardLinks = [], forwardHopLinks = [] }) {
+    async filterLinksForNodeXray(node, { reverseLinks = [], forwardLinks = [], forwardHopLinks = [] }, opts = {}) {
         const groups = { reverseLinks, forwardLinks, forwardHopLinks };
-        const usesKcp = l => isKcpTransport(l.tunnelTransport);
-        if (![...reverseLinks, ...forwardLinks, ...forwardHopLinks].some(usesKcp)) return groups;
+        if (![...reverseLinks, ...forwardLinks, ...forwardHopLinks].some(l => linkXrayRequirement(l))) return groups;
 
-        const stored = await HyNode.findById(node._id).select('xrayVersion').lean();
-        const reason = this._kcpVersionError(node, stored?.xrayVersion || node.xrayVersion);
-        if (!reason) return groups;
-
-        const chainHasKcp = forwardLinks.some(usesKcp);
-        const dropped = [
-            ...reverseLinks.filter(usesKcp),
-            ...forwardHopLinks.filter(usesKcp),
-            ...(chainHasKcp ? forwardLinks : []),
-        ];
-
-        logger.warn(`[Cascade] ${node.name}: skipped ${dropped.length} link(s): ${reason}`);
-        const result = await CascadeLink.updateMany(
-            { _id: { $in: dropped.map(l => l._id) }, status: { $ne: 'error' } },
-            { $set: { status: 'error', lastError: reason } }
-        );
-        if (result.modifiedCount > 0) await this._invalidateTopologyCache();
-
-        return {
-            reverseLinks: reverseLinks.filter(l => !usesKcp(l)),
-            forwardLinks: chainHasKcp ? [] : forwardLinks,
-            forwardHopLinks: forwardHopLinks.filter(l => !usesKcp(l)),
+        const stored = opts.version ? null : await HyNode.findById(node._id).select('xrayVersion').lean();
+        const version = opts.version || stored?.xrayVersion || node.xrayVersion;
+        const reasons = new Map();
+        const check = (l) => {
+            const reason = this.linkVersionError(l, node, version);
+            if (reason) reasons.set(l, reason);
+            return !reason;
         };
+
+        const kept = {
+            reverseLinks: reverseLinks.filter(check),
+            forwardHopLinks: forwardHopLinks.filter(check),
+        };
+        const chainReason = forwardLinks.map(l => (check(l) ? null : reasons.get(l))).find(Boolean);
+        kept.forwardLinks = chainReason ? [] : forwardLinks;
+        if (chainReason) for (const l of forwardLinks) if (!reasons.has(l)) reasons.set(l, chainReason);
+        if (reasons.size === 0) return groups;
+        if (opts.dryRun) return kept;
+
+        const byReason = new Map();
+        for (const [l, reason] of reasons) {
+            if (!byReason.has(reason)) byReason.set(reason, []);
+            byReason.get(reason).push(l._id);
+        }
+        let modified = 0;
+        for (const [reason, ids] of byReason) {
+            logger.warn(`[Cascade] ${node.name}: skipped ${ids.length} link(s): ${reason}`);
+            const result = await CascadeLink.updateMany(
+                { _id: { $in: ids }, status: { $ne: 'error' } },
+                { $set: { status: 'error', lastError: reason } }
+            );
+            modified += result.modifiedCount || 0;
+        }
+        if (modified > 0) await this._invalidateTopologyCache();
+
+        return kept;
     }
 
     /**

@@ -467,6 +467,46 @@ function makeNode(xray, overrides = {}) {
         assert.ok(ve.PRIVATE_KEY_EXCLUDE.split(' ').every(p => p.startsWith('-') && p.endsWith('vlessEncryptionPrivateKey')));
     }
 
+    // ---- self-signed TLS: Xray JSON pins the cert, never emits allowInsecure
+    {
+        const hash = 'a'.repeat(64);
+        const node = makeNode(baseXray({ security: 'tls', tlsSource: 'self-signed', flow: '' }), { tlsCertSha256: hash });
+        const tls = v2rayOutboundsForNode(user, node)[0].outbound.streamSettings.tlsSettings;
+        assert.strictEqual(tls.pinnedPeerCertSha256, hash);
+        assert.ok(!('allowInsecure' in tls));
+        const uri = vlessURIForInbound(user, node, getXrayPublishedInbounds(node)[0]);
+        assert.ok(uri.includes(`pcs=${hash}`) && uri.includes('allowInsecure=1'));
+
+        const unknown = makeNode(baseXray({ security: 'tls', tlsSource: 'self-signed', flow: '' }));
+        const unknownTls = v2rayOutboundsForNode(user, unknown)[0].outbound.streamSettings.tlsSettings;
+        assert.ok(!('allowInsecure' in unknownTls) && !('pinnedPeerCertSha256' in unknownTls));
+
+        const hy = { _id: 'h1', name: 'Hy', type: 'hysteria', ip: '203.0.113.11', port: 443, active: true, tlsCertSha256: hash };
+        for (const { outbound } of v2rayOutboundsForNode(user, hy)) {
+            assert.strictEqual(outbound.streamSettings.tlsSettings.pinnedPeerCertSha256, hash);
+            assert.ok(!('allowInsecure' in outbound.streamSettings.tlsSettings));
+        }
+        const hyDomain = v2rayOutboundsForNode(user, { ...hy, domain: 'hy.example.com' });
+        assert.ok(hyDomain.every(({ outbound }) => !('pinnedPeerCertSha256' in outbound.streamSettings.tlsSettings)),
+            'a node with a real certificate is verified by name');
+
+        assert.ok(new HyNode({ name: 'x', tlsCertSha256: 'nope' }).validateSync()?.errors?.tlsCertSha256);
+
+        // Assigned nodes and legacy Marzban URLs must carry the pin field.
+        // The group path selects it; these two populates used to drop it.
+        const fs = require('fs');
+        for (const file of ['src/routes/subscription.js', 'src/routes/marzbanCompat.js']) {
+            const source = fs.readFileSync(require('path').join(__dirname, '..', file), 'utf8');
+            assert.ok(source.includes("virtual cdn tlsCertSha256"), `${file} must load tlsCertSha256 for linked nodes`);
+        }
+        const { leafCertSha256 } = require('../src/services/nodeSetup');
+        const leaf = crypto.randomBytes(32).toString('base64');
+        const chain = `-----BEGIN CERTIFICATE-----\n${leaf}\n-----END CERTIFICATE-----\n`
+            + '-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n';
+        assert.strictEqual(leafCertSha256(chain), crypto.createHash('sha256').update(Buffer.from(leaf, 'base64')).digest('hex'));
+        assert.strictEqual(leafCertSha256('not a certificate'), '');
+    }
+
     console.log('vless encryption tests passed');
     // versionError loads xrayVersionService, whose SSH pool keeps a timer alive.
     process.exit(0);

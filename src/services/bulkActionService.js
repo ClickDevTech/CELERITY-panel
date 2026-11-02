@@ -20,8 +20,6 @@ const logger = require('../utils/logger');
 const nodeSetupLock = require('../utils/nodeSetupLock');
 const { mapLimit } = require('../utils/mapLimit');
 const { isServerlessNode } = require('../utils/nodeTypes');
-const { isKcpTransport } = require('../utils/cascadeTransport');
-
 const MAX_NODES = 200;
 const MAX_FAILURES = 2;
 const BATCH_TTL_MS = 60 * 60 * 1000;
@@ -64,30 +62,31 @@ const ACTIONS = {
         },
         async preview(nodes, ctx) {
             const ids = nodes.map(node => node._id);
+            const fields = 'name mode portalNode bridgeNode tunnelTransport tunnelProtocol tunnelSecurity priority';
             const [endpointLinks, forwardLinks] = await Promise.all([
                 CascadeLink.find({
-                    tunnelTransport: 'kcp',
+                    active: true,
                     $or: [{ portalNode: { $in: ids } }, { bridgeNode: { $in: ids } }],
-                }).select('portalNode bridgeNode tunnelTransport').lean(),
-                CascadeLink.find({ mode: 'forward', active: true })
-                    .select('portalNode bridgeNode tunnelTransport priority').lean(),
+                }).select(fields).lean(),
+                CascadeLink.find({ mode: 'forward', active: true }).select(fields).lean(),
             ]);
-            const kcpNodeIds = new Set();
+            const linksByNode = new Map();
+            const addLink = (nodeId, link) => {
+                const key = String(nodeId);
+                if (!linksByNode.has(key)) linksByNode.set(key, new Map());
+                linksByNode.get(key).set(String(link._id), link);
+            };
             for (const link of endpointLinks) {
-                if (!isKcpTransport(link.tunnelTransport)) continue;
-                kcpNodeIds.add(String(link.portalNode));
-                kcpNodeIds.add(String(link.bridgeNode));
+                addLink(link.portalNode, link);
+                addLink(link.bridgeNode, link);
             }
-            // A forward-chain head carries outbounds for every downstream hop,
-            // so mKCP anywhere down its chain needs mKCP support on the head too.
-            if (forwardLinks.some(link => isKcpTransport(link.tunnelTransport))) {
-                const cascadeService = require('./cascadeService');
-                for (const id of ids) {
-                    const chain = cascadeService._walkForwardChain(forwardLinks, id);
-                    if (chain.some(link => isKcpTransport(link.tunnelTransport))) kcpNodeIds.add(String(id));
-                }
+            // A forward-chain head carries outbounds for every downstream hop.
+            const cascadeService = require('./cascadeService');
+            for (const id of ids) {
+                for (const link of cascadeService._walkForwardChain(forwardLinks, id)) addLink(id, link);
             }
-            return xrayVersionService().bulkPreview(nodes, ctx.release, kcpNodeIds);
+            const nodeLinks = new Map([...linksByNode].map(([id, links]) => [id, [...links.values()]]));
+            return xrayVersionService().bulkPreview(nodes, ctx.release, nodeLinks);
         },
         run(nodeId, ctx) {
             return new Promise((resolve) => {
@@ -136,8 +135,10 @@ const ACTIONS = {
                 else if (!hasSsh && !hasAgent) reason = 'Neither SSH nor agent is configured';
                 else if (nodeSetupLock.holder(nodeId)) reason = `Node is busy: ${nodeSetupLock.holder(nodeId)} is running`;
                 const warnings = [];
-                if (!reason && node.status === 'offline') warnings.push('Node is offline');
-                return { nodeId, ready: !reason, reason, warnings };
+                // Bridges are never health-checked and always stay 'offline'.
+                const offline = !reason && node.status === 'offline' && node.cascadeRole !== 'bridge';
+                if (offline) warnings.push('Node is offline');
+                return { nodeId, ready: !reason, reason, warnings, deferred: offline };
             });
         },
         async run(nodeId) {
@@ -210,6 +211,7 @@ async function buildPreview(action, nodeIds, params) {
             ready: !!verdict.ready,
             reason: verdict.reason || null,
             warnings: verdict.warnings || [],
+            deferred: !!verdict.deferred,
         };
     });
     return { def, publicParams, ctx, items };
@@ -222,7 +224,7 @@ async function preview({ action, nodeIds, params }) {
         params: publicParams,
         ready: items.filter(item => item.ready).length,
         skipped: items.filter(item => !item.ready).length,
-        items,
+        items: items.map(({ deferred, ...item }) => item),
     };
 }
 
@@ -271,7 +273,10 @@ async function runItem(batch, def, ctx, item) {
 }
 
 async function runBatch(batch, def, ctx) {
-    const queue = batch.items.filter(item => item.state === 'queued');
+    // Deferred (likely unreachable) nodes go last and never act as the canary.
+    const queued = batch.items.filter(item => item.state === 'queued');
+    const queue = queued.filter(item => !item.deferred);
+    const deferred = queued.filter(item => item.deferred);
     try {
         // Canary: run one node at a time until one actually completes, so a
         // bad release or a broken action is caught on a single node.
@@ -284,6 +289,7 @@ async function runBatch(batch, def, ctx) {
             if (item.state === 'done' || item.state === 'error') break;
         }
         await mapLimit(queue.slice(index), def.concurrency, item => runItem(batch, def, ctx, item));
+        await mapLimit(deferred, def.concurrency, item => runItem(batch, def, ctx, item));
     } catch (error) {
         logger.error(`[Bulk] ${batch.action} batch ${batch.id} crashed: ${error.message}`);
         requestStop(batch, 'error');
@@ -332,6 +338,7 @@ async function start({ action, nodeIds, params, actor }) {
                 error: item.ready ? null : item.reason,
                 details: null,
                 warnings: item.warnings,
+                deferred: item.deferred,
             })),
         };
         current = batch;

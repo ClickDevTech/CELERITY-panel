@@ -5,12 +5,20 @@
 const yaml = require('yaml');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const logger = require('../utils/logger');
 const appConfig = require('../../config');
+const cryptoService = require('./cryptoService');
 const { isValidXhttpRange } = require('../utils/xhttpOptions');
 const { isServerlessNode } = require('../utils/nodeTypes');
-const { KCP_DEFAULTS, normalizeTransport } = require('../utils/cascadeTransport');
-const { buildServerDecryption } = require('../utils/vlessEncryption');
+const {
+    KCP_DEFAULTS,
+    normalizeTransport,
+    cascadeProtocol,
+    usesLinkVlessEncryption,
+} = require('../utils/cascadeTransport');
+const vlessEncryption = require('../utils/vlessEncryption');
+const { buildServerDecryption } = vlessEncryption;
 
 // Canonical on-node path for the Xray access log when the opt-in access-logs
 // module is enabled. The cc-agent tails exactly this file.
@@ -181,14 +189,54 @@ function invalidatePanelCertCache() {
  * @returns {{ host: string, port: number }}
  */
 /**
- * Build Xray outbound user object based on protocol.
- * VLESS uses `encryption`, VMess uses `security` + `alterId`.
+ * VLESS Encryption key pair of a plaintext cascade link. The x25519 key is
+ * derived from ENCRYPTION_KEY and the link identity, so both ends always
+ * match without storing secrets, and a new tunnel UUID rotates it.
+ * @returns {{decryption: string, encryption: string}|null}
  */
-function buildOutboundUser(uuid, protocol) {
-    if (protocol === 'vmess') {
-        return { id: uuid, alterId: 0, security: 'auto' };
+function cascadeVlessEncryption(link) {
+    if (!usesLinkVlessEncryption(link)) return null;
+    const serverKey = crypto.createHmac('sha256', String(appConfig.ENCRYPTION_KEY || ''))
+        .update(`cascade-vless-encryption:${link._id}:${link.tunnelUuid}`)
+        .digest()
+        .toString('base64url');
+    const clientKey = cryptoService.deriveX25519PublicKey(serverKey);
+    const prefix = `${vlessEncryption.PREFIX}.${vlessEncryption.DEFAULT_MODE}`;
+    return {
+        decryption: `${prefix}.${vlessEncryption.DEFAULT_TICKET}.${serverKey}`,
+        encryption: `${prefix}.0rtt.${clientKey}`,
+    };
+}
+
+/**
+ * Inbound `settings` of the listening end of a cascade link.
+ * @param {string} [reverseTag] - VLESS Reverse Proxy outbound tag on the portal
+ */
+function buildCascadeInboundSettings(link, reverseTag) {
+    const client = { id: link.tunnelUuid };
+    if (reverseTag) client.reverse = { tag: reverseTag };
+    const settings = { clients: [client] };
+    if (cascadeProtocol(link) === 'vless') {
+        settings.decryption = cascadeVlessEncryption(link)?.decryption || 'none';
     }
-    return { id: uuid, encryption: 'none' };
+    return settings;
+}
+
+/**
+ * Outbound `settings` of the dialing end of a cascade link. Reverse needs
+ * the flat VLESS form: Xray rejects `reverse` inside vnext users.
+ * @param {string} [reverseTag] - inbound tag of traffic coming back from the portal
+ */
+function buildCascadeOutboundSettings(link, address, reverseTag) {
+    const port = link.tunnelPort || 10086;
+    if (cascadeProtocol(link) === 'vmess') {
+        return { vnext: [{ address, port, users: [{ id: link.tunnelUuid, alterId: 0, security: 'auto' }] }] };
+    }
+    const encryption = cascadeVlessEncryption(link)?.encryption || 'none';
+    if (reverseTag) {
+        return { address, port, id: link.tunnelUuid, encryption, reverse: { tag: reverseTag } };
+    }
+    return { vnext: [{ address, port, users: [{ id: link.tunnelUuid, encryption }] }] };
 }
 
 function parseHostPort(addr, defaultPort) {
@@ -1091,11 +1139,17 @@ WantedBy=multi-user.target
 }
 
 // ==================== XRAY CASCADE (Reverse Proxy) ====================
+//
+// VLESS Reverse Proxy: the bridge dials the portal's connector inbound with
+// a VLESS outbound carrying `reverse.tag`; the portal's matching client entry
+// carries `reverse.tag` too, which becomes an outbound tag while the bridge
+// is connected. Traffic sent there pops out on the bridge as an inbound with
+// the bridge-side tag.
 
 /**
  * Apply reverse-portal configuration to an existing Xray config object.
- * Adds portal entries, bridge-connector inbounds, and routing rules for
- * every active CascadeLink where this node is the Portal (entry).
+ * Adds bridge-connector inbounds and routing rules for every active
+ * CascadeLink where this node is the Portal (entry).
  *
  * @param {Object} config - Parsed Xray config object (mutated in place)
  * @param {Array} portalLinks - CascadeLink documents where this node is portalNode
@@ -1107,8 +1161,6 @@ function applyReversePortal(config, portalLinks, clientInboundTags) {
     if (!portalLinks || portalLinks.length === 0) return;
     const tags = normalizeInboundTags(clientInboundTags);
 
-    config.reverse = config.reverse || {};
-    config.reverse.portals = config.reverse.portals || [];
     config.inbounds = config.inbounds || [];
     config.routing = config.routing || { rules: [] };
     config.routing.rules = config.routing.rules || [];
@@ -1119,33 +1171,14 @@ function applyReversePortal(config, portalLinks, clientInboundTags) {
     for (const link of portalLinks) {
         const linkIdShort = String(link._id).slice(-8);
         const portalTag = `portal-${linkIdShort}`;
-        const connectorTag = `bridge-conn-${linkIdShort}`;
 
-        config.reverse.portals.push({
-            tag: portalTag,
-            domain: link.tunnelDomain || 'reverse.tunnel.internal',
-        });
-
-        const protocol = link.tunnelProtocol || 'vless';
-        const settings = { clients: [{ id: link.tunnelUuid }] };
-        if (protocol === 'vless') settings.decryption = 'none';
-
-        const inbound = {
-            tag: connectorTag,
+        config.inbounds.push({
+            tag: `bridge-conn-${linkIdShort}`,
             listen: '0.0.0.0',
             port: link.tunnelPort || 10086,
-            protocol,
-            settings,
+            protocol: 'vless',
+            settings: buildCascadeInboundSettings(link, portalTag),
             streamSettings: buildCascadeTunnelStreamSettings(link, { server: true }),
-        };
-
-        config.inbounds.push(inbound);
-
-        config.routing.rules.push({
-            type: 'field',
-            inboundTag: [connectorTag],
-            domain: [`full:${link.tunnelDomain || 'reverse.tunnel.internal'}`],
-            outboundTag: portalTag,
         });
 
         // Geo routing only takes effect when at least one tag is set;
@@ -1239,35 +1272,18 @@ function normalizeInboundTags(input) {
  * @returns {string} JSON string ready to write to config.json
  */
 function generateBridgeConfig(link, portalNode) {
-    const tunnelDomain = link.tunnelDomain || 'reverse.tunnel.internal';
-    const protocol = link.tunnelProtocol || 'vless';
-    const linkIdShort = String(link._id).slice(-8);
-
+    // Reverse connections are multiplexed by the core itself; outbound mux
+    // settings do not apply to them.
     const tunnelOutbound = {
         tag: 'tunnel',
-        protocol,
-        settings: {
-            vnext: [{
-                address: portalNode.ip,
-                port: link.tunnelPort || 10086,
-                users: [buildOutboundUser(link.tunnelUuid, protocol)],
-            }],
-        },
+        protocol: 'vless',
+        settings: buildCascadeOutboundSettings(link, portalNode.ip, 'bridge'),
         streamSettings: buildCascadeTunnelStreamSettings(link),
     };
-    if (link.muxEnabled) {
-        tunnelOutbound.mux = { enabled: true, concurrency: link.muxConcurrency || 8 };
-    }
 
     const config = {
         log: {
             loglevel: 'warning',
-        },
-        reverse: {
-            bridges: [{
-                tag: 'bridge',
-                domain: tunnelDomain,
-            }],
         },
         outbounds: [
             tunnelOutbound,
@@ -1284,11 +1300,6 @@ function generateBridgeConfig(link, portalNode) {
         routing: {
             domainStrategy: 'IPIfNonMatch',
             rules: [
-                {
-                    type: 'field',
-                    domain: [`full:${tunnelDomain}`],
-                    outboundTag: 'tunnel',
-                },
                 {
                     type: 'field',
                     inboundTag: ['bridge'],
@@ -1317,35 +1328,15 @@ function generateBridgeConfig(link, portalNode) {
  * @returns {string} JSON string ready to write to config.json
  */
 function generateRelayConfig(upstreamLink, upstreamPortal, downstreamLinks) {
-    const upDomain = upstreamLink.tunnelDomain || 'reverse.tunnel.internal';
-    const upProtocol = upstreamLink.tunnelProtocol || 'vless';
-    const upLinkId = String(upstreamLink._id).slice(-8);
-
     const tunnelUpOutbound = {
         tag: 'tunnel-up',
-        protocol: upProtocol,
-        settings: {
-            vnext: [{
-                address: upstreamPortal.ip,
-                port: upstreamLink.tunnelPort || 10086,
-                users: [buildOutboundUser(upstreamLink.tunnelUuid, upProtocol)],
-            }],
-        },
+        protocol: 'vless',
+        settings: buildCascadeOutboundSettings(upstreamLink, upstreamPortal.ip, 'bridge-up'),
         streamSettings: buildCascadeTunnelStreamSettings(upstreamLink),
     };
-    if (upstreamLink.muxEnabled) {
-        tunnelUpOutbound.mux = { enabled: true, concurrency: upstreamLink.muxConcurrency || 8 };
-    }
 
     const config = {
         log: { loglevel: 'warning' },
-        reverse: {
-            bridges: [{
-                tag: 'bridge-up',
-                domain: upDomain,
-            }],
-            portals: [],
-        },
         inbounds: [],
         outbounds: [
             tunnelUpOutbound,
@@ -1360,48 +1351,19 @@ function generateRelayConfig(upstreamLink, upstreamPortal, downstreamLinks) {
         },
     };
 
-    // FIRST: Add connector rules for each downstream link (must be checked BEFORE tunnel-up rule)
     for (const downLink of downstreamLinks) {
         const downLinkId = String(downLink._id).slice(-8);
-        const downDomain = downLink.tunnelDomain || 'reverse.tunnel.internal';
-        const downProtocol = downLink.tunnelProtocol || 'vless';
-        const portalTag = `portal-down-${downLinkId}`;
-        const connectorTag = `conn-down-${downLinkId}`;
-
-        config.reverse.portals.push({
-            tag: portalTag,
-            domain: downDomain,
-        });
-
-        const downSettings = { clients: [{ id: downLink.tunnelUuid }] };
-        if (downProtocol === 'vless') downSettings.decryption = 'none';
-
         config.inbounds.push({
-            tag: connectorTag,
+            tag: `conn-down-${downLinkId}`,
             listen: '0.0.0.0',
             port: downLink.tunnelPort || 10086,
-            protocol: downProtocol,
-            settings: downSettings,
+            protocol: 'vless',
+            settings: buildCascadeInboundSettings(downLink, `portal-down-${downLinkId}`),
             streamSettings: buildCascadeTunnelStreamSettings(downLink, { server: true }),
-        });
-
-        // Rule: connector + domain → portal (handshake)
-        config.routing.rules.push({
-            type: 'field',
-            inboundTag: [connectorTag],
-            domain: [`full:${downDomain}`],
-            outboundTag: portalTag,
         });
     }
 
-    // SECOND: Add tunnel-up rule for upstream bridge handshake (after connector rules)
-    config.routing.rules.push({
-        type: 'field',
-        domain: [`full:${upDomain}`],
-        outboundTag: 'tunnel-up',
-    });
-
-    // THIRD: Route traffic from upstream bridge to downstream portal(s)
+    // Route traffic coming back from the upstream portal to downstream portal(s)
     if (downstreamLinks.length > 1) {
         const downTags = downstreamLinks.map(l => `portal-down-${String(l._id).slice(-8)}`);
         config.routing.balancers = config.routing.balancers || [];
@@ -1441,6 +1403,8 @@ function generateRelayConfig(upstreamLink, upstreamPortal, downstreamLinks) {
  * 'splithttp' are normalized to 'xhttp' here for forward compatibility.
  * mKCP uses finalmask "mkcp-legacy" (Xray >= 26.6.1): kcpSettings.header/seed
  * no longer exist in the core.
+ * TLS always uses the panel certificate, so the listening end must be
+ * regenerated when it rotates (see the cert watcher in syncService).
  *
  * @param {Object} link - CascadeLink document
  * @param {Object} [opts] - Options
@@ -1459,42 +1423,27 @@ function buildCascadeTunnelStreamSettings(link, opts = {}) {
     };
 
     if (security === 'tls') {
-        // Inline panel cert when tlsServerName matches PANEL_DOMAIN; otherwise
-        // fall back to file paths and keep allowInsecure on the client side.
+        // The listener serves the panel certificate inline and the dialer
+        // verifies it against PANEL_DOMAIN: Xray no longer accepts allowInsecure.
         const panelDomain = (appConfig?.PANEL_DOMAIN || '').trim();
-        const wantPanelCert = !!panelDomain && link.tlsServerName === panelDomain;
-
         if (opts.server) {
-            let certificates;
-            if (wantPanelCert) {
-                const panelCert = buildPanelInlineCertificate();
-                if (panelCert) {
-                    certificates = [{
-                        ocspStapling: 3600,
-                        certificate: panelCert.certificate,
-                        key: panelCert.key,
-                    }];
-                } else {
-                    const err = new Error(`PANEL_CERT_UNAVAILABLE: cascade link "${link?.name || link?._id}" expects panel cert for ${panelDomain} but it is not readable on disk`);
-                    err.code = 'PANEL_CERT_UNAVAILABLE';
-                    throw err;
-                }
-            } else {
-                logger.warn(`[configGenerator] Cascade TLS link "${link?.name || link?._id}" uses tlsServerName="${link.tlsServerName || ''}" — using file paths; ensure cert/key exist on the bridge node`);
-                certificates = [{
-                    certificateFile: '/usr/local/etc/xray/cert.pem',
-                    keyFile: '/usr/local/etc/xray/key.pem',
-                }];
+            const panelCert = panelDomain ? buildPanelInlineCertificate() : null;
+            if (!panelCert) {
+                const err = new Error(`PANEL_CERT_UNAVAILABLE: cascade link "${link?.name || link?._id}" uses TLS with the panel certificate for ${panelDomain || 'PANEL_DOMAIN'}, but it is not readable on the panel. Switch the link to REALITY or none (VLESS Encryption).`);
+                err.code = 'PANEL_CERT_UNAVAILABLE';
+                throw err;
             }
             stream.tlsSettings = {
-                serverName: link.tlsServerName || panelDomain || '',
+                serverName: panelDomain,
                 minVersion: '1.2',
-                certificates,
+                certificates: [{
+                    ocspStapling: 3600,
+                    certificate: panelCert.certificate,
+                    key: panelCert.key,
+                }],
             };
         } else {
-            stream.tlsSettings = {};
-            if (link.tlsServerName) stream.tlsSettings.serverName = link.tlsServerName;
-            if (!wantPanelCert) stream.tlsSettings.allowInsecure = true;
+            stream.tlsSettings = { serverName: panelDomain };
         }
     } else if (security === 'reality') {
         if (opts.server) {
@@ -1606,17 +1555,10 @@ function applyForwardChain(config, forwardLinks, clientInboundTags) {
         const tag = `fwd-${String(link._id).slice(-8)}`;
         outboundTags.push(tag);
 
-        const fwdProto = link.tunnelProtocol || 'vless';
         const outbound = {
             tag,
-            protocol: fwdProto,
-            settings: {
-                vnext: [{
-                    address: bridgeNode.ip || bridgeNode.domain || '',
-                    port: link.tunnelPort || 10086,
-                    users: [buildOutboundUser(link.tunnelUuid, fwdProto)],
-                }],
-            },
+            protocol: cascadeProtocol(link),
+            settings: buildCascadeOutboundSettings(link, bridgeNode.ip || bridgeNode.domain || ''),
             streamSettings: buildCascadeTunnelStreamSettings(link),
         };
 
@@ -1688,18 +1630,15 @@ function applyForwardChain(config, forwardLinks, clientInboundTags) {
 function generateForwardHopConfig(linkOrLinks) {
     const links = Array.isArray(linkOrLinks) ? linkOrLinks : [linkOrLinks];
 
-    const inbounds = links.map((link, idx) => {
-        const hopProto = link.tunnelProtocol || 'vless';
-        const hopSettings = { clients: [{ id: link.tunnelUuid }] };
-        if (hopProto === 'vless') hopSettings.decryption = 'none';
+    const inbounds = links.map((link) => {
         const linkIdShort = String(link._id).slice(-8);
 
         return {
             tag: `cascade-in-${linkIdShort}`,
             listen: '0.0.0.0',
             port: link.tunnelPort || 10086,
-            protocol: hopProto,
-            settings: hopSettings,
+            protocol: cascadeProtocol(link),
+            settings: buildCascadeInboundSettings(link),
             streamSettings: buildCascadeTunnelStreamSettings(link, { server: true }),
             sniffing: {
                 enabled: true,
@@ -1748,16 +1687,13 @@ function applyForwardHopInbound(config, hopLinks) {
     for (const link of hopLinks) {
         const linkIdShort = String(link._id).slice(-8);
         const inboundTag = `fwd-hop-${linkIdShort}`;
-        const hopProto = link.tunnelProtocol || 'vless';
-        const hopSettings = { clients: [{ id: link.tunnelUuid }] };
-        if (hopProto === 'vless') hopSettings.decryption = 'none';
 
         config.inbounds.push({
             tag: inboundTag,
             listen: '0.0.0.0',
             port: link.tunnelPort || 10086,
-            protocol: hopProto,
-            settings: hopSettings,
+            protocol: cascadeProtocol(link),
+            settings: buildCascadeInboundSettings(link),
             streamSettings: buildCascadeTunnelStreamSettings(link, { server: true }),
             sniffing: {
                 enabled: true,

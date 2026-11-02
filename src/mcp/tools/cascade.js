@@ -16,6 +16,7 @@ const {
     KCP_LIMITS,
     isKcpTransport,
     validateTransportSecurity,
+    validateTunnelProtocol,
     sanitizeKcpInput,
     generateKcpPassword,
 } = require('../../utils/cascadeTransport');
@@ -43,8 +44,10 @@ const manageCascadeSchema = z.object({
         portalNodeId: z.string().optional(),
         bridgeNodeId: z.string().optional(),
         tunnelPort: z.number().int().min(1).max(65535).optional(),
-        tunnelProtocol: z.enum(['vless', 'vmess']).optional(),
-        tunnelSecurity: z.enum(['none', 'tls', 'reality']).optional(),
+        tunnelProtocol: z.enum(['vless', 'vmess']).optional()
+            .describe('vmess is forward-only; reverse links always use VLESS Reverse Proxy (Xray 25.9.11+)'),
+        tunnelSecurity: z.enum(['none', 'tls', 'reality']).optional()
+            .describe('none adds VLESS Encryption on VLESS links (Xray 25.9.5+); tls uses the panel certificate'),
         tunnelTransport: z.enum(CASCADE_TRANSPORTS).optional(),
         kcpMtu: z.number().int().min(KCP_LIMITS.mtu.min).max(KCP_LIMITS.mtu.max).optional(),
         kcpTti: z.number().int().min(KCP_LIMITS.tti.min).max(KCP_LIMITS.tti.max).optional(),
@@ -120,6 +123,8 @@ async function manageCascade(args, emit) {
 
             const transportError = validateTransportSecurity(trans, sec);
             if (transportError) return { error: transportError, code: 400 };
+            const protocolError = validateTunnelProtocol(linkMode, data.tunnelProtocol);
+            if (protocolError) return { error: protocolError, code: 400 };
             const kcpInput = sanitizeKcpInput(data);
             if (kcpInput.error) return { error: kcpInput.error, code: 400 };
 
@@ -181,8 +186,14 @@ async function manageCascade(args, emit) {
                 if (data[k] !== undefined) updates[k] = data[k];
             }
             const current = await CascadeLink.findById(id)
-                .select('mode portalNode bridgeNode tunnelPort tunnelTransport tunnelSecurity kcpPassword').lean();
+                .select('mode portalNode bridgeNode tunnelPort tunnelProtocol tunnelTransport tunnelSecurity kcpPassword').lean();
             if (!current) return { error: `Cascade link '${id}' not found`, code: 404 };
+            const effectiveMode = updates.mode || current.mode || 'reverse';
+            if (updates.tunnelProtocol === undefined && effectiveMode !== 'forward' && current.tunnelProtocol === 'vmess') {
+                updates.tunnelProtocol = 'vless';
+            }
+            const protocolError = validateTunnelProtocol(effectiveMode, updates.tunnelProtocol);
+            if (protocolError) return { error: protocolError, code: 400 };
             const effectiveTrans = updates.tunnelTransport || current.tunnelTransport || 'tcp';
             const transportError = validateTransportSecurity(
                 effectiveTrans,
@@ -198,7 +209,6 @@ async function manageCascade(args, emit) {
             const listenerChanged = updates.tunnelPort !== undefined || updates.mode !== undefined ||
                 updates.tunnelTransport !== undefined;
             if (isKcpTransport(effectiveTrans) && listenerChanged) {
-                const effectiveMode = updates.mode || current.mode || 'reverse';
                 const listenNode = await HyNode.findById(
                     effectiveMode === 'forward' ? current.bridgeNode : current.portalNode
                 ).select('ip').lean();

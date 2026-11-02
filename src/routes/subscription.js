@@ -73,7 +73,7 @@ function isBrowser(req) {
 
 async function getUserByToken(token) {
     const user = await HyUser.findOne({ subscriptionToken: token })
-        .populate('nodes', 'active name type status onlineUsers maxOnlineUsers rankingCoefficient domain sni ip port portRange hopInterval subscriptionVariants portConfigs obfs flag xray cascadeRole groups virtual cdn')
+        .populate('nodes', 'active name type status onlineUsers maxOnlineUsers rankingCoefficient domain sni ip port portRange hopInterval subscriptionVariants portConfigs obfs flag xray cascadeRole groups virtual cdn tlsCertSha256')
         .populate('groups', '_id name subscriptionTitle maxDevices');
     
     return user;
@@ -134,7 +134,7 @@ async function getActiveNodesWithCache() {
 
     // Include type, xray, obfs, and cascadeRole fields needed for URI generation and filtering
     const nodes = await HyNode.find({ active: true })
-        .select('name type flag ip domain sni port portRange hopInterval subscriptionVariants portConfigs obfs active status onlineUsers maxOnlineUsers rankingCoefficient groups xray cascadeRole virtual cdn')
+        .select('name type flag ip domain sni port portRange hopInterval subscriptionVariants portConfigs obfs active status onlineUsers maxOnlineUsers rankingCoefficient groups xray cascadeRole virtual cdn tlsCertSha256')
         .lean();
     await cache.setActiveNodes(nodes);
     return nodes;
@@ -801,12 +801,13 @@ function _xhttpTuning(inbound) {
  *   panel       → masquerade under PANEL_DOMAIN; panel's LE cert inlined.
  *   acme        → cert on node (acme.sh); SNI=node.domain (same as manual).
  *   manual      → operator-supplied node.domain; PEM inlined.
- *   self-signed → node.domain || node.sni; allowInsecure=true.
+ *   self-signed → node.domain || node.sni; allowInsecure=true, plus the
+ *                 certificate hash for clients that pin it.
  *
- * Returns { sni, host, allowInsecure } where any value may be empty.
+ * Returns { sni, host, allowInsecure, pinnedPeerCertSha256 } where any value may be empty.
  *
  * @param {Object} node
- * @returns {{ sni: string, host: string, allowInsecure: boolean, source: string }}
+ * @returns {{ sni: string, host: string, allowInsecure: boolean, pinnedPeerCertSha256: string, source: string }}
  */
 function _resolveXrayTlsClientHints(node) {
     if (node?.type === 'cdn') {
@@ -833,7 +834,13 @@ function _resolveXrayTlsClientHints(node) {
         return { sni: dom, host: dom, allowInsecure: false, source: tlsSource };
     }
     // self-signed
-    return { sni: fallbackSni, host: fallbackSni, allowInsecure: true, source: 'self-signed' };
+    return {
+        sni: fallbackSni,
+        host: fallbackSni,
+        allowInsecure: true,
+        pinnedPeerCertSha256: node?.tlsCertSha256 || '',
+        source: 'self-signed',
+    };
 }
 
 /**
@@ -878,6 +885,7 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
             params.set('alpn', inbound.alpn.join(','));
         }
         if (tls.allowInsecure) params.set('allowInsecure', '1');
+        if (tls.pinnedPeerCertSha256) params.set('pcs', tls.pinnedPeerCertSha256);
     }
 
     if (transport === 'ws') {
@@ -1769,8 +1777,11 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
                 streamSettings.tlsSettings = {
                     serverName: tls.sni || host,
                     fingerprint: inbound.fingerprint || 'chrome',
-                    allowInsecure: tls.allowInsecure,
                 };
+                // Xray 26.2.6+ refuses the whole config when allowInsecure is set.
+                if (tls.pinnedPeerCertSha256) {
+                    streamSettings.tlsSettings.pinnedPeerCertSha256 = tls.pinnedPeerCertSha256;
+                }
                 if (inbound.alpn && inbound.alpn.length > 0) {
                     streamSettings.tlsSettings.alpn = inbound.alpn;
                 }
@@ -1852,10 +1863,13 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
             security: 'tls',
             tlsSettings: {
                 serverName: cfg.sni || cfg.host,
-                allowInsecure: !cfg.hasCert,
                 alpn: ['h3'],
             },
         };
+        // Xray 26.2.6+ refuses the whole config when allowInsecure is set.
+        if (!cfg.hasCert && node.tlsCertSha256) {
+            streamSettings.tlsSettings.pinnedPeerCertSha256 = node.tlsCertSha256;
+        }
 
         if (cfg.obfs && cfg.obfsPassword) {
             streamSettings.udpmasks = [{ type: cfg.obfs, settings: { password: cfg.obfsPassword } }];

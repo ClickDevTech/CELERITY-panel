@@ -519,6 +519,7 @@ function nodeMetaFor(node) {
                             <option value="vless">VLESS</option>
                             <option value="vmess">VMess</option>
                         </select>
+                        <div class="form-hint" style="margin-top:3px"><%= t('network.tunnelProtocolHint') %></div>
                     </div>
                 </div>
                 <div class="form-row">
@@ -539,6 +540,7 @@ function nodeMetaFor(node) {
                             <option value="tls">TLS</option>
                             <option value="reality">REALITY</option>
                         </select>
+                        <div class="form-hint" style="margin-top:3px"><%= t('network.tunnelSecurityHint') %></div>
                     </div>
                 </div>
 
@@ -630,6 +632,7 @@ function nodeMetaFor(node) {
                                 <input type="checkbox" name="muxEnabled" id="muxEnabledCheck">
                                 <span><%= t('network.muxEnabled') %></span>
                             </label>
+                            <div class="form-hint" style="margin-top:3px"><%= t('network.muxForwardHint') %></div>
                         </div>
                         <div class="form-group">
                             <label><%= t('network.muxConcurrency') %></label>
@@ -662,13 +665,6 @@ function nodeMetaFor(node) {
                         <div class="form-group">
                             <label><%= t('network.priority') %></label>
                             <input type="number" name="priority" class="form-input" value="100" min="1" max="999">
-                        </div>
-                        <div class="form-group">
-                            <!-- Tunnel domain (reverse only) -->
-                            <div id="tunnelDomainGroup">
-                                <label><%= t('network.tunnelDomain') %></label>
-                                <input type="text" name="tunnelDomain" class="form-input" value="reverse.tunnel.internal">
-                            </div>
                         </div>
                     </div>
                 </details>

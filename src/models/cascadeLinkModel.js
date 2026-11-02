@@ -89,6 +89,8 @@ const cascadeLinkSchema = new mongoose.Schema({
         default: 'pending',
     },
     lastError: { type: String, default: '' },
+    // CASCADE_CONFIG_FORMAT of the last successful deploy; 0 = deployed before tracking.
+    configFormat: { type: Number, default: 0 },
     lastHealthCheck: { type: Date, default: null },
     latencyMs: { type: Number, default: null },
 }, { timestamps: true });

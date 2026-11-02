@@ -120,11 +120,11 @@ async function loadCronTargetNodes(nodeIds) {
   });
 }
 
-function sendJsonError(res, error, fallbackStatus = 500) {
-  const status = Number.isInteger(error?.statusCode) ? error.statusCode : fallbackStatus;
+function sendJsonError(res, error, fallbackMessage) {
+  const status = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
   return res.status(status).json({
     success: false,
-    error: error?.expose ? error.message : (status < 500 ? error.message : 'Broadcast cron operation failed'),
+    error: error?.expose ? error.message : (status < 500 ? error.message : fallbackMessage),
   });
 }
 
@@ -189,7 +189,7 @@ router.post('/broadcast/cron/apply', writeLimiter, async (req, res) => {
     return res.json(result);
   } catch (error) {
     logger.warn('[PanelBroadcast] Multicast cron failed', { error: error.message });
-    return sendJsonError(res, error);
+    return sendJsonError(res, error, 'Broadcast cron operation failed');
   }
 });
 
@@ -212,7 +212,7 @@ router.get('/broadcast/jobs/xray-releases', async (_req, res) => {
     return res.json(await xrayVersionService.getVersionInfo());
   } catch (error) {
     logger.warn('[PanelBroadcast] Xray releases failed', { error: error.message });
-    return sendJsonError(res, error);
+    return sendJsonError(res, error, 'Could not load Xray releases');
   }
 });
 
@@ -224,7 +224,7 @@ router.post('/broadcast/jobs/cancel', jobsCancelLimiter, (req, res) => {
   try {
     return res.json(bulkActionService.cancel(jobActor(req)));
   } catch (error) {
-    return sendJsonError(res, error);
+    return sendJsonError(res, error, 'Bulk action failed');
   }
 });
 
@@ -238,7 +238,7 @@ router.post('/broadcast/jobs/:action/preview', jobsPreviewLimiter, async (req, r
     return res.json(result);
   } catch (error) {
     if (!error.expose) logger.warn('[PanelBroadcast] Bulk preview failed', { error: error.message });
-    return sendJsonError(res, error);
+    return sendJsonError(res, error, 'Bulk action failed');
   }
 });
 
@@ -255,7 +255,7 @@ router.post('/broadcast/jobs/:action/start', jobsStartLimiter, async (req, res) 
     return res.status(202).json(result);
   } catch (error) {
     if (!error.expose) logger.warn('[PanelBroadcast] Bulk start failed', { error: error.message });
-    return sendJsonError(res, error);
+    return sendJsonError(res, error, 'Bulk action failed');
   }
 });
 

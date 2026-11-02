@@ -3,6 +3,7 @@
  */
 
 const { Client } = require('ssh2');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
@@ -430,6 +431,49 @@ function execSSH(conn, command) {
     });
 }
 
+const EMPTY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+
+/**
+ * SHA-256 (hex) of the first certificate in a PEM bundle. That is the leaf
+ * `openssl x509 -outform der | sha256sum` prints, which is what clients pin.
+ */
+function leafCertSha256(pem) {
+    const match = String(pem || '').match(/-----BEGIN CERTIFICATE-----([A-Za-z0-9+/=\s]+)-----END CERTIFICATE-----/);
+    if (!match) return '';
+    const der = Buffer.from(match[1].replace(/\s/g, ''), 'base64');
+    if (!der.length) return '';
+    return crypto.createHash('sha256').update(der).digest('hex');
+}
+
+/**
+ * Persist a certificate pin. No-op when the value is empty, the hash of an
+ * empty file, or already stored.
+ * @returns {Promise<boolean>} true when the database changed
+ */
+async function storeTlsCertSha256(node, hash) {
+    const normalized = String(hash || '').trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(normalized) || normalized === EMPTY_SHA256) return false;
+    if (node.tlsCertSha256 === normalized) return false;
+    const HyNode = require('../models/hyNodeModel');
+    await HyNode.updateOne({ _id: node._id }, { $set: { tlsCertSha256: normalized } });
+    node.tlsCertSha256 = normalized;
+    return true;
+}
+
+/**
+ * Store the leaf SHA-256 of the certificate at `certPath` on the node, so
+ * subscriptions can pin it instead of emitting allowInsecure.
+ */
+async function saveSelfSignedCertHash(conn, node, certPath, log) {
+    const result = await execSSH(conn, `openssl x509 -in ${certPath} -outform der 2>/dev/null | sha256sum`);
+    const hash = String(result.output || '').trim().split(/\s+/)[0].toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(hash) || hash === EMPTY_SHA256) {
+        log(`Warning: could not read the certificate hash of ${certPath}; clients cannot pin it`);
+        return;
+    }
+    await storeTlsCertSha256(node, hash);
+}
+
 /**
  * Build the error raised when a service is not active after a restart.
  * The restart scripts print status and journal output before the final
@@ -677,10 +721,18 @@ ls -la /etc/hysteria/*.pem
                 
                 log('Panel certificates copied successfully');
                 useTlsFiles = true;
+                // The file is the panel certificate, but a node without a domain
+                // is advertised by IP. Clients pin the leaf instead of failing
+                // name checks. A renewed cert is pinned again when sync uploads it.
+                const pinned = await storeTlsCertSha256(node, leafCertSha256(panelCerts.cert));
+                if (!pinned && !node.tlsCertSha256) {
+                    await saveSelfSignedCertHash(conn, node, '/etc/hysteria/cert.pem', log);
+                }
             } else {
                 log('Warning: Could not read panel certificates, falling back to self-signed');
                 const certResult = await execSSH(conn, SELF_SIGNED_CERT_SCRIPT);
                 logs.push(certResult.output);
+                await saveSelfSignedCertHash(conn, node, '/etc/hysteria/cert.pem', log);
                 useTlsFiles = true;
             }
             
@@ -693,6 +745,7 @@ ls -la /etc/hysteria/*.pem
             if (!certResult.success) {
                 throw new Error(`Certificate generation failed: ${certResult.error}`);
             }
+            await saveSelfSignedCertHash(conn, node, '/etc/hysteria/cert.pem', log);
             log('Certificate ready (self-signed)');
             useTlsFiles = true;
             
@@ -1284,6 +1337,7 @@ fi
             if (!certResult.success) {
                 log(`Self-signed cert generation warning: ${certResult.error}`);
             }
+            await saveSelfSignedCertHash(conn, node, '/usr/local/etc/xray/cert.pem', log);
         } else if (xrayCfg.front?.enabled && xrayCfg.tlsSource === 'acme') {
             log('TLS source: acme — the reverse proxy front obtains and renews the certificate itself.');
         } else if (terminatesTls && xrayCfg.tlsSource === 'acme') {
@@ -1875,6 +1929,8 @@ module.exports = {
     getXrayNodeLogs,
     getPanelCertificates,
     isSameVpsAsPanel,
+    leafCertSha256,
+    storeTlsCertSha256,
     isLoopbackAddress,
     buildXrayPermsScript,
     buildXrayUnitUserScript,

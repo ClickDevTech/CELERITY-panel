@@ -1,0 +1,41 @@
+name: Xray core matrix
+
+# Generated node and cascade configs against real Xray releases: catches
+# core removals (legacy reverse, allowInsecure, plaintext VLESS) before users do.
+on:
+  push:
+    tags: ['v*']
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: 'Comma-separated Xray versions (floor, kcp-floor, latest, prerelease or x.y.z)'
+        default: 'floor,kcp-floor,latest,prerelease'
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
+
+      - name: Run matrix
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          XRAY_MATRIX_CACHE: ${{ runner.temp }}/xray-matrix
+          VERSIONS: ${{ github.event.inputs.versions || 'floor,kcp-floor,latest,prerelease' }}
+        run: npm run test:xray-matrix -- "$VERSIONS" --e2e

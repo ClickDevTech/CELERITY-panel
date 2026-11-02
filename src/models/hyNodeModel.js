@@ -345,7 +345,7 @@ const xrayConfigSchema = new mongoose.Schema({
     //   panel       — inline panel's LE cert (PANEL_DOMAIN); no node files.
     //   acme        — acme.sh on node issues LE cert for node.domain; auto-renews.
     //   manual      — operator pastes node.domain + PEM; inlined into config.json.
-    //   self-signed — openssl on node; client needs allowInsecure (testing only).
+    //   self-signed — openssl on node; clients pin tlsCertSha256 (testing only).
     tlsSource: { type: String, enum: ['panel', 'acme', 'manual', 'self-signed'], default: 'panel' },
     // Empty acmeEmail = use panel-wide ACME_EMAIL env var.
     acmeEmail: { type: String, default: '' },
@@ -576,6 +576,9 @@ const hyNodeSchema = new mongoose.Schema({
         cert: { type: String, default: '/etc/hysteria/cert.pem' },
         key: { type: String, default: '/etc/hysteria/key.pem' },
     },
+    // Leaf SHA-256 (hex) of the certificate the node serves when clients cannot
+    // verify it by name. Read at setup. Clients pin it: Xray 26.2.6+ rejects allowInsecure.
+    tlsCertSha256: { type: String, default: '', match: /^([a-f0-9]{64})?$/ },
     
     outbounds: { type: [outboundSchema], default: [] },
     aclRules: { type: [String], default: [] },

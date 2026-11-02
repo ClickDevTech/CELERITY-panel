@@ -29,6 +29,15 @@ const KCP_DEFAULTS = {
 
 // finalmask "mkcp-legacy" (replacement for kcpSettings.header/seed) first shipped in this release.
 const MIN_KCP_XRAY_VERSION = '26.6.1';
+// VLESS Reverse Proxy, which replaced the removed top-level `reverse` section.
+const MIN_REVERSE_XRAY_VERSION = '25.9.11';
+// VLESS Encryption, which protects VLESS links without TLS/REALITY.
+const MIN_VLESS_ENC_XRAY_VERSION = '25.9.5';
+// Lowest core that runs every cascade link type except mKCP.
+const MIN_CASCADE_XRAY_VERSION = MIN_REVERSE_XRAY_VERSION;
+// Bump when generated link ends stop interoperating with the previous ones:
+// links deployed in an older format are redeployed on the next sync of their nodes.
+const CASCADE_CONFIG_FORMAT = 1;
 
 const KCP_NUMERIC_FIELDS = {
     kcpMtu: KCP_LIMITS.mtu,
@@ -45,6 +54,44 @@ function normalizeTransport(transport) {
 
 function isKcpTransport(transport) {
     return transport === 'kcp';
+}
+
+/**
+ * Tunnel protocol actually deployed: VLESS Reverse Proxy has no VMess
+ * counterpart, so reverse links always run VLESS.
+ */
+function cascadeProtocol(link) {
+    return link?.mode === 'forward' && link.tunnelProtocol === 'vmess' ? 'vmess' : 'vless';
+}
+
+function validateTunnelProtocol(mode, protocol) {
+    if (protocol === undefined || protocol === null || protocol === '') return null;
+    if (!['vless', 'vmess'].includes(protocol)) return 'tunnelProtocol must be "vless" or "vmess"';
+    if (protocol === 'vmess' && (mode || 'reverse') !== 'forward') {
+        return 'Reverse links use VLESS Reverse Proxy; VMess is supported only for forward chains';
+    }
+    return null;
+}
+
+/**
+ * Plaintext VLESS links get VLESS Encryption: Xray refuses VLESS without
+ * TLS/REALITY/encryption to a public address.
+ */
+function usesLinkVlessEncryption(link) {
+    return cascadeProtocol(link) === 'vless' && (link?.tunnelSecurity || 'none') === 'none';
+}
+
+/**
+ * Lowest Xray version able to run `link`, with the feature that sets it.
+ * @returns {{version: string, feature: string}|null}
+ */
+function linkXrayRequirement(link) {
+    const { compareVersions } = require('../services/xrayVersionService');
+    const needs = [];
+    if (isKcpTransport(link?.tunnelTransport)) needs.push({ version: MIN_KCP_XRAY_VERSION, feature: 'mKCP' });
+    if (link?.mode !== 'forward') needs.push({ version: MIN_REVERSE_XRAY_VERSION, feature: 'VLESS Reverse Proxy' });
+    if (usesLinkVlessEncryption(link)) needs.push({ version: MIN_VLESS_ENC_XRAY_VERSION, feature: 'VLESS Encryption' });
+    return needs.reduce((max, need) => (!max || compareVersions(need.version, max.version) > 0 ? need : max), null);
 }
 
 /**
@@ -152,8 +199,16 @@ module.exports = {
     KCP_DEFAULTS,
     KCP_INPUT_FIELDS,
     MIN_KCP_XRAY_VERSION,
+    MIN_REVERSE_XRAY_VERSION,
+    MIN_VLESS_ENC_XRAY_VERSION,
+    MIN_CASCADE_XRAY_VERSION,
+    CASCADE_CONFIG_FORMAT,
     normalizeTransport,
     isKcpTransport,
+    cascadeProtocol,
+    validateTunnelProtocol,
+    usesLinkVlessEncryption,
+    linkXrayRequirement,
     validateTransportSecurity,
     sanitizeKcpInput,
     generateKcpPassword,

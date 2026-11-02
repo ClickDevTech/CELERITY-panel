@@ -174,6 +174,28 @@ const _failedNodeBackoff = new Map(); // nodeId -> { attempts, nextAttemptAt }
 const _MAX_RETRY_ATTEMPTS = 6;
 const _BACKOFF_BASE_MS = 5 * 60 * 1000;
 
+// TLS cascade links embed the panel cert on their listening end.
+async function redeployTlsCascadeLinks() {
+    try {
+        const CascadeLink = require('../models/cascadeLinkModel');
+        const cascadeService = require('./cascadeService');
+        const links = await CascadeLink.find({
+            active: true,
+            tunnelSecurity: 'tls',
+            status: { $in: ['deployed', 'online', 'offline', 'error'] },
+        }).populate('portalNode').populate('bridgeNode');
+        for (const link of links) {
+            const result = await cascadeService.deployLink(link).catch(err => ({ success: false, error: err.message }));
+            if (!result?.success) {
+                logger.warn(`[CertWatch] TLS cascade link ${link.name} redeploy failed: ${result?.error || 'unknown error'}`);
+            }
+        }
+        if (links.length) logger.info(`[CertWatch] Redeployed ${links.length} TLS cascade link(s)`);
+    } catch (err) {
+        logger.error(`[CertWatch] Failed to redeploy TLS cascade links: ${err.message}`);
+    }
+}
+
 async function checkPanelCertRotation(syncInstance) {
     const fs = require('fs');
     const path = require('path');
@@ -213,6 +235,7 @@ async function checkPanelCertRotation(syncInstance) {
                 configGen.invalidatePanelCertCache();
             }
         } catch (_) { /* configGen may not be loaded yet at first invocation */ }
+        await redeployTlsCascadeLinks();
     } else {
         logger.info(`[CertWatch] Retrying ${_failedNodeBackoff.size} previously-failed cert push(es)`);
     }
@@ -601,6 +624,64 @@ class SyncService {
      * did not confirm health" — both return false. `report.error` carries the
      * reason of any false return.
      */
+    /**
+     * Add the node's cascade links (reverse portals, forward chain, forward-hop
+     * inbounds) to a generated main config and return the new JSON.
+     * @param {Object} [filterOpts] - passed to cascadeService.filterLinksForNodeXray
+     */
+    async applyCascadeLinks(node, configContent, filterOpts = {}) {
+        const CascadeLink = require('../models/cascadeLinkModel');
+        const cascadeService = require('./cascadeService');
+        const configObj = JSON.parse(configContent);
+        const allPortalLinks = await CascadeLink.find({ portalNode: node._id, active: true }).populate('bridgeNode');
+        const hopCandidates = await CascadeLink.find({ bridgeNode: node._id, mode: 'forward', active: true });
+
+        if (allPortalLinks.length > 0 || hopCandidates.length > 0) {
+            // Cascade routing applies to ALL client-facing inbounds (main +
+            // extras), so traffic from any inbound goes into the cascade.
+            const inboundTags = [
+                node.xray?.inboundTag || 'vless-in',
+                ...(node.xray?.extraInbounds || [])
+                    .map(i => i.inboundTag)
+                    .filter(Boolean),
+            ];
+
+            const { reverseLinks, forwardLinks, forwardHopLinks } = await cascadeService.filterLinksForNodeXray(node, {
+                reverseLinks: allPortalLinks.filter(l => l.mode !== 'forward'),
+                forwardLinks: await this._getForwardChainLinks(node._id),
+                forwardHopLinks: hopCandidates,
+            }, filterOpts);
+
+            if (reverseLinks.length > 0) {
+                configGenerator.applyReversePortal(configObj, reverseLinks, inboundTags);
+            }
+            if (forwardLinks.length > 0) {
+                configGenerator.applyForwardChain(configObj, forwardLinks, inboundTags);
+            }
+            if (forwardHopLinks.length > 0) {
+                configGenerator.applyForwardHopInbound(configObj, forwardHopLinks);
+            }
+            const total = reverseLinks.length + forwardLinks.length + forwardHopLinks.length;
+            logger.info(`[Xray Sync] Node ${node.name}: applied ${total} cascade link(s) (${reverseLinks.length}R/${forwardLinks.length}F/${forwardHopLinks.length}H)`);
+        }
+
+        // geoip:private block must be last, after all cascade rules
+        configGenerator.ensurePrivateIpBlock(configObj);
+        return JSON.stringify(configObj, null, 2);
+    }
+
+    /**
+     * Main config the next sync would push, for testing it against another
+     * Xray release before switching to it. Links are filtered for `version`
+     * without marking anything in the database.
+     */
+    async buildXrayConfigCandidate(node, version) {
+        await ensureManualKeyLoaded(node);
+        const users = await this._getUsersForNode(node);
+        const configContent = configGenerator.generateXrayConfig(node, users);
+        return this.applyCascadeLinks(node, configContent, { version, dryRun: true });
+    }
+
     async updateXrayNodeConfig(node, { lockHeld = false, report = null } = {}) {
         const lockKey = String(node?._id || '');
         if (!lockHeld && !nodeSetupLock.acquire(lockKey, 'Xray config sync')) {
@@ -667,6 +748,7 @@ class SyncService {
         let configRejected = null;
         let configUploadFailed = null;
         let agentReloaded = false;
+        let cascadeApplied = false;
 
         // Step 1: Upload config.json via SSH (only if SSH is configured)
         if (node.ssh?.password || node.ssh?.privateKey) {
@@ -674,53 +756,9 @@ class SyncService {
             try {
                 await ssh.connect();
 
-                // Apply cascade settings (reverse-portal + forward-chain + forward-hop inbounds)
                 try {
-                    const CascadeLink = require('../models/cascadeLinkModel');
-                    const cascadeService = require('./cascadeService');
-                    const allPortalLinks = await CascadeLink.find({ portalNode: node._id, active: true }).populate('bridgeNode');
-                    const hopCandidates = await CascadeLink.find({ bridgeNode: node._id, mode: 'forward', active: true });
-
-                    if (allPortalLinks.length > 0 || hopCandidates.length > 0) {
-                        const configObj = JSON.parse(configContent);
-                        // Cascade routing applies to ALL client-facing inbounds
-                        // (main + extras), so traffic from any inbound goes
-                        // into the cascade.
-                        const inboundTags = [
-                            node.xray?.inboundTag || 'vless-in',
-                            ...(node.xray?.extraInbounds || [])
-                                .map(i => i.inboundTag)
-                                .filter(Boolean),
-                        ];
-
-                        const { reverseLinks, forwardLinks, forwardHopLinks } = await cascadeService.filterLinksForNodeXray(node, {
-                            reverseLinks: allPortalLinks.filter(l => l.mode !== 'forward'),
-                            forwardLinks: await this._getForwardChainLinks(node._id),
-                            forwardHopLinks: hopCandidates,
-                        });
-
-                        if (reverseLinks.length > 0) {
-                            configGenerator.applyReversePortal(configObj, reverseLinks, inboundTags);
-                        }
-                        if (forwardLinks.length > 0) {
-                            configGenerator.applyForwardChain(configObj, forwardLinks, inboundTags);
-                        }
-                        if (forwardHopLinks.length > 0) {
-                            configGenerator.applyForwardHopInbound(configObj, forwardHopLinks);
-                        }
-
-                        // geoip:private block must be last, after all cascade rules
-                        configGenerator.ensurePrivateIpBlock(configObj);
-
-                        configContent = JSON.stringify(configObj, null, 2);
-                        const total = reverseLinks.length + forwardLinks.length + forwardHopLinks.length;
-                        logger.info(`[Xray Sync] Node ${node.name}: applied ${total} cascade link(s) (${reverseLinks.length}R/${forwardLinks.length}F/${forwardHopLinks.length}H)`);
-                    } else {
-                        // No cascade links, still ensure geoip:private is present
-                        const configObj = JSON.parse(configContent);
-                        configGenerator.ensurePrivateIpBlock(configObj);
-                        configContent = JSON.stringify(configObj, null, 2);
-                    }
+                    configContent = await this.applyCascadeLinks(node, configContent);
+                    cascadeApplied = true;
                 } catch (cascadeErr) {
                     logger.warn(`[Xray Sync] Node ${node.name}: cascade apply skipped: ${cascadeErr.message}`);
                 }
@@ -972,6 +1010,13 @@ class SyncService {
             await frontService.clearFrontRollbackState(node._id).catch(() => {});
         }
         if (report) report.applied = true;
+
+        if (cascadeApplied && node.cascadeRole && node.cascadeRole !== 'standalone') {
+            const cascadeService = require('./cascadeService');
+            const cascadeErrors = await cascadeService.redeployOutdatedLinks(node)
+                .catch(error => [`outdated link check failed: ${error.message}`]);
+            if (cascadeErrors.length > 0 && report) report.cascadeErrors = cascadeErrors;
+        }
 
         // Update node status. checkXrayAgentHealth owns it: it counts failures
         // and flips to offline at the threshold. Overwriting the status here
@@ -1230,6 +1275,23 @@ class SyncService {
                 if (certResult.success) {
                     if (certResult.action === 'uploaded') {
                         logger.info(`[Sync] ${node.name}: certificates uploaded from panel`);
+                    }
+                    // Domain-less nodes are published by IP, so clients pin the
+                    // leaf. Refresh the pin when the file changes, and fill it
+                    // in once for nodes set up before pinning existed.
+                    if (!node.domain && (certResult.action === 'uploaded' || !node.tlsCertSha256)) {
+                        try {
+                            let hash = certResult.action === 'uploaded'
+                                ? nodeSetup.leafCertSha256(panelCerts?.cert)
+                                : '';
+                            if (!hash) {
+                                const remote = await ssh.exec('openssl x509 -in /etc/hysteria/cert.pem -outform der 2>/dev/null | sha256sum');
+                                hash = String(remote.stdout || '').trim().split(/\s+/)[0];
+                            }
+                            await nodeSetup.storeTlsCertSha256(node, hash);
+                        } catch (err) {
+                            logger.warn(`[Sync] ${node.name}: certificate pin not saved: ${err.message}`);
+                        }
                     }
                 } else {
                     logger.warn(`[Sync] ${node.name}: certificate issue - ${certResult.error}`);

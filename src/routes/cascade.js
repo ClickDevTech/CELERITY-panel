@@ -18,6 +18,7 @@ const {
     KCP_INPUT_FIELDS,
     isKcpTransport,
     validateTransportSecurity,
+    validateTunnelProtocol,
     sanitizeKcpInput,
     generateKcpPassword,
 } = require('../utils/cascadeTransport');
@@ -184,6 +185,10 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
         const linkMode = mode || 'reverse';
         if (!['reverse', 'forward'].includes(linkMode)) {
             return res.status(400).json({ error: 'mode must be "reverse" or "forward"' });
+        }
+        const protocolError = validateTunnelProtocol(linkMode, tunnelProtocol);
+        if (protocolError) {
+            return res.status(400).json({ error: protocolError });
         }
 
         const port = parseInt(tunnelPort) || 10086;
@@ -358,6 +363,7 @@ router.put('/links/:id', requireScope('nodes:write'), async (req, res) => {
         let currentLink = null;
         const needsCurrentLink = updates.tunnelPort !== undefined ||
             updates.mode !== undefined ||
+            updates.tunnelProtocol !== undefined ||
             updates.tunnelSecurity !== undefined ||
             updates.tunnelTransport !== undefined ||
             KCP_INPUT_FIELDS.some(key => req.body[key] !== undefined) ||
@@ -370,6 +376,17 @@ router.put('/links/:id', requireScope('nodes:write'), async (req, res) => {
         if (needsCurrentLink) {
             currentLink = await CascadeLink.findById(req.params.id);
             if (!currentLink) return res.status(404).json({ error: 'Cascade link not found' });
+        }
+
+        if (currentLink && (updates.mode !== undefined || updates.tunnelProtocol !== undefined)) {
+            const effectiveMode = updates.mode || currentLink.mode || 'reverse';
+            if (updates.tunnelProtocol === undefined && effectiveMode !== 'forward' && currentLink.tunnelProtocol === 'vmess') {
+                updates.tunnelProtocol = 'vless';
+            }
+            const protocolError = validateTunnelProtocol(effectiveMode, updates.tunnelProtocol);
+            if (protocolError) {
+                return res.status(400).json({ error: protocolError });
+            }
         }
 
         if (updates.tunnelPort !== undefined) {

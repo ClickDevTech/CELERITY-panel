@@ -174,14 +174,15 @@ The panel generates Xray-core configurations using the following mechanisms:
 
 | Mechanism | Purpose |
 |-----------|---------|
-| **Reverse Proxy** | Xray bridge/portal — allows a server behind NAT to initiate a connection to a public node and receive traffic through it |
+| **VLESS Reverse Proxy** | Bridge/portal: the portal's VLESS client carries `reverse.tag`, the bridge's VLESS outbound carries `settings.reverse` — allows a server behind NAT to initiate a connection to a public node and receive traffic through it |
 | **Outbound Chaining** | Sequential proxying through multiple outbounds via `proxySettings.tag` |
 | **REALITY** | TLS handshake camouflage to look like a connection to a legitimate site; no domain or certificate required |
+| **VLESS Encryption** | Protects VLESS links with security `none`; keys are derived per link by the panel |
 | **Transport Layer Proxy** | `transportLayer: true` mode for correct REALITY application in hop chains |
 
 #### Link Modes
 
-**Reverse Proxy** — classic Xray reverse scheme. The Bridge server (typically abroad) initiates a persistent connection to the Portal server. Clients connect to Portal, traffic exits through Bridge.
+**Reverse Proxy** — Xray VLESS Reverse Proxy (always VLESS, VMess is not available). The Bridge server (typically abroad) initiates a persistent connection to the Portal server. Clients connect to Portal, traffic exits through Bridge.
 
 ```
 Client ──▶ Portal (entry) ◀── tunnel ── Bridge (exit) ──▶ Internet
@@ -209,6 +210,18 @@ Tunnel-REALITY is configured **independently** from the client-facing REALITY on
 - Using different SNI/destination for clients vs. tunnels
 - Auto-generating x25519 keys and shortIds when creating links
 
+#### Tunnel Security and Xray Versions
+
+| Security | What the panel deploys |
+|----------|------------------------|
+| None | VLESS links get VLESS Encryption (Xray refuses plain VLESS to a public address since 26.10.21); forward VMess links use VMess `auto` |
+| TLS | The listening node serves the panel certificate; the dialing node verifies it against `PANEL_DOMAIN`. The panel certificate must be readable by the panel; TLS links are redeployed when it rotates |
+| REALITY | Tunnel REALITY, see above |
+
+Both ends of a link need at least Xray **25.9.11** for reverse links, **25.9.5** for forward VLESS links with security `none`, and **26.6.1** for mKCP. The panel refuses to deploy a link on an older core and refuses an Xray version change (single or bulk) below what the node's links need.
+
+Links deployed by an older panel version (legacy `reverse` section, plain VLESS tunnels) are redeployed on both ends automatically the first time one of their nodes is synced. A link whose redeploy fails is shown as an error on the Network Map; deploy it manually after fixing the cause.
+
 #### Post-Deploy Recommendations
 
 1. Check hop statuses on the Network Map
@@ -222,6 +235,7 @@ Tunnel-REALITY is configured **independently** from the client-facing REALITY on
 | REALITY + WebSocket | WebSocket doesn't support uTLS fingerprint required by REALITY |
 | Forward Chain without public IP | Each hop must accept incoming connections |
 | Mixed modes in one chain | Reverse and Forward use different Xray mechanisms and cannot be combined |
+| VMess on reverse links | VLESS Reverse Proxy has no VMess counterpart |
 | Same port on relay for two hops | A relay that is both bridge and portal requires different ports for incoming and outgoing tunnels |
 
 ---
