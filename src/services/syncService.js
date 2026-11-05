@@ -51,6 +51,11 @@ const AGENT_TRANSIENT_ERROR_CODES = new Set([
     'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EPIPE',
 ]);
 
+// A failing full sync must not be retried by every health tick.
+const AGENT_RESYNC_COOLDOWN_MS = 10 * 60 * 1000;
+// Go marshals an unset time.Time as 0001-01-01; anything before this is "never".
+const AGENT_NEVER_SYNCED_BEFORE_MS = Date.UTC(2000, 0, 1);
+
 // Fields whose change requires regenerating the runtime config on the node.
 // Anything not listed here (name, groups, flag, rankingCoefficient, ssh.*, ...)
 // is treated as cosmetic and does not trigger an auto-push.
@@ -324,6 +329,7 @@ class SyncService {
         this.isSyncing = false;
         this.lastSyncTime = null;
         this.pendingPushTimers = new Map();
+        this.agentResyncAt = new Map();
     }
 
     /**
@@ -414,6 +420,31 @@ class SyncService {
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
+    }
+
+    /**
+     * User list in the shape the agent /sync endpoint expects.
+     */
+    _agentUserPayload(node, users) {
+        const xray = node.xray || {};
+        const flow = ((xray.security === 'reality' || xray.security === 'tls') && xray.transport === 'tcp')
+            ? (xray.flow || 'xtls-rprx-vision') : '';
+        return users
+            .map(u => ({ id: u.xrayUuid, email: u.userId, flow }))
+            .filter(u => u.id);
+    }
+
+    /**
+     * Hand the node's current user list to a freshly started agent.
+     * Until its first /sync the agent's own store is empty, and it rewrites
+     * config.json from that store on startup.
+     * @returns {Promise<number>} number of users sent
+     */
+    async pushUsersToAgent(node) {
+        const users = this._agentUserPayload(node, await this._getUsersForNode(node));
+        await this._waitForAgentReady(node);
+        await this._agentRequest(node, 'POST', '/sync', { users });
+        return users.length;
     }
 
     /**
@@ -940,13 +971,7 @@ class SyncService {
         // Step 3: Sync users via Agent (builds the runtime user list in Xray without restart)
         if (hasAgent) {
             try {
-                const xray = node.xray || {};
-                const userPayload = users.map(u => {
-                    const flow = ((xray.security === 'reality' || xray.security === 'tls') && xray.transport === 'tcp')
-                        ? (xray.flow || 'xtls-rprx-vision') : '';
-                    return { id: u.xrayUuid, email: u.userId, flow };
-                }).filter(u => u.id);
-
+                const userPayload = this._agentUserPayload(node, users);
                 await this._agentRequest(node, 'POST', '/sync', { users: userPayload });
                 logger.info(`[Xray Sync] Node ${node.name}: synced ${userPayload.length} users via agent`);
             } catch (error) {
@@ -1115,6 +1140,36 @@ class SyncService {
     }
 
     /**
+     * Schedule a full sync for an agent that reports it never received one.
+     * Such an agent keeps config.json in line with its empty store, so the
+     * node serves no users until the panel pushes the list.
+     * @param {Object} node - Xray node with an agent
+     * @param {string} [lastSync] - `last_sync` from agent GET /info
+     * @returns {boolean} true when a sync was scheduled
+     */
+    _healUnsyncedAgent(node, lastSync) {
+        if (typeof lastSync !== 'string') return false;
+        const syncedAt = Date.parse(lastSync);
+        if (!Number.isFinite(syncedAt) || syncedAt >= AGENT_NEVER_SYNCED_BEFORE_MS) return false;
+        if (node.cascadeRole === 'bridge') return false;
+
+        const key = String(node._id);
+        if (nodeSetupLock.holder(key)) return false;
+
+        const now = Date.now();
+        const last = this.agentResyncAt.get(key);
+        if (last !== undefined && now - last < AGENT_RESYNC_COOLDOWN_MS) return false;
+        for (const [id, at] of this.agentResyncAt) {
+            if (now - at >= AGENT_RESYNC_COOLDOWN_MS) this.agentResyncAt.delete(id);
+        }
+        this.agentResyncAt.set(key, now);
+
+        logger.info(`[Agent] ${node.name}: agent never received a sync, scheduling full sync`);
+        this.schedulePush(node._id);
+        return true;
+    }
+
+    /**
      * Health-check an Xray node via Agent GET /info and refresh metadata
      * (xrayVersion, agentVersion, agentStatus, status). Does NOT touch
      * `onlineUsers` — that counter is owned by collectXrayTrafficStats,
@@ -1149,6 +1204,7 @@ class SyncService {
                 webhook.emit(webhook.EVENTS.NODE_ONLINE, { nodeId: node._id, name: node.name });
             }
 
+            this._healUnsyncedAgent(node, data.last_sync);
             return 0;
         } catch (error) {
             logger.warn(`[Agent] ${node.name}: unavailable - ${error.message}`);

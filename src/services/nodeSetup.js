@@ -1768,6 +1768,17 @@ async function setupXrayNodeWithAgent(node, options = {}) {
         await HyNode.updateOne({ _id: preparedNode._id }, { $set: updates });
         log('Agent metadata saved to database');
 
+        // A fresh agent rewrites config.json from its empty store a few seconds
+        // after start, so it must receive the user list before setup reports success.
+        log('Syncing users to agent...');
+        let syncedCount;
+        try {
+            syncedCount = await require('./syncService').pushUsersToAgent(preparedNode);
+        } catch (syncErr) {
+            throw new Error(`Agent did not accept the user list: ${syncErr.message}`);
+        }
+        log(`Users synced via agent (${syncedCount})`);
+
         result.agentToken = agentToken;
 
     } catch (error) {
