@@ -150,10 +150,21 @@ Object.assign(locals, {
                 </label>
                 <div class="nf-savebar__actions">
                     <a href="/panel/nodes" class="btn"><%= t('common.cancel') %></a>
+                    <% if (node?._id) { %>
                     <button type="submit" class="btn btn-primary">
-                        <i class="ti <%= node?._id ? 'ti-device-floppy' : 'ti-plus' %>"></i>
-                        <%= node?._id ? t('nodes.saveNode') : t('nodes.createNode') %>
+                        <i class="ti ti-device-floppy"></i>
+                        <%= t('nodes.saveNode') %>
                     </button>
+                    <% } else { %>
+                    <button type="submit" class="btn" id="btnCreateNode">
+                        <i class="ti ti-plus"></i>
+                        <%= t('nodes.createNode') %>
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="btnCreateAndSetup" data-types="hysteria xray">
+                        <i class="ti ti-wand"></i>
+                        <%= t('nodes.createAndSetup') %>
+                    </button>
+                    <% } %>
                 </div>
             </div>
         </form>

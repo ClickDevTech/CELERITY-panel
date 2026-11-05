@@ -2243,7 +2243,7 @@ See the request body examples panel for representative variants.`,
                 responses: {
                     200: {
                         description: 'Matching nodes',
-                        content: { 'application/json': { schema: { type: 'object', properties: { nodes: { type: 'array', items: { type: 'object', properties: { _id: { type: 'string' }, type: { type: 'string', enum: ['hysteria', 'xray', 'virtual', 'cdn'] }, name: { type: 'string' } } } } } } } },
+                        content: { 'application/json': { schema: { type: 'object', properties: { nodes: { type: 'array', items: { type: 'object', properties: { _id: { type: 'string' }, type: { type: 'string', enum: ['hysteria', 'xray', 'virtual', 'cdn'] }, name: { type: 'string' }, hasSsh: { type: 'boolean', description: 'SSH password or private key is stored' } } } } } } } },
                     },
                     401: { $ref: '#/components/responses/Unauthorized' },
                     403: { $ref: '#/components/responses/Forbidden' },

@@ -221,13 +221,16 @@ router.get('/', requireScope('nodes:read'), async (req, res) => {
 /**
  * GET /nodes/check-ip - Check which protocol nodes exist for a given IP address.
  * Used by the UI to show a sibling-node hint when adding a node.
- * Returns { nodes: [{ type, name, _id }] } — only safe fields, no credentials.
+ * Returns { nodes: [{ type, name, _id, hasSsh }] } — credentials reduced to a flag.
  */
 router.get('/check-ip', requireScope('nodes:read'), async (req, res) => {
     try {
         const ip = (req.query.ip || '').trim();
         if (!ip) return res.json({ nodes: [] });
-        const nodes = await HyNode.find({ ip }).select('type name _id').lean();
+        const found = await HyNode.find({ ip }).select('type name _id ssh.password ssh.privateKey').lean();
+        const nodes = found.map(({ _id, type, name, ssh }) => ({
+            _id, type, name, hasSsh: !!(ssh?.password || ssh?.privateKey),
+        }));
         res.json({ nodes });
     } catch (error) {
         logger.error(`[Nodes API] check-ip error: ${error.message}`);

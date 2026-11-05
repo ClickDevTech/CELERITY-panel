@@ -573,6 +573,10 @@ const i18n = {
     resettingStatus: <%- JSON.stringify(t("nodes.resettingStatus")) %>,
     statusReset: <%- JSON.stringify(t("nodes.statusReset")) %>,
     autoSetup: <%- JSON.stringify(t("nodes.autoSetup")) %>,
+    createAndSetupNeedsSsh: <%- JSON.stringify(t("nodes.createAndSetupNeedsSsh")) %>,
+    createAndSetupSkipped: <%- JSON.stringify(t("nodes.createAndSetupSkipped")) %>,
+    siblingExistsHint: <%- JSON.stringify(t("nodes.siblingExistsHint")) %>,
+    siblingExistsNoSshHint: <%- JSON.stringify(t("nodes.siblingExistsNoSshHint")) %>,
     restart: <%- JSON.stringify(t("nodes.restart")) %>,
     restartSuccess: <%- JSON.stringify(t("nodes.restartSuccess")) %>,
     restartFailed: <%- JSON.stringify(t("nodes.restartFailed")) %>,
@@ -706,6 +710,13 @@ function nfAvailable(el) {
 function applyTypeVisibility(type) {
     const root = document.getElementById('nfTabbed');
     if (root) root.dataset.nodeType = type;
+    // The save bar sits outside #nfTabbed, so the CSS type filter misses it.
+    const createAndSetup = document.getElementById('btnCreateAndSetup');
+    if (createAndSetup) {
+        const canSetup = nfBelongsTo(createAndSetup, type);
+        createAndSetup.style.display = canSetup ? '' : 'none';
+        document.getElementById('btnCreateNode')?.classList.toggle('btn-primary', !canSetup);
+    }
 }
 
 // The `port` input is rendered once and moved between panes: Hysteria shows it
@@ -1915,9 +1926,9 @@ function clearLogs() {
     document.getElementById('logsOutput').innerHTML = '';
 }
 
-async function setupNode() {
+async function setupNode({ skipConfirm = false } = {}) {
     const confirmMsg = nodeType === 'xray' ? i18n.autoSetupConfirmXray : i18n.autoSetupConfirm;
-    if (!confirm(confirmMsg)) return;
+    if (!skipConfirm && !confirm(confirmMsg)) return;
     const btn = document.getElementById('btnSetup');
     btn.disabled = true;
     btn.innerHTML = '<span class="action-icon"><i class="ti ti-loader-2"></i></span><span>...</span>';
@@ -1938,6 +1949,22 @@ async function setupNode() {
         btn.innerHTML = '<span class="action-icon"><i class="ti ti-settings"></i></span><span>' + i18n.autoSetup + '</span>';
     }
 }
+
+<% if (node._id) { %>
+// "Create and set up" lands here with ?setup=1; that click was the consent, so
+// no second confirm. The flag is dropped first so a reload does not rerun it.
+(function() {
+    const params = new URLSearchParams(location.search);
+    if (params.get('setup') !== '1') return;
+    params.delete('setup');
+    const query = params.toString();
+    history.replaceState(null, '', location.pathname + (query ? '?' + query : '') + location.hash);
+    const btn = document.getElementById('btnSetup');
+    if (!btn || btn.disabled) return;
+    document.getElementById('setupResult').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setupNode({ skipConfirm: true });
+})();
+<% } %>
 
 async function getNodeLogs() {
     document.getElementById('setupResult').innerHTML = '<div class="alert">' + i18n.loadingLogs + '</div>';
@@ -2799,9 +2826,9 @@ function nodeFormBody(form) {
     return body;
 }
 
-function finishNodeSave(form, submit, message) {
+function finishNodeSave(form, submits, message) {
     delete form.dataset.saving;
-    if (submit) submit.disabled = false;
+    submits.forEach(button => { button.disabled = false; });
     if (form.dataset.wasDirty === '1') {
         const dirty = document.getElementById('nodeFormDirty');
         if (dirty) dirty.style.display = '';
@@ -2825,8 +2852,9 @@ document.getElementById('nodeForm')?.addEventListener('submit', async function(e
     this.dataset.saving = '1';
     hideNodeFormError();
 
-    const submit = this.querySelector('button[type="submit"]');
-    if (submit) submit.disabled = true;
+    const submits = this.querySelectorAll('button[type="submit"]');
+    submits.forEach(button => { button.disabled = true; });
+    const autoSetup = event.submitter?.id === 'btnCreateAndSetup';
     const type = document.querySelector('input[name="type"]:checked')?.value;
     const state = document.getElementById('cdnConnectionState');
     if (type === 'cdn' && state) {
@@ -2873,16 +2901,20 @@ document.getElementById('nodeForm')?.addEventListener('submit', async function(e
             try {
                 await sendFrontSite(nodeId, frontStagedSite);
             } catch (uploadError) {
-                const message = i18n.frontSiteUploadFailed.replace('{error}', uploadError.message);
+                // Setup now would publish the stock page in place of the decoy.
+                const message = i18n.frontSiteUploadFailed.replace('{error}', uploadError.message)
+                    + (autoSetup ? ' ' + i18n.createAndSetupSkipped : '');
                 const withError = panelNodeRedirect(redirect.split('?')[0] + '?error=' + encodeURIComponent(message));
                 if (!withError) throw new Error(message);
                 window.location.assign(withError);
                 return;
             }
         }
-        window.location.assign(redirect);
+        window.location.assign(autoSetup
+            ? redirect + (redirect.includes('?') ? '&' : '?') + 'setup=1'
+            : redirect);
     } catch (error) {
-        finishNodeSave(this, submit, error.message || i18n.error);
+        finishNodeSave(this, submits, error.message || i18n.error);
     }
 });
 
@@ -2970,6 +3002,13 @@ document.getElementById('generateSshKeyBtn')?.addEventListener('click', async fu
 <% if (!node?._id) { %>
 (function () {
     let siblingCheckTimer = null;
+    // Answer for one ip+type pair; anything else on screen may be stale.
+    let siblingState = { key: '', hasSsh: false };
+
+    function siblingKey() {
+        const ip = document.getElementById('ip')?.value.trim() || '';
+        return nfCurrentType() + '|' + ip;
+    }
 
     async function checkSiblingNode() {
         const ipInput = document.getElementById('ip');
@@ -2978,24 +3017,26 @@ document.getElementById('generateSshKeyBtn')?.addEventListener('click', async fu
         if (!ipInput || !hint || !hintText) return;
 
         const ip = ipInput.value.trim();
-        const type = document.querySelector('input[name="type"]:checked')?.value || 'hysteria';
+        const type = nfCurrentType();
+        const key = siblingKey();
         if (!ip) { hint.style.display = 'none'; return; }
 
         try {
             const res = await fetch('/api/nodes/check-ip?ip=' + encodeURIComponent(ip), { credentials: 'same-origin' });
-            if (!res.ok) { hint.style.display = 'none'; return; }
-            const data = await res.json();
-            const sibling = (data.nodes || []).find(n => n.type !== type);
+            const data = res.ok ? await res.json() : null;
+            if (key !== siblingKey()) return;
+            const sibling = (data?.nodes || []).find(n => n.type !== type);
+            siblingState = { key: data ? key : '', hasSsh: !!sibling?.hasSsh };
             if (sibling) {
                 const protoLabel = sibling.type === 'xray' ? 'Xray VLESS' : 'Hysteria 2';
-                var siblingMsg = '<%= typeof t !== "undefined" ? t("nodes.siblingExistsHint") : "{protocol} node already exists at this IP — SSH credentials will be synced automatically." %>';
+                const siblingMsg = sibling.hasSsh ? i18n.siblingExistsHint : i18n.siblingExistsNoSshHint;
                 hintText.textContent = siblingMsg.replace('{protocol}', protoLabel);
                 hint.style.display = '';
             } else {
                 hint.style.display = 'none';
             }
         } catch (_e) {
-            hint.style.display = 'none';
+            if (key === siblingKey()) hint.style.display = 'none';
         }
     }
 
@@ -3012,7 +3053,29 @@ document.getElementById('generateSshKeyBtn')?.addEventListener('click', async fu
         document.querySelectorAll('input[name="type"]').forEach(function(r) {
             r.addEventListener('change', checkSiblingNode);
         });
+        // "Add paired protocol" opens with the IP already filled in.
+        if (ipInput.value.trim()) checkSiblingNode();
     }
+
+    // Setup runs over SSH, so without credentials (typed here or inherited from a
+    // node on the same IP) the click leads to the SSH fields instead.
+    document.getElementById('btnCreateAndSetup')?.addEventListener('click', async function(event) {
+        const typedSsh = document.getElementById('sshPassword')?.value.trim()
+            || document.getElementById('sshPrivateKey')?.value.trim();
+        if (typedSsh || (siblingState.key === siblingKey() && siblingState.hasSsh)) return;
+        event.preventDefault();
+        if (siblingState.key !== siblingKey()) {
+            clearTimeout(siblingCheckTimer);
+            await checkSiblingNode();
+            if (siblingState.key === siblingKey() && siblingState.hasSsh) {
+                this.form.requestSubmit(this);
+                return;
+            }
+        }
+        nfSetPane('access');
+        showNodeFormError(i18n.createAndSetupNeedsSsh);
+        document.getElementById('sshPassword')?.focus({ preventScroll: true });
+    });
 })();
 <% } %>
 
