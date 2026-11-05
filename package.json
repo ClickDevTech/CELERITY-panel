@@ -69,7 +69,7 @@
     "winston": "^3.11.0",
     "ws": "^8.14.2",
     "yaml": "^2.3.4",
-    "zod": "^4.3.6"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "express-static-gzip": "^3.0.1",
