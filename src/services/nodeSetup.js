@@ -1901,20 +1901,21 @@ async function reloadCcAgent(node, ssh) {
 
     await ssh.uploadContent(configJson, '/etc/cc-agent/config.json');
     await ssh.exec('chmod 600 /etc/cc-agent/config.json');
-    // Wait for systemd to confirm cc-agent is active again before returning,
+    // Wait for both the unit and HTTP listener before returning. Type=simple
+    // becomes active before the agent has bound its API port.
     // so the caller (syncService) can immediately POST /restart to it without
-    // racing the bring-up. The loop polls for up to ~5 s and exits 0 as soon
-    // as the unit is active again, exit 1 on timeout.
+    // racing the bring-up. Poll for up to ~10 s, then report the timeout.
     const waitResult = await ssh.exec(
         'systemctl restart cc-agent && '
-        + 'for i in 1 2 3 4 5; do '
-        + '  systemctl is-active cc-agent >/dev/null 2>&1 && exit 0; '
+        + 'for i in 1 2 3 4 5 6 7 8 9 10; do '
+        + '  systemctl is-active cc-agent >/dev/null 2>&1 '
+        + `&& ss -ltnH 'sport = :${Number(agentPort)}' | grep -q . && exit 0; `
         + '  sleep 1; '
         + 'done; '
         + 'exit 1'
     );
     if (waitResult && typeof waitResult.code === 'number' && waitResult.code !== 0) {
-        logger.warn(`[Agent] Node ${node.name}: cc-agent did not become active within ~5s (will continue anyway)`);
+        logger.warn(`[Agent] Node ${node.name}: cc-agent did not become active and listen on ${agentPort} within ~10s (will continue anyway)`);
     }
     logger.info(`[Agent] Node ${node.name}: cc-agent config refreshed (${agentConfig.inbounds.length} inbound(s))`);
 }

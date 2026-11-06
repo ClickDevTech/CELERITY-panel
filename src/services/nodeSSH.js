@@ -140,20 +140,30 @@ class NodeSSH {
             }
 
             let settled = false;
+            const deadline = setTimeout(() => fail(new Error('SSH handshake timed out')), config.readyTimeout);
+            const fail = (err) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(deadline);
+                try { client.destroy(); } catch (_) { try { client.end(); } catch (_) {} }
+                reject(err);
+            };
             client
                 .on('ready', () => {
                     if (settled) return;
                     settled = true;
+                    clearTimeout(deadline);
                     logger.info(`[SSH] Connected (direct) to ${this.node.name} (${this.node.ip})`);
                     resolve(client);
                 })
-                .on('error', (err) => {
-                    if (settled) return;
-                    settled = true;
-                    try { client.end(); } catch (_) {}
-                    reject(err);
-                })
-                .connect(config);
+                .on('error', fail)
+                .on('end', () => fail(new Error('SSH connection ended before authentication')))
+                .on('close', () => fail(new Error('SSH connection closed before authentication')));
+            try {
+                client.connect(config);
+            } catch (err) {
+                fail(err);
+            }
         });
     }
 
