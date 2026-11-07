@@ -312,7 +312,10 @@ function resolveVirtualSources(nodes, user) {
         // nodes the user shouldn't see if administrator changed groups since.
         // Probes are bound to nodes explicitly and belong to no group, so the
         // overlap check would drop every balancer from their subscription.
-        if (user.isProbe !== true) {
+        // Group-overlap guard makes sense only when the user IS group-restricted.
+        // For a groupless user (defaultAccess=all) there is nothing to overlap with,
+        // and the old code silently dropped every balancer for such users.
+        if (user.isProbe !== true && userGroupIds.size > 0) {
             resolved = resolved.filter(real => {
                 const ids = (real.groups || []).map(g => String(g._id || g));
                 return ids.some(id => userGroupIds.has(id));
@@ -412,7 +415,7 @@ function generateURI(user, node, config, dedupeLabel = _passthroughLabel) {
         params.push(`obfs-password=${encodeURIComponent(config.obfsPassword)}`);
     }
     
-    const name = dedupeLabel(`${node.flag || ''} ${node.name} ${config.name}`.trim());
+    const name = dedupeLabel(`${node.flag || ''} ${node.name}${node.name === 'Белые списки' ? '' : (config.name === 'TLS' ? ' HY2' : ' ' + config.name)}`.trim());
     const uri = `hysteria2://${auth}@${config.host}:${config.port}?${params.join('&')}#${encodeURIComponent(name)}`;
     return uri;
 }
@@ -625,7 +628,7 @@ function _xrayInboundName(node, inbound) {
     if (inbound.uniqueName && inbound.nameSuffix) {
         return `${flag} ${inbound.nameSuffix}`.trim();
     }
-    const base = `${flag} ${node.name}`.trim();
+    const base = (node.type === 'xray' ? `${flag} ${node.name} VLESS` : `${flag} ${node.name}`).trim();
     return inbound.nameSuffix ? `${base} (${inbound.nameSuffix})` : base;
 }
 
@@ -1347,7 +1350,11 @@ function buildClashDns(rules, dns) {
     const policy = {};
     for (const r of (rules || [])) {
         if (!r.enabled || r.action !== 'direct') continue;
-        if (r.type === 'domain_suffix') policy[`+${r.value}`]    = domestic;
+        if (r.type === 'domain_suffix') {
+            // Value may come with or without the leading dot; key must be "+.value".
+            const v = String(r.value).trim().replace(/^\.+/, "");
+            policy[`+.${v}`] = domestic;
+        }
         if (r.type === 'geosite')       policy[`geosite:${r.value}`] = domestic;
     }
 
@@ -1517,7 +1524,7 @@ function generateClashYAML(user, nodes, routing, opts = {}) {
             });
         } else {
             getNodeConfigs(node, opts).forEach(cfg => {
-                const name = dedupeLabel(`${node.flag || ''} ${node.name} ${cfg.name}`.trim());
+                const name = dedupeLabel(`${node.flag || ''} ${node.name}${node.name === 'Белые списки' ? '' : (cfg.name === 'TLS' ? ' HY2' : ' ' + cfg.name)}`.trim());
                 proxyNames.push(name);
 
                 let proxy = `  - name: ${_yamlString(name)}
@@ -1812,7 +1819,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
     }
 
     getNodeConfigs(node, opts).forEach(cfg => {
-        const displayName = dedupeLabel(`${node.flag || ''} ${node.name} ${cfg.name}`.trim());
+        const displayName = dedupeLabel(`${node.flag || ''} ${node.name}${node.name === 'Белые списки' ? '' : (cfg.name === 'TLS' ? ' HY2' : ' ' + cfg.name)}`.trim());
         const tag = tagOverride ? tagOverride(built.length, displayName) : displayName;
         const hysteriaSettings = { version: 2, auth };
         // Legacy udphop/udpmasks for old cores + finalmask for modern Xray-core.
@@ -1926,7 +1933,7 @@ function generateV2rayJSON(user, nodes, routing, opts = {}) {
  * Pick a HAPP-friendly remark for a node — flag prefix + name, trimmed.
  */
 function _xrayProfileRemark(node) {
-    return `${node.flag || ''} ${node.name || ''}`.trim() || node.name || 'profile';
+    return (node.type === 'xray' ? `${node.flag || ''} ${node.name || ''}`.trim() + ' VLESS' : `${node.flag || ''} ${node.name || ''}`.trim()) || node.name || 'profile';
 }
 
 /**
@@ -2101,7 +2108,7 @@ function generateSingboxJSON(user, nodes, routing, opts = {}) {
             });
         } else {
             getNodeConfigs(node, opts).forEach(cfg => {
-                const tag = dedupeLabel(`${node.flag || ''} ${node.name} ${cfg.name}`.trim());
+                const tag = dedupeLabel(`${node.flag || ''} ${node.name}${node.name === 'Белые списки' ? '' : (cfg.name === 'TLS' ? ' HY2' : ' ' + cfg.name)}`.trim());
                 tags.push(tag);
 
                 const outbound = {
@@ -2373,7 +2380,7 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
                     } else if (inbound.nameSuffix) {
                         location = `${node.name} (${inbound.nameSuffix})`;
                     } else {
-                        location = node.name;
+                        location = node.type === 'xray' ? `${node.name} VLESS` : node.name;
                     }
                     allConfigs.push({
                         location,
