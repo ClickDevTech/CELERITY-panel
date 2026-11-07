@@ -112,7 +112,7 @@ function nodeMetaFor(node) {
                         </td>
                     </tr>
                     <% } %>
-                    <% nodes.forEach(node => { 
+                    <% nodes.forEach((node, nodeIdx) => { 
                         const groupIds = (node.groups || []).map(g => g._id?.toString() || g.toString()).join(',');
                         const nodeMeta = nodeMetaFor(node);
                     %>
@@ -125,7 +125,7 @@ function nodeMetaFor(node) {
                         data-name="<%= (node.name || '').replace(/"/g, '&quot;') %>"
                         data-ranking="<%= node.rankingCoefficient || 1 %>"
                         data-online="<%= node.onlineUsers || 0 %>">
-                        <td class="drag-handle" title="<%= t('nodes.dragToReorder') %>" style="text-align:center"><span class="ranking-num"><%= node.rankingCoefficient || 1 %></span><i class="ti ti-grip-vertical" style="color:var(--text-muted)"></i></td>
+                        <td class="drag-handle" title="<%= t('nodes.dragToReorder') %>" style="text-align:center"><span class="ranking-num"><%= nodeIdx + 1 %></span><i class="ti ti-grip-vertical" aria-hidden="true"></i></td>
                         <td>
                             <div class="node-name-cell">
                                 <% if (node.flag) { %><span class="node-flag"><%= node.flag %></span><% } %>
@@ -156,7 +156,7 @@ function nodeMetaFor(node) {
                                     </div>
                                     <% } %>
                                     <% if (nodeMeta.displayDomain) { %>
-                                    <small class="node-domain-line"><i class="ti ti-world"></i> <%= nodeMeta.displayDomain %></small>
+                                    <small class="node-domain-line"><i class="ti ti-world"></i> <span class="copyable" data-copy="<%= nodeMeta.displayDomain %>" title="<%= t('common.copy') %>: <%= nodeMeta.displayDomain %>"><%= nodeMeta.displayDomain %></span></small>
                                     <% } %>
                                     <% if (node.comment) { %>
                                     <br><small class="node-comment" title="<%= node.comment %>"><i class="ti ti-message-circle"></i> <%= node.comment %></small>
@@ -170,7 +170,7 @@ function nodeMetaFor(node) {
                             <% } else if (node.type === 'cdn') { %>
                                 <span class="text-muted">CDN → <%= node.cdn?.originNode?.name || 'origin' %></span>
                             <% } else { %>
-                                <code><%= node.ip %></code>
+                                <code class="copyable" data-copy="<%= node.ip %>" title="<%= t('common.copy') %>: <%= node.ip %>"><%= node.ip %></code>
                             <% } %>
                         </td>
                         <td>
@@ -191,7 +191,7 @@ function nodeMetaFor(node) {
                                 <code><%= node.port %></code>
                             <% } %>
                             <% if (node.type !== 'virtual' && node.type !== 'cdn' && node.portRange) { %>
-                            <br><small class="text-muted">hop: <%= node.portRange %></small>
+                            <br><small class="text-muted hop-range">hop: <%= node.portRange %></small>
                             <% } %>
                         </td>
                         <td>
@@ -200,7 +200,7 @@ function nodeMetaFor(node) {
                             <% } else if (node.type === 'cdn') { %>
                                 <span class="badge badge-secondary" data-node-status-badge data-node-id="<%= node._id %>" data-node-virtual-status="true">cdn</span>
                             <% } else { %>
-                                <span class="badge badge-<%= node.status === 'online' ? 'success' : (node.status === 'error' ? 'danger' : 'warning') %>" data-node-status-badge data-node-id="<%= node._id %>">
+                                <span class="badge badge-<%= node.status === 'online' ? 'success' : (node.status === 'error' ? 'danger' : 'warning') %>" data-node-status-badge data-node-id="<%= node._id %>"<%- node.active ? '' : ' style="display:none"' %>>
                                     <%= node.status %>
                                 </span>
                             <% } %>
@@ -346,7 +346,7 @@ function nodeMetaFor(node) {
                             </div>
                             <% } %>
                             <% if (nodeMeta.displayDomain) { %>
-                            <small class="node-domain-line"><i class="ti ti-world"></i> <%= nodeMeta.displayDomain %></small>
+                            <small class="node-domain-line"><i class="ti ti-world"></i> <span class="copyable" data-copy="<%= nodeMeta.displayDomain %>" title="<%= t('common.copy') %>: <%= nodeMeta.displayDomain %>"><%= nodeMeta.displayDomain %></span></small>
                             <% } %>
                         </div>
                         <div class="mobile-node-state">
@@ -355,7 +355,7 @@ function nodeMetaFor(node) {
                             <% } else if (node.type === 'cdn') { %>
                             <span class="badge badge-secondary" data-node-status-badge data-node-id="<%= node._id %>" data-node-virtual-status="true">cdn</span>
                             <% } else { %>
-                            <span class="badge badge-<%= node.status === 'online' ? 'success' : (node.status === 'error' ? 'danger' : 'warning') %>" data-node-status-badge data-node-id="<%= node._id %>">
+                            <span class="badge badge-<%= node.status === 'online' ? 'success' : (node.status === 'error' ? 'danger' : 'warning') %>" data-node-status-badge data-node-id="<%= node._id %>"<%- node.active ? '' : ' style="display:none"' %>>
                                 <%= node.status %>
                             </span>
                             <% } %>
@@ -942,7 +942,39 @@ function nodeMetaFor(node) {
 .sortable-ghost { opacity: 0.4; background: var(--accent, #6366f1) !important; }
 .drag-handle { cursor: grab; user-select: none; white-space: nowrap; vertical-align: middle; }
 .drag-handle:active { cursor: grabbing; }
-.ranking-num { font-size: 11px; color: var(--text-muted); margin-right: 2px; }
+.ranking-num { font-size: 11px; color: var(--text-muted); margin-right: 2px; font-variant-numeric: tabular-nums; }
+/* Grip appears only on hover of its row — «#» stays clean */
+.drag-handle .ti { opacity: 0; transition: opacity 0.15s ease; color: var(--text-muted); }
+#nodesTable tbody tr:hover .drag-handle .ti { opacity: 0.8; }
+/* Truncated IP/domain with hover copy */
+#nodesTable td code {
+    display: inline-block; max-width: 170px; vertical-align: middle;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.node-domain-line { display: block; max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.hop-range { font-family: "SF Pro Mono", "JetBrains Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 0.02em; display: inline-block; white-space: nowrap; }
+.copyable { cursor: copy; transition: background 0.15s ease; }
+.copyable:hover { background: rgba(255, 255, 255, 0.08); border-radius: 4px; }
+/* Protocol chips: QUIC / TLS / ACME / REALITY in one row */
+.port-chip-list { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.port-chip {
+    display: inline-flex; align-items: center;
+    font-family: "SF Pro Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11.5px; line-height: 1; padding: 3px 8px;
+    border: 1px solid var(--border-light); border-radius: 6px;
+    background: var(--bg-tertiary); color: var(--text-primary); white-space: nowrap;
+}
+.port-chip-extra { border-style: dashed; color: var(--text-secondary); }
+.node-meta-strip { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.node-meta-badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 7px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em;
+    color: var(--text-secondary); white-space: nowrap;
+    background: var(--bg-tertiary); border: 1px solid var(--border-light); border-radius: 6px;
+}
+.node-meta-badge .ti { font-size: 11px; opacity: 0.75; }
+.node-meta-reality { color: var(--text-primary); border-color: rgba(255, 255, 255, 0.22); }
+.node-meta-none, .node-meta-virtual { opacity: 0.7; }
 </style>
 
 <script>
@@ -967,7 +999,11 @@ const i18n = {
     nodeDisableAria: <%- JSON.stringify(t("nodes.disableActiveAria")) %>,
     qaFillRequired: <%- JSON.stringify(t("nodes.qaFillRequired")) %>,
     qaRunning: <%- JSON.stringify(t("nodes.qaRunning")) %>,
-    qaDone: <%- JSON.stringify(t("nodes.qaDone")) %>
+    qaDone: <%- JSON.stringify(t("nodes.qaDone")) %>,
+    shown: <%- JSON.stringify(t("nodes.shown") || "Показано") %>,
+    of: <%- JSON.stringify(t("common.of")) %>,
+    copied: <%- JSON.stringify(t("common.copied") || "Скопировано!") %>,
+    copyFailed: <%- JSON.stringify(t("common.copyFailed") || "Не удалось скопировать") %>
 };
 
 function applyFilters() {
@@ -1001,8 +1037,12 @@ function applyFilters() {
         card.style.display = show ? '' : 'none';
     });
     
-    // Update counter
-    document.getElementById('resultsCount').textContent = i18n.total + ': ' + visibleCount;
+    // Update counter: «Показано X из Y»; when nothing is filtered just «Всего: N»
+    const totalRows = document.querySelectorAll('#nodesTable .node-row').length;
+    const counter = document.getElementById('resultsCount');
+    counter.textContent = (visibleCount !== totalRows)
+        ? `${i18n.shown} ${visibleCount} ${i18n.of} ${totalRows}`
+        : `${i18n.total}: ${totalRows}`;
 }
 
 // Map status strings to sort order (online first, then error, then offline)
@@ -1013,6 +1053,34 @@ function statusSortOrder(s) {
 function statusBadgeVariant(status) {
     return status === 'online' ? 'success' : (status === 'error' ? 'danger' : 'warning');
 }
+
+// --- Hover copy for IP / domain values ([data-copy] elements) ---
+document.addEventListener('click', function (e) {
+    const el = e.target.closest('[data-copy]');
+    if (!el) return;
+    const value = el.dataset.copy;
+    if (!value) return;
+    const done = () => showToast(i18n.copied + ': ' + value);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(value).then(done, () => fallbackCopy(value));
+    } else {
+        fallbackCopy(value);
+    }
+    function fallbackCopy(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+            document.execCommand('copy');
+            showToast(i18n.copied + ': ' + text);
+        } catch (err) {
+            showToast(i18n.copyFailed, 'error');
+        }
+        ta.remove();
+    }
+});
 
 function sortNodesTable() {
     const key = document.getElementById('sortNodes').value;
@@ -1031,7 +1099,11 @@ function sortNodesTable() {
         const rows = Array.from(tbody.querySelectorAll('.node-row'));
         rows.sort(cmp);
         const frag = document.createDocumentFragment();
-        rows.forEach(r => frag.appendChild(r));
+        rows.forEach((r, i) => {
+            frag.appendChild(r);
+            const num = r.querySelector('.ranking-num');
+            if (num) num.textContent = i + 1; // «#» always reflects current row order
+        });
         tbody.appendChild(frag);
     }
 
@@ -1090,6 +1162,12 @@ function setNodeActiveUi(nodeId, active, status, nodeType) {
 
     document.querySelectorAll(`[data-node-active-off-badge][data-node-id="${nodeId}"]`).forEach(badge => {
         badge.style.display = active ? 'none' : '';
+    });
+
+    // Hide the traffic status badge while the node is manually disabled — «Выключена» is the single source of truth
+    document.querySelectorAll(`[data-node-status-badge][data-node-id="${nodeId}"]`).forEach(badge => {
+        if (badge.dataset.nodeVirtualStatus === 'true') return;
+        badge.style.display = active ? '' : 'none';
     });
 
     setNodeStatusUi(nodeId, status, nodeType);
@@ -1460,8 +1538,7 @@ if (_restoreNetworkView) {
                     rows.forEach((r, i) => {
                         r.dataset.ranking = i + 1;
                         const num = r.querySelector('.ranking-num');
-                        if (num) num.textContent = i + 1;
-                    });
+                        if (num) num.textContent = i + 1;                    });
                     showToast(i18n.reorderSaved || 'Order saved');
                 } catch (e) {
                     console.error('[Nodes] Reorder error:', e);

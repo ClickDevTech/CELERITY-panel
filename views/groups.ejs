@@ -1,5 +1,5 @@
 <div class="page-header">
-    <h1><%= t('groups.title') %></h1>
+    <!-- Заголовок уже в topbar; здесь только подсказка -->
     <p class="hint"><%= t('groups.pageHint') %></p>
 </div>
 
@@ -11,16 +11,24 @@
         <form method="POST" action="/panel/groups" class="form-inline">
             <div class="form-row">
                 <div class="form-group" style="flex: 2;">
-                    <input type="text" name="name" placeholder="<%= t('groups.groupNamePlaceholder') %>" required>
+                    <label class="form-label" for="group-name"><%= t('groups.groupName') %></label>
+                    <input type="text" id="group-name" name="name" placeholder="<%= t('groups.groupNamePlaceholder') %>" required>
                 </div>
                 <div class="form-group" style="flex: 2;">
-                    <input type="text" name="subscriptionTitle" placeholder="<%= t('groups.subscriptionTitlePlaceholder') %>" title="<%= t('groups.subscriptionTitleHint') %>">
+                    <label class="form-label" for="group-subtitle"><%= t('groups.subscriptionTitle') %></label>
+                    <input type="text" id="group-subtitle" name="subscriptionTitle" placeholder="<%= t('groups.subscriptionTitlePlaceholder') %>" title="<%= t('groups.subscriptionTitleHint') %>">
                 </div>
                 <div class="form-group" style="flex: 1;">
-                    <input type="number" name="maxDevices" placeholder="<%= t('groups.maxDevicesPlaceholder') %>" min="0" value="0" title="<%= t('groups.maxDevicesHint') %>">
+                    <label class="form-label" for="group-devices"><%= t('groups.maxDevices') %></label>
+                    <input type="number" id="group-devices" name="maxDevices" placeholder="<%= t('groups.maxDevicesPlaceholder') %>" min="0" value="0" title="<%= t('groups.maxDevicesHint') %>">
                 </div>
-                <div class="form-group" style="flex: 0.5;">
-                    <input type="color" name="color" value="#f4f4f5" title="<%= t('groups.colorHint') %>">
+                <div class="form-group" style="flex: 0.8;">
+                    <label class="form-label"><%= t('groups.color') %></label>
+                    <label class="color-swatch" title="<%= t('groups.colorHint') %>">
+                        <input type="color" name="color" value="#f4f4f5" data-swatch>
+                        <span class="swatch-dot" style="background:#f4f4f5"></span>
+                        <code class="swatch-hex">#f4f4f5</code>
+                    </label>
                 </div>
                 <button type="submit" class="btn btn-primary"><i class="ti ti-plus"></i> <%= t('groups.createGroup') %></button>
             </div>
@@ -36,7 +44,17 @@
     <div class="card-body">
         <% if (groups.length === 0) { %>
             <div class="empty-state">
-                <span class="empty-icon"><i class="ti ti-folders"></i></span>
+                <svg class="empty-ornament" width="120" height="72" viewBox="0 0 120 72" aria-hidden="true" focusable="false">
+                    <g fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.5">
+                        <path d="M60 6 L74 6 L74 20 Q60 26 46 20 L46 6 Z" />
+                        <path d="M60 6 L60 20" /><path d="M46 13 L74 13" />
+                        <path d="M22 52 Q22 34 40 30" /><path d="M98 52 Q98 34 80 30" />
+                        <path d="M40 52 L40 30" /><path d="M80 52 L80 30" />
+                        <path d="M40 36 Q60 42 80 36" /><path d="M40 44 Q60 50 80 44" />
+                        <circle cx="60" cy="52" r="3" />
+                        <path d="M36 58 Q60 66 84 58" />
+                    </g>
+                </svg>
                 <p><%= t('groups.noGroups') %></p>
                 <p class="hint"><%= t('groups.noGroupsHint') %></p>
             </div>
@@ -45,20 +63,25 @@
                 <% groups.forEach(group => { %>
                     <div class="group-card" style="border-left: 4px solid <%= group.color %>">
                         <form method="POST" action="/panel/groups/<%= group._id %>">
+
                             <div class="group-header">
-                                <input type="text" name="name" value="<%= group.name %>" class="group-name-input" required>
-                                <input type="color" name="color" value="<%= group.color %>" class="color-picker">
+                                <input type="text" name="name" value="<%= group.name %>" class="group-name-input" aria-label="<%= t('groups.groupName') %>" required>
+                                <label class="color-swatch" title="<%= t('groups.colorHint') %>">
+                                    <input type="color" name="color" value="<%= group.color %>" data-swatch>
+                                    <span class="swatch-dot" style="background:<%= group.color %>"></span>
+                                    <code class="swatch-hex"><%= group.color %></code>
+                                </label>
                             </div>
-                            
+
                             <div class="group-stats">
-                                <span class="stat"><i class="ti ti-server"></i> <%= group.nodesCount || 0 %> <%= t('groups.nodesCount') %></span>
-                                <span class="stat"><i class="ti ti-users"></i> <%= group.usersCount || 0 %> <%= t('groups.usersCount') %></span>
+                                <span class="stat"><i class="ti ti-server"></i> <%= group.nodesCount || 0 %> <%= pluralize(group.nodesCount || 0, ['нода', 'ноды', 'нод']) %></span>
+                                <span class="stat"><i class="ti ti-users"></i> <%= group.usersCount || 0 %> <%= pluralize(group.usersCount || 0, ['пользователь', 'пользователя', 'пользователей']) %></span>
                                 <span class="stat" title="<%= t('groups.maxDevices') %>"><i class="ti ti-device-mobile"></i> <%= group.maxDevices || '∞' %></span>
                             </div>
-                            
+
                             <div class="form-row-inline">
-                                <input type="text" name="subscriptionTitle" value="<%= group.subscriptionTitle || '' %>" placeholder="<%= t('groups.subscriptionTitlePlaceholder') %>" class="group-description" style="flex: 2;" title="<%= t('groups.subscriptionTitleHint') %>">
-                                <input type="number" name="maxDevices" value="<%= group.maxDevices || 0 %>" min="0" placeholder="<%= t('groups.maxDevices') %>" class="group-devices" style="flex: 1;" title="<%= t('groups.maxDevicesHint') %>">
+                                <input type="text" name="subscriptionTitle" value="<%= group.subscriptionTitle || '' %>" placeholder="<%= t('groups.subscriptionTitlePlaceholder') %>" class="group-description" style="flex: 2;" title="<%= t('groups.subscriptionTitleHint') %>" aria-label="<%= t('groups.subscriptionTitle') %>">
+                                <input type="number" name="maxDevices" value="<%= group.maxDevices || 0 %>" min="0" placeholder="<%= t('groups.maxDevices') %>" class="group-devices" style="flex: 1;" title="<%= t('groups.maxDevicesHint') %>" aria-label="<%= t('groups.maxDevices') %>">
                             </div>
                             
                             <div class="group-actions">
@@ -91,6 +114,30 @@
 }
 .form-inline .form-group {
     margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+/* Live hex + dot update for the swatch: see the listener below */
+</style>
+<script>
+document.addEventListener('change', function (e) {
+    const input = e.target;
+    if (!input.matches || !input.matches('input[type="color"][data-swatch]')) return;
+    const swatch = input.closest('.color-swatch');
+    if (!swatch) return;
+    const dot = swatch.querySelector('.swatch-dot');
+    const hex = swatch.querySelector('.swatch-hex');
+    if (dot) dot.style.background = input.value;
+    if (hex) hex.textContent = input.value;
+});
+</script>
+
+<style>
+/* (real styles follow) */
+
+.form-inline .form-group {
+    margin: 0;
 }
 .form-inline input[type="color"] {
     width: 48px;
@@ -99,6 +146,44 @@
     border-radius: var(--radius-xs);
     cursor: pointer;
 }
+/* Round color swatch + hex readout (native <input type=color> скрыт поверх) */
+.form-group > label.color-swatch,
+label.color-swatch {
+    position: relative;
+    display: inline-flex !important;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 0;
+    cursor: pointer;
+    min-height: 34px;
+}
+.swatch-dot { display: inline-block; }
+.color-swatch input[type="color"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    z-index: 1;
+}
+.swatch-dot {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    border: 1px solid var(--border-light);
+    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35), 0 0 0 3px rgba(255, 255, 255, 0.03);
+    transition: box-shadow 0.15s ease;
+}
+.color-swatch:hover .swatch-dot { box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35), 0 0 0 3px rgba(255, 255, 255, 0.09); }
+.swatch-hex {
+    font-family: "SF Pro Mono", "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: none;
+}
+.empty-ornament { display: block; margin: 0 auto 14px; color: var(--text-muted); }
 @media (max-width: 768px) {
     .form-inline .form-row {
         flex-direction: column;
