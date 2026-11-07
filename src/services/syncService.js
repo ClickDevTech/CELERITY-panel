@@ -325,7 +325,7 @@ class SyncService {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
             },
-            timeout: 15000,
+            timeout: 30000,
             validateStatus: null, // handle errors manually
         };
 
@@ -371,6 +371,7 @@ class SyncService {
                         agentLastSeen: new Date(),
                         status: 'online',
                         healthFailures: 0,
+                        lastError: '',
                     },
                 }
             );
@@ -997,6 +998,7 @@ class SyncService {
                         agentVersion: data.agent_version || '',
                         agentStatus: 'online',
                         agentLastSeen: new Date(),
+                        lastError: '',
                     },
                 }
             );
@@ -1040,6 +1042,42 @@ class SyncService {
         if (isServerlessNode(node)) return;
         if (node.type === 'xray') {
             return this.updateXrayNodeConfig(node);
+        }
+        // One hysteria daemon per host. Two hysteria rows can share a server
+        // (domain entry + IP entry); only rows that carry a domain own the
+        // ACME TLS config - an IP-only sibling writing its tls-files config
+        // would swap ACME for the old self-signed cert and break every
+        // domain-based client entry. Hosts are compared via resolved IPs,
+        // because the domain-owner row may keep its "ip" field as a hostname.
+        if (!node.domain) {
+            const dnsPromises = require('dns').promises;
+            const net = require('net');
+            const resolveHosts = async (n) => {
+                const set = new Set();
+                for (const h of [n.domain, n.ip].filter(Boolean)) {
+                    if (net.isIP(h)) { set.add(h); continue; }
+                    try {
+                        for (const a of await dnsPromises.lookup(h, { all: true })) set.add(a.address);
+                    } catch (e) { /* unresolvable: compare nothing */ }
+                }
+                return set;
+            };
+            const mine = await resolveHosts(node);
+            const ownerRows = await HyNode.find({
+                _id: { $ne: node._id },
+                type: 'hysteria',
+                active: true,
+                domain: { $nin: ['', null, undefined] },
+            }).select('name ip domain');
+            let owner = null;
+            for (const o of ownerRows) {
+                const addrs = await resolveHosts(o);
+                if ([...addrs].some((a) => mine.has(a))) { owner = o; break; }
+            }
+            if (owner) {
+                logger.info(`[Sync] Skipping config write for ${node.name}: server config owned by ${owner.name}`);
+                return;
+            }
         }
         return this._updateHysteriaNodeConfig(node);
     }
@@ -1353,14 +1391,14 @@ class SyncService {
             
             const response = await axios.get(url, {
                 headers: { Authorization: node.statsSecret },
-                timeout: 5000,
+                timeout: 15000,
             });
             
             const online = Object.keys(response.data).length;
             
             const prevNode = await HyNode.findOneAndUpdate(
                 { _id: node._id },
-                { $set: { onlineUsers: online, status: 'online', healthFailures: 0 } }
+                { $set: { onlineUsers: online, status: 'online', healthFailures: 0, lastError: '' } }
             );
 
             if (prevNode && prevNode.status !== 'online') {
@@ -1418,7 +1456,7 @@ class SyncService {
                         Authorization: node.statsSecret,
                         'Content-Type': 'application/json',
                     },
-                    timeout: 5000,
+                    timeout: 15000,
                 });
                 
                 logger.info(`[Kick] ${userId} kicked from ${node.name}`);
