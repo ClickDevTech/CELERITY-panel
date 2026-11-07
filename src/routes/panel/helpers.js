@@ -99,6 +99,7 @@ const XRAY_TRANSPORT_VALUES = ['tcp', 'ws', 'grpc', 'xhttp'];
 const XRAY_SECURITY_VALUES = ['reality', 'tls', 'none'];
 const XRAY_XHTTP_MODE_VALUES = ['auto', 'packet-up', 'stream-up', 'stream-one'];
 const XRAY_TLS_SOURCE_VALUES = ['panel', 'acme', 'manual', 'self-signed'];
+const XRAY_REALITY_GUARD_MODES = ['auto', 'notify', 'off'];
 const XRAY_XHTTP_METHOD_VALUES = XHTTP_METHOD_VALUES;
 const XRAY_XHTTP_DATA_PLACEMENT_VALUES = XHTTP_DATA_PLACEMENT_VALUES;
 const XRAY_XHTTP_PLACEMENT_VALUES = XHTTP_PLACEMENT_VALUES;
@@ -396,10 +397,63 @@ function parseXrayFormFields(body) {
     // touch extras can just delete the field from the result.
     xray.extraInbounds = parseExtraInbounds(body);
 
+    if (body['xray.realityGuard.mode'] !== undefined) {
+        xray.realityGuard = { mode: normalizeRealityGuardMode(body['xray.realityGuard.mode']) };
+        if (body['xray.realityGuard.reserveSnis'] !== undefined) {
+            xray.realityGuard.reserveSnis = normalizeReserveSnis(body['xray.realityGuard.reserveSnis']);
+        }
+    }
+
     const front = parseXrayFront(body);
     if (front) xray.front = front;
 
     return xray;
+}
+
+function normalizeRealityGuardMode(value) {
+    return _pickEnum(value, XRAY_REALITY_GUARD_MODES, 'auto');
+}
+
+function normalizeReserveSnis(value) {
+    return require('../../services/realityGuardService').normalizeReserveSnis(value);
+}
+
+function _realityDestSignature(xray) {
+    const pick = inbound => (inbound && (inbound.security || 'reality') === 'reality')
+        ? `${inbound.realityDest || ''}|${(inbound.realitySni || []).join(',')}`
+        : '';
+    return [pick(xray), ...(xray?.extraInbounds || []).map(pick)].join(';');
+}
+
+/**
+ * Merge the posted watchdog settings (mode and reserve list) into the stored
+ * watchdog state. Runtime fields are preserved — unless the operator changed
+ * a Reality dest/SNI by hand, which makes them stale.
+ *
+ * @param {Object} existingXray - Stored xray block (plain object)
+ * @param {Object} nextXray     - Merged xray block about to be persisted
+ * @returns {Object} realityGuard to persist
+ */
+function mergeRealityGuard(existingXray, nextXray) {
+    const stored = existingXray?.realityGuard || {};
+    const posted = nextXray?.realityGuard || {};
+    const reserveSnis = posted.reserveSnis !== undefined
+        ? normalizeReserveSnis(posted.reserveSnis)
+        : normalizeReserveSnis(stored.reserveSnis);
+    const guard = {
+        ...stored,
+        mode: normalizeRealityGuardMode(posted.mode ?? stored.mode),
+        reserveSnis,
+        reserveFailed: (stored.reserveFailed || []).filter(f => reserveSnis.includes(f.domain)),
+    };
+    if (_realityDestSignature(existingXray) !== _realityDestSignature(nextXray)) {
+        guard.status = 'ok';
+        guard.failCount = 0;
+        guard.lastError = '';
+        guard.warning = '';
+        guard.nodeConfirmedAt = null;
+    }
+    return guard;
 }
 
 /**
@@ -1436,6 +1490,11 @@ function buildClonedNodePrefill(source) {
     delete xray.accessLogs;
     delete xray.manualCert;
     delete xray.manualKey;
+    // Runtime watchdog state belongs to the source node; only the settings are copied.
+    xray.realityGuard = {
+        mode: normalizeRealityGuardMode(source.xray?.realityGuard?.mode),
+        reserveSnis: normalizeReserveSnis(source.xray?.realityGuard?.reserveSnis),
+    };
     xray.realityPrivateKey = freshKeys.privateKey;
     xray.realityPublicKey = freshKeys.publicKey;
     if (Array.isArray(xray.extraInbounds)) {
@@ -1509,6 +1568,9 @@ module.exports = {
     parseXrayFormFields,
     parseExtraInbounds,
     parseXrayFront,
+    mergeRealityGuard,
+    normalizeRealityGuardMode,
+    XRAY_REALITY_GUARD_MODES,
     validateXrayFormFields,
     validateXrayFrontFields,
     ensureExtraInboundRealityKeys,

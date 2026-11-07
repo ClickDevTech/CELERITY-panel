@@ -895,6 +895,22 @@ function _anyXrayTlsInboundActive() {
     return false;
 }
 
+// The Reality dest watchdog covers every inbound, so it stays visible while
+// the main or any extra inbound uses Reality.
+function _refreshRealityGuardVisibility() {
+    const group = document.getElementById('xrayRealityGuardGroup');
+    if (!group) return;
+    const main = document.getElementById('xraySecurity')?.value || 'reality';
+    let any = main === 'reality';
+    if (!any) {
+        for (const el of document.querySelectorAll('select[name="xray_extra_security"]')) {
+            if (el.closest('template')) continue;
+            if ((el.value || 'reality') === 'reality') { any = true; break; }
+        }
+    }
+    group.style.display = any ? '' : 'none';
+}
+
 // A shared picker is used by regular Xray and CDN client settings.
 function updateFingerprintPickerUI(picker) {
     if (!picker) return;
@@ -935,6 +951,7 @@ function updateXraySecurityUI() {
     _refreshMainFallbackVisibility();
     updateXrayTlsSourceUI();
     refreshExtraInboundsEmpty();
+    _refreshRealityGuardVisibility();
 }
 
 // The empty-state note is shown only while no extra inbound exists.
