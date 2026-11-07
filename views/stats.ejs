@@ -43,12 +43,12 @@
 </div>
 
 <!-- Period Selector -->
-<div class="period-selector">
-    <button class="period-btn active" data-period="1h">1<%= t('stats.h') %></button>
-    <button class="period-btn" data-period="6h">6<%= t('stats.h') %></button>
-    <button class="period-btn" data-period="24h">24<%= t('stats.h') %></button>
-    <button class="period-btn" data-period="7d">7<%= t('stats.d') %></button>
-    <button class="period-btn" data-period="30d">30<%= t('stats.d') %></button>
+<div class="period-selector" role="group" aria-label="<%= t('stats.periodLabel') || 'Период' %>" id="periodSelector">
+    <button type="button" aria-pressed="true" class="period-btn active" data-period="1h">1<%= t('stats.h') %></button>
+    <button type="button" aria-pressed="false" class="period-btn" data-period="6h">6<%= t('stats.h') %></button>
+    <button type="button" aria-pressed="false" class="period-btn" data-period="24h">24<%= t('stats.h') %></button>
+    <button type="button" aria-pressed="false" class="period-btn" data-period="7d">7<%= t('stats.d') %></button>
+    <button type="button" aria-pressed="false" class="period-btn" data-period="30d">30<%= t('stats.d') %></button>
 </div>
 
 <!-- Charts Grid -->
@@ -224,39 +224,43 @@
     color: var(--text-muted);
 }
 
+/* Segmented period control (joined, monochrome) */
 .period-selector {
-    display: flex;
-    gap: 8px;
+    display: inline-flex;
     margin-bottom: 24px;
-    background: var(--bg-secondary);
-    padding: 8px;
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.35);
+    padding: 4px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
     width: fit-content;
 }
 
 .period-btn {
-    padding: 10px 20px;
+    appearance: none;
+    padding: 8px 18px;
     background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
+    border: none;
+    border-radius: 9px;
     color: var(--text-secondary);
     font-weight: 500;
-    font-size: 14px;
+    font-size: 13.5px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
     font-family: inherit;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 
 .period-btn:hover {
-    background: var(--bg-tertiary);
+    background: rgba(255, 255, 255, 0.06);
     color: var(--text-primary);
 }
 
 .period-btn.active {
     background: #f4f4f5;
-    color: #09090b;
-    box-shadow: 0 2px 12px rgba(255, 255, 255, 0.25);
+    color: #101012;
+    font-weight: 600;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
 }
 
 .charts-grid {
@@ -486,8 +490,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Period selector
     document.querySelectorAll('.period-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.period-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-pressed', 'false'); });
             btn.classList.add('active');
+            btn.setAttribute('aria-pressed', 'true');
             currentPeriod = btn.dataset.period;
             loadData(currentPeriod);
         });

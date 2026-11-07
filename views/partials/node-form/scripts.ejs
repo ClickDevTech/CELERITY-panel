@@ -1531,10 +1531,10 @@ async function generateExtraXrayKeys(btn) {
             if (priv) priv.value = data.privateKey;
             if (pub) pub.value = data.publicKey;
         } else {
-            alert(i18n.error + ': ' + ((data && data.error) || 'Unknown error'));
+            showToast(i18n.error + ': ' + ((data && data.error) || 'Unknown error'));
         }
     } catch (err) {
-        alert(i18n.error + ': ' + err.message);
+        showToast(i18n.error + ': ' + err.message);
     } finally {
         btn.disabled = false;
         btn.innerHTML = original;
@@ -1724,7 +1724,7 @@ async function generateConfig() {
         }
         output.value = data.config || '';
     } catch (err) {
-        alert(i18nConfig.error + ': ' + err.message);
+        showToast(i18nConfig.error + ': ' + err.message);
     }
 }
 
@@ -1736,15 +1736,15 @@ async function loadCurrentConfig() {
         const data = await res.json();
         if (data.success) {
             document.getElementById('customConfig').value = data.config;
-            alert(i18nConfig.configLoaded);
+            showToast(i18nConfig.configLoaded);
         } else {
-            alert(i18nConfig.error + ': ' + data.error);
+            showToast(i18nConfig.error + ': ' + data.error);
         }
     } catch (err) {
-        alert(i18nConfig.error + ': ' + err.message);
+        showToast(i18nConfig.error + ': ' + err.message);
     }
     <% } else { %>
-    alert(i18nConfig.saveFirst);
+    showToast(i18nConfig.saveFirst);
     <% } %>
 }
 
@@ -2188,8 +2188,8 @@ async function submitXrayVersionChange() {
     const password = document.getElementById('xrayVersionPassword').value;
     const totp = document.getElementById('xrayVersionTotp').value;
     const totpEnabled = document.getElementById('xrayVersionCard').dataset.totpEnabled === '1';
-    if (!password) return alert(xrvT.passwordRequired);
-    if (totpEnabled && !totp) return alert(xrvT.totpRequired);
+    if (!password) return showToast(xrvT.passwordRequired);
+    if (totpEnabled && !totp) return showToast(xrvT.totpRequired);
 
     const button = document.getElementById('xrayVersionConfirmBtn');
     button.disabled = true;
@@ -2210,7 +2210,7 @@ async function submitXrayVersionChange() {
         showXrayVersionProgress(data.task);
         pollXrayVersionTask();
     } catch (error) {
-        alert(error.message);
+        showToast(error.message);
     } finally {
         button.disabled = false;
     }
@@ -2306,12 +2306,12 @@ async function generateXrayKeys(btn) {
         if (data.success) {
             document.getElementById('xrayRealityPrivKey').value = data.privateKey;
             document.getElementById('xrayRealityPubKey').value = data.publicKey;
-            alert(i18n.xrayKeysSuccess.replace('{key}', data.publicKey));
+            showToast(i18n.xrayKeysSuccess.replace('{key}', data.publicKey));
         } else {
-            alert(i18n.error + ': ' + (data.error || 'Unknown error'));
+            showToast(i18n.error + ': ' + (data.error || 'Unknown error'));
         }
     } catch (err) {
-        alert(i18n.error + ': ' + err.message);
+        showToast(i18n.error + ': ' + err.message);
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="ti ti-refresh"></i>';
@@ -2949,11 +2949,11 @@ async function cascadeAction(linkId, action, btn) {
             location.reload();
         } else {
             const data = await res.json().catch(() => ({}));
-            alert(i18n.error + ': ' + (data.error || 'Unknown error'));
+            showToast(i18n.error + ': ' + (data.error || 'Unknown error'));
             if (btn) { btn.disabled = false; btn.innerHTML = action === 'deploy' ? '<i class="ti ti-upload"></i>' : '<i class="ti ti-upload-off"></i>'; }
         }
     } catch (err) {
-        alert(i18n.error + ': ' + err.message);
+        showToast(i18n.error + ': ' + err.message);
         if (btn) { btn.disabled = false; }
     }
 }
@@ -2967,10 +2967,10 @@ async function cascadeDelete(linkId, name) {
             location.reload();
         } else {
             const data = await res.json().catch(() => ({}));
-            alert(i18n.error + ': ' + (data.error || 'Unknown error'));
+            showToast(i18n.error + ': ' + (data.error || 'Unknown error'));
         }
     } catch (err) {
-        alert(i18n.error + ': ' + err.message);
+        showToast(i18n.error + ': ' + err.message);
     }
 }
 

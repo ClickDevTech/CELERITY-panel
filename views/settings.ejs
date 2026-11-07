@@ -386,10 +386,10 @@ async function restoreBackup(source, identifier) {
         
         if (data.success) {
             showToast(i18n.restored, 'success');
-            // Blocking dialog on purpose: the page reloads right after, which
-            // would hide a toast the operator has to act on.
-            if (data.warning) alert(data.warning);
-            setTimeout(() => location.reload(), 2000);
+            // Non-blocking toast instead of alert(); reload is delayed so the
+            // operator can read a warning before the page resets.
+            if (data.warning) showToast(data.warning, 'warning', 6000);
+            setTimeout(() => location.reload(), data.warning ? 4000 : 2000);
         } else {
             showToast(i18n.restoreError + ': ' + (data.error || 'unknown'), 'error');
         }
@@ -579,7 +579,7 @@ async function submitMcpKey(e) {
         document.getElementById('revealKeyInput').value = data.key;
         document.getElementById('apiKeyRevealModal').style.display = 'flex';
     } catch (err) {
-        alert(err.message);
+        showToast(err.message);
     } finally {
         btn.disabled = false;
         btn.textContent = '<%= t("mcp.createKeyBtn") || "Create Key" %>';

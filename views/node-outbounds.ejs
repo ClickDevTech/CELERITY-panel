@@ -267,7 +267,7 @@ function addProxy() {
 
     if (!name) { document.getElementById('newObName').focus(); return; }
     if (!addr)  { document.getElementById('newObAddr').focus(); return; }
-    if (pendingOutbounds.some(o => o.name === name)) { alert(I18N.proxyExists + ': ' + name); return; }
+    if (pendingOutbounds.some(o => o.name === name)) { showToast(I18N.proxyExists + ': ' + name); return; }
 
     pendingOutbounds.push({ name, type, addr, username, password });
     renderProxies();
@@ -377,11 +377,11 @@ async function saveAndApply() {
             btn.innerHTML = '<i class="ti ti-check"></i> ' + I18N.applied;
             setTimeout(() => { btn.innerHTML = orig; btn.disabled = false; }, 3000);
         } else {
-            alert(I18N.applyError + ': ' + (data.error || 'Unknown'));
+            showToast(I18N.applyError + ': ' + (data.error || 'Unknown'));
             btn.innerHTML = orig; btn.disabled = false;
         }
     } catch (e) {
-        alert(I18N.applyError + ': ' + e.message);
+        showToast(I18N.applyError + ': ' + e.message);
         btn.innerHTML = orig; btn.disabled = false;
     }
 }

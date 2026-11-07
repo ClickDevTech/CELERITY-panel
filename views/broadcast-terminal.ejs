@@ -788,7 +788,7 @@
     <div class="header">
         <div class="header-left">
             <a href="/panel/nodes" class="header-logo" title="VamPanel">
-                <span class="logo-icon">вљЎ</span>
+                <span class="logo-icon"><i class="ti ti-bolt" aria-hidden="true"></i></span>
                 <span class="logo-text">VamPanel</span>
             </a>
             <div class="header-divider"></div>
@@ -1293,7 +1293,7 @@
 
             const node = document.createElement('div');
             node.className = 'cron-result-node';
-            node.textContent = `${result.name || result.nodeId}${result.ip ? ' В· ' + result.ip : ''}`;
+            node.textContent = `${result.name || result.nodeId}${result.ip ? ' · ' + result.ip : ''}`;
 
             const message = document.createElement('div');
             message.className = 'cron-result-message';

@@ -5,7 +5,7 @@
             <span class="stat-trend"><%= t('dashboard.activeUsers') %></span>
         </div>
         <div class="stat-value"><%= stats.users.enabled %></div>
-        <div class="stat-label"><%= t('common.of') %> <%= stats.users.total %> <%= pluralize(stats.users.total, ['пользователя', 'пользователей', 'пользователей']) %></div>
+        <div class="stat-label"><%= t('common.of') %> <%= stats.users.total %> <%= pluralize(stats.users.total, ['пользователь', 'пользователя', 'пользователей']) %></div>
     </div>
     
     <div class="stat-card stat-nodes">
@@ -14,7 +14,7 @@
             <span class="stat-trend"><%= t('dashboard.onlineNodes') %></span>
         </div>
         <div class="stat-value"><%= stats.nodes.online %></div>
-        <div class="stat-label"><%= t('common.of') %> <%= stats.nodes.total %> <%= pluralize(stats.nodes.total, ['ноды', 'нод', 'нод']) %><%= stats.nodes.active !== undefined && stats.nodes.active !== stats.nodes.total ? `, включено ${stats.nodes.active}` : '' %></div>
+        <div class="stat-label"><%= t('common.of') %> <%= stats.nodes.total %> <%= pluralize(stats.nodes.total, ['нода', 'ноды', 'нод']) %><%= stats.nodes.active !== undefined && stats.nodes.active !== stats.nodes.total ? `, включено ${stats.nodes.active}` : '' %></div>
     </div>
     
     <div class="stat-card stat-online">
@@ -203,6 +203,11 @@
                     <i class="ti ti-file-text"></i> <%= t('dashboard.recentLogs') %>
                 </h2>
                 <div class="logs-controls">
+                    <div class="logs-levels" id="logsLevels" role="group" aria-label="<%= t('dashboard.logLevel') || 'Уровень логов' %>">
+                        <button type="button" class="lvl-btn is-active" data-lvl="all"><%= t('dashboard.logLevelAll') || 'Все' %></button>
+                        <button type="button" class="lvl-btn" data-lvl="warn">Warn</button>
+                        <button type="button" class="lvl-btn" data-lvl="error">Error</button>
+                    </div>
                     <div class="logs-search-wrap" id="logsSearchWrap">
                         <input type="text" class="logs-search-input" id="logsSearch" placeholder="<%= t('common.search') %>..." oninput="onLogsSearchInput(this.value)">
                         <span class="logs-search-count" id="logsSearchCount"></span>
@@ -340,6 +345,28 @@
     gap: 8px;
     align-items: center;
 }
+/* Segmented level filter: Все / Warn / Error */
+.logs-levels {
+    display: inline-flex;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.lvl-btn {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 12px;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+    white-space: nowrap;
+}
+.lvl-btn + .lvl-btn { border-left: 1px solid var(--line); }
+.lvl-btn:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.05); }
+.lvl-btn.is-active { background: #f4f4f5; color: #101012; font-weight: 600; }
 .logs-hit {
     background: rgba(255, 255, 255, 0.25);
     color: inherit;
@@ -480,6 +507,7 @@ function connectLogsWebSocket() {
             const container = document.getElementById('logsContainer');
             if (msg.logs && msg.logs.length > 0) {
                 container.innerHTML = msg.logs.map(log => formatLogLine(log)).join('');
+                applyLogsLevelFilter();
                 scrollLogsToBottom();
             } else {
                 container.innerHTML = '<div class="logs-empty">' + i18n.noLogs + '</div>';
@@ -503,28 +531,30 @@ function formatLogLine(log) {
     const level = log.level || 'info';
     const message = `${log.timestamp} [${level.toUpperCase()}]: ${log.message}`;
     let cls = 'log-line';
-    if (level === 'error') cls += ' log-error';
-    else if (level === 'warn') cls += ' log-warn';
+    let lvlTag = 'info';
+    if (level === 'error') { cls += ' log-error'; lvlTag = 'error'; }
+    else if (level === 'warn') { cls += ' log-warn'; lvlTag = 'warn'; }
     else if (message.includes('✅') || message.includes('✓')) cls += ' log-success';
-    return `<div class="${cls}">${escapeHtml(message)}</div>`;
+    return `<div class="${cls}" data-level="${lvlTag}">${escapeHtml(message)}</div>`;
 }
 
 function formatRawLine(line, query = '') {
     let cls = 'log-line';
-    if (line.includes('"level":"error"') || line.includes('[ERROR]')) cls += ' log-error';
-    else if (line.includes('"level":"warn"') || line.includes('[WARN]')) cls += ' log-warn';
+    let lvlTag = 'info';
+    if (line.includes('"level":"error"') || line.includes('[ERROR]')) { cls += ' log-error'; lvlTag = 'error'; }
+    else if (line.includes('"level":"warn"') || line.includes('[WARN]')) { cls += ' log-warn'; lvlTag = 'warn'; }
     else if (line.includes('✅') || line.includes('✓')) cls += ' log-success';
 
     const escapedLine = escapeHtml(line);
     if (!query) {
-        return `<div class="${cls}">${escapedLine}</div>`;
+        return `<div class="${cls}" data-level="${lvlTag}">${escapedLine}</div>`;
     }
 
     const escapedQuery = escapeHtml(query);
     const highlightRegex = new RegExp(`(${escapeRegExp(escapedQuery)})`, 'ig');
     const highlighted = escapedLine.replace(highlightRegex, '<mark class="logs-hit">$1</mark>');
 
-    return `<div class="${cls}">${highlighted}</div>`;
+    return `<div class="${cls}" data-level="${lvlTag}">${highlighted}</div>`;
 }
 
 function appendLog(log) {
@@ -540,7 +570,31 @@ function appendLog(log) {
     if (lines.length > 100) {
         lines[lines.length - 1].remove();
     }
+    applyLogsLevelFilter();
 }
+
+// --- Level filter (All / Warn / Error) for the live logs panel ---
+let logsLevelFilter = 'all';
+
+function applyLogsLevelFilter() {
+    const container = document.getElementById('logsContainer');
+    if (!container) return;
+    container.querySelectorAll('.log-line').forEach((line) => {
+        const lvl = line.dataset.level || 'info';
+        const match = logsLevelFilter === 'all' || lvl === logsLevelFilter;
+        line.style.display = match ? '' : 'none';
+    });
+}
+
+document.getElementById('logsLevels')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.lvl-btn');
+    if (!btn) return;
+    logsLevelFilter = btn.dataset.lvl || 'all';
+    document.querySelectorAll('#logsLevels .lvl-btn').forEach((b) => {
+        b.classList.toggle('is-active', b.dataset.lvl === logsLevelFilter);
+    });
+    applyLogsLevelFilter();
+});
 
 function onLogsSearchInput(value) {
     const clearBtn = document.getElementById('logsSearchClear');

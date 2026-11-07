@@ -632,6 +632,21 @@
 </div>
 
 <script>
+// Minimal toast fallback (wizard page has no app.js)
+window.showToast = window.showToast || function (message, type) {
+    let el = document.getElementById('wizToast');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'wizToast';
+        el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;max-width:90%;padding:10px 18px;border-radius:10px;background:#18181b;color:#f5f5f7;border:1px solid rgba(255,255,255,0.2);font-size:13px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,0.5);transition:opacity .2s;';
+        document.body.appendChild(el);
+    }
+    el.textContent = message;
+    el.style.opacity = '1';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.opacity = '0'; }, type === 'warning' ? 6000 : 3000);
+};
+
 (function () {
 
     // в”Ђв”Ђ Step 1: scenario card selection в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -679,7 +694,7 @@
         selfhostForm.addEventListener('submit', function (e) {
             if (chkHy && chkXray && !chkHy.checked && !chkXray.checked) {
                 e.preventDefault();
-                alert('<%= typeof t !== "undefined" ? t("wizard.noProtocolSelected") : "Please select at least one protocol." %>');
+                showToast('<%= typeof t !== "undefined" ? t("wizard.noProtocolSelected") : "Please select at least one protocol." %>');
             }
         });
     }

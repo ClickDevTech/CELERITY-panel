@@ -235,7 +235,7 @@ async function unlinkHwid(hwid) {
     if (res.ok) location.reload();
     else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || i18n.error);
+        showToast(data.error || i18n.error);
     }
 }
 
@@ -248,7 +248,7 @@ async function unlinkAllHwid() {
     if (res.ok) location.reload();
     else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || i18n.error);
+        showToast(data.error || i18n.error);
     }
 }
 
@@ -260,7 +260,7 @@ async function toggleUser(enabled) {
     if (res.ok) location.reload();
     else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || i18n.error);
+        showToast(data.error || i18n.error);
     }
 }
 
@@ -273,7 +273,7 @@ async function resetTraffic() {
     if (res.ok) location.reload();
     else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || i18n.error);
+        showToast(data.error || i18n.error);
     }
 }
 
@@ -287,18 +287,18 @@ async function deleteUser() {
     if (res.ok) location.href = '/panel/users';
     else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || i18n.error);
+        showToast(data.error || i18n.error);
     }
 }
 
 function copySubscription() {
     const link = document.getElementById('subLink').value;
     navigator.clipboard.writeText(link).then(() => {
-        alert(i18n.linkCopied);
+        showToast(i18n.linkCopied);
     }).catch(() => {
     document.getElementById('subLink').select();
     document.execCommand('copy');
-    alert(i18n.linkCopied);
+    showToast(i18n.linkCopied);
     });
 }
 
