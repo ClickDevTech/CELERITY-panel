@@ -1165,6 +1165,7 @@ const render = (res, template, data = {}) => {
 
     const i18nVars = {
         t: res.locals.t,
+        pluralize: res.locals.pluralize,
         lang: res.locals.lang,
         supportedLangs: res.locals.supportedLangs,
         languageOptions: res.locals.languageOptions,

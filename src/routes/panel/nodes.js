@@ -280,7 +280,7 @@ router.get('/', async (req, res) => {
         const totalTrafficBytes = (trafficStats.tx || 0) + (trafficStats.rx || 0);
         
         render(res, 'dashboard', {
-            title: 'Dashboard',
+            title: res.locals.locales.dashboard?.title || res.locals.t('nav.dashboard') || 'Dashboard',
             page: 'dashboard',
             stats: {
                 users: { total: usersTotal, enabled: usersEnabled },

@@ -213,6 +213,16 @@ function i18nMiddleware(req, res, next) {
     
     res.locals.lang = lang;
     res.locals.t = (key) => t(key, lang);
+    // Russian plural forms: pluralize(n, ['пользователя', 'пользователей', 'пользователей'])
+    res.locals.pluralize = (n, forms) => {
+        const [one, few, many] = Array.isArray(forms) ? forms : [forms.one, forms.few, forms.many];
+        const value = Math.abs(Number(n) || 0);
+        const mod10 = value % 10;
+        const mod100 = value % 100;
+        if (mod10 === 1 && mod100 !== 11) return one;
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+        return many;
+    };
     res.locals.supportedLangs = SUPPORTED_LANGS;
     res.locals.languageOptions = LANGUAGE_OPTIONS;
     res.locals.dateLocale = getDateLocale(lang);

@@ -5,7 +5,7 @@
             <span class="stat-trend"><%= t('dashboard.activeUsers') %></span>
         </div>
         <div class="stat-value"><%= stats.users.enabled %></div>
-        <div class="stat-label"><%= t('common.of') %> <%= stats.users.total %> <%= t('nav.users').toLowerCase() %></div>
+        <div class="stat-label"><%= t('common.of') %> <%= stats.users.total %> <%= pluralize(stats.users.total, ['пользователя', 'пользователей', 'пользователей']) %></div>
     </div>
     
     <div class="stat-card stat-nodes">
@@ -14,7 +14,7 @@
             <span class="stat-trend"><%= t('dashboard.onlineNodes') %></span>
         </div>
         <div class="stat-value"><%= stats.nodes.online %></div>
-        <div class="stat-label"><%= t('common.of') %> <%= stats.nodes.total %> <%= t('nav.nodes').toLowerCase() %></div>
+        <div class="stat-label"><%= t('common.of') %> <%= stats.nodes.total %> <%= pluralize(stats.nodes.total, ['ноды', 'нод', 'нод']) %><%= stats.nodes.active !== undefined && stats.nodes.active !== stats.nodes.total ? `, включено ${stats.nodes.active}` : '' %></div>
     </div>
     
     <div class="stat-card stat-online">
