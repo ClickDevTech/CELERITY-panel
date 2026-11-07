@@ -29,9 +29,11 @@ const crypto = require('crypto');
     try {
       await HyUser.create({
         userId: String(i + 1),
+        username: n === 'probe_01' || n === 'probe_02' ? '' : n,
         password: crypto.randomBytes(8).toString('hex').slice(0, 12),
         subscriptionToken: token,
         active: i < 8,
+        enabled: i < 8 && i !== 7, // last regular user expired → disabled
         expiresAt: i === 7 ? new Date(Date.now() - 86400000) : null,
         traffic: { tx: Math.floor(5e9 * (i + 1) / 3) % 4e10, rx: Math.floor(2e9 * (i + 1) / 3) % 3e10 },
         trafficLimit: i % 3 === 0 ? 0 : 5e10,
