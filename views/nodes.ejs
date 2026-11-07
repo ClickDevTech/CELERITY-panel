@@ -789,7 +789,7 @@ function nodeMetaFor(node) {
 }
 .node-comment {
     display: inline-block;
-    max-width: 360px;
+    max-width: 220px;
     color: var(--text-muted);
     font-size: 11px;
     line-height: 1.35;
@@ -951,7 +951,7 @@ function nodeMetaFor(node) {
     display: inline-block; max-width: 170px; vertical-align: middle;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.node-domain-line { display: block; max-width: 240px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.node-domain-line { display: block; max-width: 190px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .hop-range { font-family: "SF Pro Mono", "JetBrains Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 0.02em; display: inline-block; white-space: nowrap; }
 .copyable { cursor: copy; transition: background 0.15s ease; }
 .copyable:hover { background: rgba(255, 255, 255, 0.08); border-radius: 4px; }
@@ -975,6 +975,20 @@ function nodeMetaFor(node) {
 .node-meta-badge .ti { font-size: 11px; opacity: 0.75; }
 .node-meta-reality { color: var(--text-primary); border-color: rgba(255, 255, 255, 0.22); }
 .node-meta-none, .node-meta-virtual { opacity: 0.7; }
+
+/* «Действия» всегда на виду: колонка прилипает справа, даже когда таблица шире экрана */
+#nodesTable .th-actions,
+#nodesTable .td-actions {
+    position: sticky; right: 0; z-index: 2;
+    background: var(--bg-1);
+    box-shadow: -14px 0 14px -12px rgba(0, 0, 0, 0.7);
+}
+#nodesTable .th-actions { background: var(--bg-2); z-index: 3; }
+#nodesTable tbody tr:hover .td-actions { background: #161616; }
+#nodesTable .td-actions .node-actions { justify-content: flex-end; }
+@media (max-width: 900px) {
+    #nodesTable .th-actions, #nodesTable .td-actions { position: static; box-shadow: none; }
+}
 </style>
 
 <script>
