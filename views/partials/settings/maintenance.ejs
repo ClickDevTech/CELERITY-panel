@@ -56,8 +56,15 @@
 
                     <!-- Shown when the updater is not available (dokploy/local/no secret). -->
                     <div id="updateManual" style="display:none;">
-                        <div style="margin-bottom:12px; padding:10px 12px; border-radius:8px; background:rgba(148,163,184,0.12); font-size:13px; color:var(--text-muted);">
-                            <i class="ti ti-info-circle"></i> <%= t('settings.updateManualNotice') || 'Обновление из UI недоступно для этого способа развёртывания. Обновите панель вручную.' %>
+                        <div class="update-manual-banner">
+                            <i class="ti ti-info-circle" aria-hidden="true"></i>
+                            <span><%= t('settings.updateManualNotice') || 'Обновление из UI недоступно для этого способа развёртывания. Обновите панель вручную.' %></span>
+                        </div>
+                        <div class="update-command" role="group" aria-label="<%= t('settings.updateCommandLabel') || 'Команда обновления' %>">
+                            <code class="update-command-text" id="updateCommandText">cd /opt/vampanel &amp;&amp; git pull origin main &amp;&amp; docker compose build --no-cache backend &amp;&amp; docker compose up -d</code>
+                            <button type="button" class="btn btn-sm update-command-copy" id="updateCommandCopyBtn" data-copy="cd /opt/vampanel && git pull origin main && docker compose build --no-cache backend && docker compose up -d" title="<%= t('common.copy') || 'Копировать' %>" aria-label="<%= t('common.copy') || 'Копировать' %>">
+                                <i class="ti ti-copy"></i> <%= t('common.copy') || 'Копировать' %>
+                            </button>
                         </div>
                         <button class="btn btn-secondary" id="updateCheckBtnManual" onclick="checkForUpdates()">
                             <i class="ti ti-refresh"></i> <%= t('settings.updateCheckNow') || 'Проверить сейчас' %>
@@ -68,52 +75,61 @@
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-6">
-            <div class="card">
-                <div class="card-header">
-                    <h2><i class="ti ti-eraser"></i> <%= t('settings.cacheManagement') %></h2>
-                </div>
-                <div class="card-body">
-                    <p style="color: var(--text-muted); font-size: 13px; line-height: 1.6; margin-bottom: 16px;">
-                        <%= t('settings.flushCacheDesc') %>
-                    </p>
-                    <button class="btn btn-warning" onclick="flushCache()">
-                        <i class="ti ti-trash"></i> <%= t('settings.flushCacheBtn') %>
-                    </button>
-                </div>
+    <div class="maintenance-grid">
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="ti ti-eraser"></i> <%= t('settings.cacheManagement') %></h2>
             </div>
-
-            <div class="card" style="margin-top: 16px;">
-                <div class="card-header">
-                    <h2><i class="ti ti-chart-bar-off"></i> <%= t('settings.resetStats') || 'Сброс статистики' %></h2>
-                </div>
-                <div class="card-body">
-                    <p style="color: var(--text-muted); font-size: 13px; line-height: 1.6; margin-bottom: 16px;">
-                        <%= t('settings.resetStatsDesc') || 'Удалить все исторические данные статистики.' %>
-                    </p>
-                    <button class="btn btn-warning" onclick="resetStats()">
-                        <i class="ti ti-trash"></i> <%= t('settings.resetStatsBtn') || 'Очистить статистику' %>
-                    </button>
-                </div>
+            <div class="card-body">
+                <p style="color: var(--text-muted); font-size: 13px; line-height: 1.6; margin-bottom: 16px;">
+                    <%= t('settings.flushCacheDesc') %>
+                </p>
+                <button class="btn btn-warning" onclick="flushCache()">
+                    <i class="ti ti-trash"></i> <%= t('settings.flushCacheBtn') %>
+                </button>
             </div>
         </div>
 
-        <div class="col-6">
-            <div class="card danger-zone">
-                <div class="card-header">
-                    <h2><i class="ti ti-alert-triangle"></i> <%= t('settings.dangerZone') %></h2>
-                </div>
-                <div class="card-body">
-                    <h4 style="margin: 0 0 6px; font-size: 14.5px; color: #fecaca;"><%= t('settings.resetTrafficCounter') %></h4>
-                    <p style="color: var(--text-muted); font-size: 13px; line-height: 1.6; margin-bottom: 16px;">
-                        <%= t('settings.resetTrafficDesc') %>
-                    </p>
-                    <button class="btn btn-danger" onclick="resetTraffic()">
-                        <i class="ti ti-trash"></i> <%= t('settings.resetAllTraffic') %>
-                    </button>
-                </div>
+        <div class="card">
+            <div class="card-header">
+                <h2><i class="ti ti-chart-bar-off"></i> <%= t('settings.resetStats') || 'Сброс статистики' %></h2>
             </div>
+            <div class="card-body">
+                <p style="color: var(--text-muted); font-size: 13px; line-height: 1.6; margin-bottom: 16px;">
+                    <%= t('settings.resetStatsDesc') || 'Удалить все исторические данные статистики.' %>
+                </p>
+                <button class="btn btn-warning" onclick="resetStats()">
+                    <i class="ti ti-trash"></i> <%= t('settings.resetStatsBtn') || 'Очистить статистику' %>
+                </button>
+            </div>
+        </div>
+
+        <div class="card danger-zone">
+            <div class="card-header">
+                <h2><i class="ti ti-alert-triangle"></i> <%= t('settings.dangerZone') %></h2>
+            </div>
+            <div class="card-body">
+                <h4 style="margin: 0 0 6px; font-size: 14.5px; color: var(--ink-1, #f5f5f7);"><%= t('settings.resetTrafficCounter') %></h4>
+                <p style="color: var(--text-muted); font-size: 13px; line-height: 1.6; margin-bottom: 16px;">
+                    <%= t('settings.resetTrafficDesc') %>
+                </p>
+                <button class="btn btn-danger" onclick="openResetTrafficModal()">
+                    <i class="ti ti-trash"></i> <%= t('settings.resetAllTraffic') %>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Danger zone confirmation modal -->
+<div class="glass-modal" id="dangerModal" style="display:none;">
+    <div class="glass-modal-content" style="max-width:420px;">
+        <h3 style="margin-top:0;"><i class="ti ti-alert-triangle"></i> <%= t('settings.resetAllTraffic') %></h3>
+        <p style="color:var(--text-muted); font-size:13px; line-height:1.6;"><%= t('settings.resetTrafficDesc') %></p>
+        <p style="color:var(--text-muted); font-size:13px;"><%= t('settings.resetConfirmFinal').replace(/\n+/g, ' ') %></p>
+        <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+            <button class="btn btn-secondary" onclick="closeDangerModal()"><%= t('common.cancel') || 'Отмена' %></button>
+            <button class="btn btn-danger" id="dangerConfirmBtn" onclick="resetTraffic()"><%= t('settings.resetAllTraffic') %></button>
         </div>
     </div>
 </div>
@@ -212,6 +228,19 @@
 .upd-cl-toggle.is-open i{transform:rotate(90deg);}
 .upd-cl-body{margin-top:10px;padding:12px 14px;max-height:260px;overflow:auto;border:1px solid var(--border,#27272a);border-radius:var(--radius-sm,10px);background:rgba(0,0,0,.18);white-space:pre-wrap;font-size:12.5px;line-height:1.6;color:var(--text-muted,#71717a);}
 .upd-actions{display:flex;justify-content:flex-end;}
+/* --- Maintenance tab: equal 2-column grid --- */
+.maintenance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:stretch;}
+.maintenance-grid .card{height:100%;}
+.maintenance-grid .card:nth-child(n+3){grid-column:1 / -1;}
+@media (max-width:900px){.maintenance-grid{grid-template-columns:1fr;}}
+/* --- Manual update: info banner + copyable command --- */
+.update-manual-banner{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;padding:12px 14px;border-radius:10px;background:rgba(255,255,255,0.05);border:1px solid var(--line);font-size:13px;line-height:1.6;color:var(--text-muted);}
+.update-manual-banner i{flex-shrink:0;font-size:16px;opacity:0.75;}
+.update-command{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding:10px 10px 10px 14px;border-radius:10px;background:rgba(0,0,0,0.35);border:1px solid var(--line);}
+.update-command-text{flex:1 1 auto;min-width:200px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;color:var(--text-secondary);white-space:nowrap;overflow-x:auto;}
+.update-command-copy{flex-shrink:0;}
+/* Monochrome downgrade warning */
+#updateDowngradeWarn{background:rgba(255,255,255,0.06) !important;color:var(--text-secondary,#a1a1aa) !important;border:1px solid var(--line);}
 </style>
 
 <script>
@@ -235,6 +264,7 @@
         success: <%- JSON.stringify(t('settings.updateSuccess') || 'Панель обновлена до v{version}') %>,
         failed: <%- JSON.stringify(t('settings.updateFailed') || 'Обновление не удалось') %>,
         error: <%- JSON.stringify(t('common.error') || 'Ошибка') %>,
+        copied: <%- JSON.stringify(t('common.copied') || 'Скопировано') %>,
         inProgress: <%- JSON.stringify(t('settings.updateInProgress') || 'Обновление панели') %>,
         stepBackup: <%- JSON.stringify(t('settings.updateStepBackup') || 'Резервная копия') %>,
         stepPrepare: <%- JSON.stringify(t('settings.updateStepPrepare') || 'Подготовка') %>,
@@ -329,7 +359,7 @@
         const badge = document.getElementById('updateBadge');
         if (data.updateAvailable) {
             badge.style.display = '';
-            badge.innerHTML = '<span style="display:inline-block; padding:4px 10px; border-radius:6px; background:rgba(34,197,94,0.15); color:#4ade80; font-size:13px;"><i class="ti ti-arrow-up-circle"></i> ' + t.updateAvailable + '</span>';
+            badge.innerHTML = '<span style="display:inline-block; padding:4px 10px; border-radius:6px; border:1px solid rgba(255,255,255,0.28); background:rgba(255,255,255,0.10); color:var(--ink-1,#f5f5f7); font-size:13px; font-weight:600;"><i class="ti ti-arrow-up-circle"></i> ' + t.updateAvailable + '</span>';
         } else if (data.latestVersion) {
             badge.style.display = '';
             badge.innerHTML = '<span style="display:inline-block; padding:4px 10px; border-radius:6px; background:rgba(148,163,184,0.12); color:var(--text-muted); font-size:13px;"><i class="ti ti-check"></i> ' + t.upToDate + '</span>';
@@ -628,6 +658,28 @@
 
     document.getElementById('updateVersionSelect')?.addEventListener('change', onVersionChange);
     document.getElementById('updateChangelogToggle')?.addEventListener('click', toggleChangelog);
+
+    // Danger zone: open/close confirmation modal
+    window.openResetTrafficModal = function () {
+        document.getElementById('dangerModal').style.display = 'flex';
+    };
+    window.closeDangerModal = function () {
+        document.getElementById('dangerModal').style.display = 'none';
+    };
+
+    // Copy the manual update command (toast via global helper when available)
+    document.getElementById('updateCommandCopyBtn')?.addEventListener('click', function () {
+        const value = this.dataset.copy;
+        const done = () => showToast(t.copied || 'Скопировано');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(value).then(done, () => done());
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = value; document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); } catch (_e) { /* noop */ }
+            ta.remove(); done();
+        }
+    });
 
     // Load current status once the maintenance tab is first shown, but cheaply on
     // page load is fine too (single cached call).

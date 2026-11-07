@@ -41,5 +41,30 @@ const crypto = require('crypto');
     } catch (e) { console.log('USER FAIL', n, e.message); break; }
   }
   console.log('users created');
+
+  // Groups
+  const ServerGroup = require('../src/models/serverGroupModel');
+  await ServerGroup.deleteMany({});
+  const groupDocs = await ServerGroup.insertMany([
+    { name: 'EU Premium', description: 'Нидерланды и Германия, приоритетная маршрутизация', color: '#e4e4e7', active: true, maxDevices: 3, subscriptionTitle: 'EU Premium' },
+    { name: 'RU Whitelist', description: 'Белые списки — обход ограничений без проксирования всего трафика', color: '#a1a1aa', active: true, maxDevices: 0, subscriptionTitle: 'RU White' },
+    { name: 'Dev / Test', description: 'Тестовые ноды, не для клиентов', color: '#71717a', active: false, maxDevices: 1, subscriptionTitle: '' },
+  ]);
+  console.log('groups created:', groupDocs.length);
+  const byName = Object.fromEntries(groupDocs.map(g => [g.name, g._id]));
+  const nodesAll = await HyNode.find({}).lean();
+  for (const n of nodesAll) {
+    const attach = [];
+    if (n.name === 'Eindhoven' || n.name === 'Utrecht' || n.name === 'Heidelberg') attach.push(byName['EU Premium']);
+    if (n.name === 'Белые списки') attach.push(byName['RU Whitelist']);
+    if (n.name === 'Kiruna') attach.push(byName['Dev / Test']);
+    await HyNode.updateOne({ _id: n._id }, { groups: attach });
+  }
+  const allUsers = await HyUser.find({}).lean();
+  for (let i = 0; i < allUsers.length; i++) {
+    const gs = i % 3 === 0 ? [] : [byName[i % 2 === 0 ? 'EU Premium' : 'RU Whitelist']];
+    await HyUser.updateOne({ _id: allUsers[i]._id }, { groups: gs });
+  }
+  console.log('groups attached');
   await mongoose.disconnect();
 })();

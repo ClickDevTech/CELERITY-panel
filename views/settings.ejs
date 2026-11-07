@@ -448,10 +448,9 @@ async function flushCache() {
 }
 
 async function resetTraffic() {
-    if (!confirm(i18n.resetConfirm)) return;
-    if (!confirm(i18n.resetConfirmFinal)) return;
-    
-    const btn = event.target;
+    // Confirmed via #dangerModal (maintenance tab) — no confirm() chain here.
+    const btn = document.getElementById('dangerConfirmBtn') || event?.target;
+    closeDangerModal?.();
     btn.disabled = true;
     btn.textContent = i18n.resetting;
     

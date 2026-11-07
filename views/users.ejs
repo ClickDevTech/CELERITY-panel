@@ -1,10 +1,25 @@
+<%
+// Deterministic grayscale avatar tone per userId (monochrome canon: only gray levels)
+const USER_AVATAR_TONES = [
+    { from: '#27272a', to: '#4b4b52', ink: '#f5f5f7' },
+    { from: '#3f3f46', to: '#5b5b63', ink: '#f5f5f7' },
+    { from: '#e4e4e7', to: '#c9c9cf', ink: '#101012' },
+    { from: '#a1a1aa', to: '#7a7a83', ink: '#0a0a0c' },
+    { from: '#52525b', to: '#6e6e77', ink: '#f5f5f7' },
+];
+function userAvatarTone(id) {
+    const seed = String(id || '').split('').reduce((acc, ch) => (acc * 131 + ch.charCodeAt(0)) >>> 0, 7);
+    return USER_AVATAR_TONES[seed % USER_AVATAR_TONES.length];
+}
+function userInitial(user) {
+    const base = String(user.username || user.userId || '?').trim().replace(/^@/, '');
+    return (base.charAt(0) || '?').toUpperCase();
+}
+%>
+
 <div class="page-header sticky-header">
     <div class="page-header-left">
         <span class="results-count"><%= t('common.total') %>: <%= pagination.total %></span>
-        <button type="button" id="bulkDeleteBtn" class="btn btn-danger bulk-delete-btn" hidden>
-            <i class="ti ti-trash"></i>
-            <%= t('users.deleteSelected') %> (<span id="bulkDeleteCount">0</span>)
-        </button>
     </div>
     <div class="page-header-center">
         <div class="filters-bar">
@@ -67,6 +82,7 @@
                 <% } %>
                 <% users.forEach(user => {
                     const isExpired = user.expireAt && new Date(user.expireAt).getTime() < Date.now();
+                    const tone = userAvatarTone(user.userId);
                 %>
                 <tr class="user-row" data-userid="<%= user.userId %>">
                     <td class="td-select user-select-cell">
@@ -74,6 +90,9 @@
                     </td>
                     <td class="td-user">
                         <div class="user-info">
+                            <span class="user-avatar" aria-hidden="true"
+                                  style="background: linear-gradient(135deg, <%= tone.from %>, <%= tone.to %>); color: <%= tone.ink %>;"><%= userInitial(user) %></span>
+                            <div class="user-id-stack">
                             <code class="user-id"><%= user.userId %></code>
                             <% if (user.username) { %>
                             <span class="user-name"><%= user.username %></span>
@@ -81,17 +100,21 @@
                             <% if (user.comment) { %>
                             <small class="user-comment" title="<%= user.comment %>"><i class="ti ti-message-circle"></i> <%= user.comment %></small>
                             <% } %>
+                            </div>
                         </div>
                     </td>
                     <td class="td-status">
                         <% if (isExpired) { %>
-                            <span class="badge badge-danger"><%= t('common.expired') %></span>
+                            <span class="badge badge-danger user-status-badge"><%= t('common.expired') %></span>
                         <% } else { %>
-                        <label class="toggle-switch" title="<%= user.enabled ? t('users.disable') : t('users.enable') %>">
-                            <input type="checkbox" <%= user.enabled ? 'checked' : '' %> 
-                                   onchange="toggleUser('<%= user.userId %>', this.checked)">
-                            <span class="toggle-slider"></span>
-                        </label>
+                        <span class="user-status-wrap">
+                            <label class="toggle-switch" title="<%= user.enabled ? t('users.disable') : t('users.enable') %>">
+                                <input type="checkbox" <%= user.enabled ? 'checked' : '' %> 
+                                       onchange="toggleUser('<%= user.userId %>', this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span class="badge badge-secondary user-status-badge" data-user-status-badge data-userid="<%= user.userId %>"><%= user.enabled ? t('users.statusActive') : t('users.statusDisabled') %></span>
+                        </span>
                         <% } %>
                     </td>
                     <td class="td-groups">
@@ -155,11 +178,14 @@
             const limitBytes = user.trafficLimit || 0;
             const percent = limitBytes > 0 ? Math.min((usedBytes / limitBytes) * 100, 100) : 0;
             const isExpired = user.expireAt && new Date(user.expireAt).getTime() < Date.now();
+            const mTone = userAvatarTone(user.userId);
         %>
             <div class="mobile-user-card" data-userid="<%= user.userId %>">
                 <div class="mobile-node-header">
                     <div class="mobile-user-title-wrap">
                         <input type="checkbox" class="user-select-checkbox mobile-user-select" data-userid="<%= user.userId %>" aria-label="<%= t('users.selectUser') %> <%= user.userId %>">
+                        <span class="user-avatar" aria-hidden="true"
+                              style="background: linear-gradient(135deg, <%= mTone.from %>, <%= mTone.to %>); color: <%= mTone.ink %>;"><%= userInitial(user) %></span>
                         <div class="mobile-node-title">
                             <strong><%= user.userId %></strong>
                             <% if (user.username) { %>
@@ -171,13 +197,16 @@
                         </div>
                     </div>
                     <% if (isExpired) { %>
-                        <span class="badge badge-danger"><%= t('common.expired') %></span>
+                        <span class="badge badge-danger user-status-badge"><%= t('common.expired') %></span>
                     <% } else { %>
-                    <label class="toggle-switch" title="<%= user.enabled ? t('users.disable') : t('users.enable') %>">
-                        <input type="checkbox" <%= user.enabled ? 'checked' : '' %> 
-                               onchange="toggleUser('<%= user.userId %>', this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
+                    <span class="user-status-wrap">
+                        <label class="toggle-switch" title="<%= user.enabled ? t('users.disable') : t('users.enable') %>">
+                            <input type="checkbox" <%= user.enabled ? 'checked' : '' %> 
+                                   onchange="toggleUser('<%= user.userId %>', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="badge badge-secondary user-status-badge" data-user-status-badge data-userid="<%= user.userId %>"><%= user.enabled ? t('users.statusActive') : t('users.statusDisabled') %></span>
+                    </span>
                     <% } %>
                 </div>
                 
@@ -258,6 +287,16 @@
 </div>
 <% } %>
 
+<!-- Floating bulk-selection panel -->
+<div class="bulk-panel" id="bulkPanel" hidden>
+    <span class="bulk-panel-count"><%= t('users.selectedCount').replace('{count}', '') %><span id="bulkDeleteCount">0</span></span>
+    <button type="button" id="bulkDeleteBtn" class="btn btn-danger bulk-delete-btn">
+        <i class="ti ti-trash"></i>
+        <%= t('users.deleteSelected') %>
+    </button>
+    <button type="button" id="clearSelectionBtn" class="btn"><i class="ti ti-x"></i> <%= t('users.clearSelection') %></button>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <%
@@ -273,6 +312,77 @@ function getSortIcon(field) {
 }
 %>
 
+<style>
+/* --- User avatar: deterministic grayscale gradient + initial --- */
+.user-avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; flex-shrink: 0;
+    letter-spacing: 0.02em;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 2px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--line);
+    user-select: none;
+}
+.td-user .user-info, .mobile-user-title-wrap { align-items: center; }
+.user-id-stack { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+
+/* --- Status: toggle + badge as one stack --- */
+.user-status-wrap { display: inline-flex; align-items: center; gap: 10px; }
+.user-status-badge { font-size: 11px; }
+
+/* --- Custom selection checkboxes (checked = white) --- */
+.user-select-checkbox {
+    appearance: none; -webkit-appearance: none;
+    width: 17px; height: 17px; margin: 0; flex-shrink: 0;
+    border: 1px solid var(--line-strong); border-radius: 5px;
+    background: rgba(0, 0, 0, 0.35);
+    cursor: pointer; vertical-align: middle;
+    display: inline-grid; place-content: center;
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.user-select-checkbox:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.06); }
+.user-select-checkbox:focus-visible { outline: 2px solid var(--line-strong); outline-offset: 2px; }
+.user-select-checkbox:checked { background: #fafafa; border-color: #fafafa; }
+.user-select-checkbox:checked::before {
+    content: ''; width: 9px; height: 5px;
+    border: 2px solid #101012; border-top: none; border-right: none;
+    transform: rotate(-45deg) translateY(-1px);
+}
+.user-select-checkbox:indeterminate { background: #a1a1aa; border-color: #a1a1aa; }
+.user-select-checkbox:indeterminate::before {
+    content: ''; width: 8px; height: 2px; background: #101012;
+}
+tr.is-selected, .mobile-user-card.is-selected { background: rgba(255, 255, 255, 0.035); }
+tr.is-selected .user-select-checkbox, .mobile-user-card.is-selected .user-select-checkbox { box-shadow: 0 0 0 1px var(--line-strong); }
+
+/* --- Floating bulk-selection panel --- */
+.bulk-panel {
+    position: fixed; bottom: 18px; left: 50%; z-index: 70;
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 18px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--line-strong); border-radius: 14px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.02);
+    animation: bulkPanelIn 0.18s ease;
+}
+.bulk-panel[hidden] { display: none; }
+@keyframes bulkPanelIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.bulk-panel-count {
+    font-size: 13px; font-weight: 600; color: var(--ink-1);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+@media (max-width: 640px) {
+    .bulk-panel { bottom: 12px; gap: 10px; padding: 9px 12px; max-width: calc(100% - 24px); }
+    .bulk-panel .btn { padding: 8px 12px; font-size: 12.5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .bulk-panel { animation: none; }
+}
+</style>
+
 <script>
 const baseUrl = <%- JSON.stringify(baseUrl) %>;
 const currentSortBy = <%- JSON.stringify(String(query.sortBy || "createdAt").replace(/[<>]/g, "")) %>;
@@ -286,7 +396,9 @@ const i18n = {
     confirmBulkDelete: <%- JSON.stringify(t("users.confirmBulkDelete")) %>,
     bulkDeleteSuccess: <%- JSON.stringify(t("users.bulkDeleteSuccess")) %>,
     bulkDeletePartial: <%- JSON.stringify(t("users.bulkDeletePartial")) %>,
-    bulkDeleteError: <%- JSON.stringify(t("users.bulkDeleteError")) %>
+    bulkDeleteError: <%- JSON.stringify(t("users.bulkDeleteError")) %>,
+    statusActive: <%- JSON.stringify(t("users.statusActive")) %>,
+    statusDisabled: <%- JSON.stringify(t("users.statusDisabled")) %>
 };
 
 const selectedUserIds = new Set();
@@ -311,9 +423,10 @@ function renderBulkSelection() {
         item.classList.toggle('is-selected', selectedUserIds.has(item.dataset.userid));
     });
 
+    const bulkPanel = document.getElementById('bulkPanel');
     const selectedCount = selectedUserIds.size;
     bulkDeleteCount.textContent = selectedCount;
-    bulkDeleteBtn.hidden = selectedCount === 0;
+    bulkPanel.hidden = selectedCount === 0;
 
     const desktopCheckboxes = Array.from(document.querySelectorAll('#usersTable tbody .user-select-checkbox[data-userid]'));
     const selectedDesktopCount = desktopCheckboxes.filter((checkbox) => selectedUserIds.has(checkbox.dataset.userid)).length;
@@ -344,6 +457,11 @@ selectAllVisibleUsers.addEventListener('change', () => {
             selectedUserIds.delete(checkbox.dataset.userid);
         }
     });
+    renderBulkSelection();
+});
+
+document.getElementById('clearSelectionBtn').addEventListener('click', () => {
+    selectedUserIds.clear();
     renderBulkSelection();
 });
 
@@ -442,6 +560,9 @@ async function toggleUser(userId, enabled) {
         });
         
         if (!res.ok) throw new Error('Failed');
+        row.querySelectorAll('[data-user-status-badge]').forEach((badge) => {
+            badge.textContent = enabled ? i18n.statusActive : i18n.statusDisabled;
+        });
         showToast(enabled ? i18n.turnedOn : i18n.turnedOff);
     } catch (e) {
         if (toggle) toggle.checked = !enabled;
