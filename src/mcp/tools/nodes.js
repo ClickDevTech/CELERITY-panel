@@ -118,7 +118,7 @@ const xrayInboundCommonZ = {
     xhttpSeqKey: z.string().max(64).optional(),
     fallbackDest: z.string().optional().describe('VLESS fallbacks[].dest — emitted only on tcp+tls'),
     // Keys are panel-generated and never accepted from callers.
-    vlessEncryption: z.boolean().optional().describe('VLESS Encryption (mlkem768x25519plus); requires Xray >= 25.9.5 and no fallbackDest. sing-box subscriptions skip encrypted inbounds'),
+    vlessEncryption: z.boolean().optional().describe('VLESS Encryption (mlkem768x25519plus); requires Xray >= 25.9.5 and no fallbackDest. sing-box subscriptions skip encrypted inbounds unless settings.subscription.singboxVlessEncryption is on'),
     vlessEncryptionAuth: z.enum(['x25519', 'mlkem768']).optional().describe('Server key type: x25519 (default, short client key) or mlkem768 (post-quantum auth, ~1.6 KB client key)'),
     vlessEncryptionMode: z.enum(['native', 'xorpub', 'random']).optional().describe('Wire appearance (default native)'),
     vlessEncryptionTicket: z.string().max(32).optional().describe('0-RTT ticket lifetime: "600s" (default), "300-600s", or "0s" to disable 0-RTT'),

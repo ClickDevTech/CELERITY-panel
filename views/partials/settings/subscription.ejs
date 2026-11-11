@@ -91,6 +91,22 @@
                 <hr class="settings-divider">
 
                 <div class="settings-subsection-title">
+                    <i class="ti ti-box-multiple"></i> sing-box
+                </div>
+
+                <input type="hidden" name="_singboxEncryptionSettings" value="1">
+                <label class="checkbox-label">
+                    <input type="checkbox" name="subscription.singboxVlessEncryption"
+                           <%= settings?.subscription?.singboxVlessEncryption ? 'checked' : '' %>>
+                    <span class="checkbox-text">
+                        <strong><%= t('settings.subSingboxVlessEncryption') %></strong>
+                        <small class="hint" style="display:block; margin-top:2px;"><%= t('settings.subSingboxVlessEncryptionHint') %></small>
+                    </span>
+                </label>
+
+                <hr class="settings-divider">
+
+                <div class="settings-subsection-title">
                     <i class="ti ti-grip-horizontal"></i> <%= t('settings.subButtons') || 'Кнопки на странице подписки' %>
                     <span style="margin-left: auto; font-size: 11.5px; color: var(--text-muted); text-transform: none; letter-spacing: 0; font-weight: 500;" id="subBtnCount"></span>
                 </div>

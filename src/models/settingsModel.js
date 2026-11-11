@@ -93,6 +93,10 @@ const settingsSchema = new mongoose.Schema({
         // Instruction shown under the title on the public subscription page.
         pageNote:       { type: String, default: '', maxlength: 2000 },
         updateInterval: { type: Number, default: 12 },
+        // Publish VLESS Encryption inbounds in sing-box JSON. Only forks that
+        // know the `encryption` key accept them; upstream sing-box (SFA, SFI,
+        // Hiddify) rejects the whole config.
+        singboxVlessEncryption: { type: Boolean, default: false },
         buttons: {
             type: [{
                 _id: false,

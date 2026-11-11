@@ -312,7 +312,7 @@ function makeNode(xray, overrides = {}) {
         assert.strictEqual(await ve.applyVlessEncryptionToXray(baseXray({ vlessEncryption: 'true' }), null), null);
     }
 
-    // ---- subscriptions: URI, Clash, Xray JSON, sing-box skip
+    // ---- subscriptions: URI, Clash, Xray JSON, sing-box skip unless the client is sing-box-lx
     {
         const node = makeNode(enabled);
         const published = getXrayPublishedInbounds(node);
@@ -358,6 +358,18 @@ function makeNode(xray, overrides = {}) {
         for (const group of sbEmpty.outbounds.filter(o => Array.isArray(o.outbounds))) {
             assert.ok(group.outbounds.length > 0, `${group.tag} is not empty`);
         }
+
+        // With subscription.singboxVlessEncryption on, encrypted inbounds carry `encryption`.
+        const lxOutbound = singboxVlessOutboundForInbound(user, node, published[0], { vlessEncryption: true }).outbound;
+        assert.strictEqual(lxOutbound.encryption, clientMain);
+        assert.strictEqual(lxOutbound.flow, 'xtls-rprx-vision');
+        assert.strictEqual(
+            singboxVlessOutboundForInbound(user, node, published[2], { vlessEncryption: true }).outbound.encryption,
+            undefined,
+        );
+        const sbLx = singboxJSON(user, [node, virtual], null, { vlessEncryption: true });
+        assert.strictEqual(sbLx.outbounds.filter(o => o.type === 'vless').length, 3);
+        assert.strictEqual(sbLx.outbounds.filter(o => o.encryption).length, 2);
 
         const yaml = clashYAML(user, [node], null);
         assert.ok(yaml.includes(`encryption: "${clientMain}"`));

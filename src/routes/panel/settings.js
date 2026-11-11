@@ -237,6 +237,10 @@ router.post('/settings', async (req, res) => {
                 return Number.isNaN(n) ? 12 : Math.min(168, Math.max(1, n));
             });
 
+            if (req.body['_singboxEncryptionSettings'] !== undefined) {
+                updates['subscription.singboxVlessEncryption'] = req.body['subscription.singboxVlessEncryption'] === 'on';
+            }
+
             if (req.body['subscription.buttonsJson'] !== undefined) {
                 let parsedButtons = [];
                 try { parsedButtons = JSON.parse(req.body['subscription.buttonsJson'] || '[]'); } catch {}
@@ -490,9 +494,9 @@ router.post('/settings', async (req, res) => {
         } catch (_e) { /* ignore */ }
         await reloadSettings();
 
-        // Drop subscription cache so load-balancing toggles take effect now,
-        // not after subscriptionTTL (up to 1 h).
-        if (systemTabSubmit) {
+        // Drop subscription cache so load-balancing and sing-box encryption
+        // toggles take effect now, not after subscriptionTTL (up to 1 h).
+        if (systemTabSubmit || req.body['_singboxEncryptionSettings'] !== undefined) {
             await cache.invalidateAllSubscriptions();
         }
 

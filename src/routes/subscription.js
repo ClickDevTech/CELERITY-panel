@@ -1624,15 +1624,21 @@ function generateClashYAML(user, nodes, routing) {
     return yaml;
 }
 
-function _buildSingboxVlessOutboundForInbound(user, node, inbound) {
+/**
+ * @param {Object} [opts]
+ * @param {boolean} [opts.vlessEncryption] - publish encrypted inbounds with
+ *   `encryption` (settings.subscription.singboxVlessEncryption). Upstream
+ *   sing-box rejects the whole config on that key, so they are skipped by default.
+ */
+function _buildSingboxVlessOutboundForInbound(user, node, inbound, opts = {}) {
     const host = inbound.address || node.domain || node.ip;
     const transport = inbound.transport || 'tcp';
     const security = inbound.security || 'reality';
     const fingerprint = inbound.fingerprint || 'chrome';
     const tag = _xrayInboundName(node, inbound);
 
-    if (inbound.vlessEncryption) {
-        logger.debug(`[Sub] sing-box: skipped "${node.name}" inbound — VLESS Encryption is not supported`);
+    if (inbound.vlessEncryption && !opts.vlessEncryption) {
+        logger.debug(`[Sub] sing-box: skipped "${node.name}" inbound — VLESS Encryption is off for sing-box in settings`);
         return { tag, outbound: null };
     }
 
@@ -1643,6 +1649,9 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound) {
         server_port: inbound.port || node.port || 443,
         uuid: user.xrayUuid,
     };
+    if (inbound.vlessEncryption) {
+        outbound.encryption = inbound.vlessEncryption;
+    }
 
     if (transport === 'tcp' && (security === 'reality' || security === 'tls')) {
         outbound.flow = inbound.flow || 'xtls-rprx-vision';
@@ -1724,9 +1733,9 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound) {
 /**
  * Build sing-box outbounds for every published inbound of an Xray node.
  */
-function _buildSingboxVlessOutbounds(user, node) {
+function _buildSingboxVlessOutbounds(user, node, opts = {}) {
     return getXrayPublishedInbounds(node)
-        .map(inbound => _buildSingboxVlessOutboundForInbound(user, node, inbound));
+        .map(inbound => _buildSingboxVlessOutboundForInbound(user, node, inbound, opts));
 }
 
 /**
@@ -2109,7 +2118,10 @@ function generateXrayJSON(user, nodes, routing) {
     return profiles;
 }
 
-function generateSingboxJSON(user, nodes, routing) {
+/**
+ * @param {Object} [opts] - forwarded to _buildSingboxVlessOutboundForInbound
+ */
+function generateSingboxJSON(user, nodes, routing, opts = {}) {
     const auth = `${user.userId}:${user.password}`;
     const proxyOutbounds = [];
     const tags = [];
@@ -2126,7 +2138,7 @@ function generateSingboxJSON(user, nodes, routing) {
         const beforeIdx = tags.length;
         if (node.type === 'xray' || node.type === 'cdn') {
             if (!user.xrayUuid) return;
-            _buildSingboxVlessOutbounds(user, node).forEach(({ tag, outbound }) => {
+            _buildSingboxVlessOutbounds(user, node, opts).forEach(({ tag, outbound }) => {
                 if (!outbound) return;
                 const uniqueTag = dedupeLabel(tag);
                 outbound.tag = uniqueTag;
@@ -3447,7 +3459,9 @@ async function serveSubscription(req, res, ctx) {
 
     logger.debug(`[Sub] Serving ${nodes.length} nodes to user ${user.userId}`);
 
-    const subscriptionData = generateSubscriptionData(user, nodes, format, userAgent, settings?.subscription?.happProviderId || '', settings?.routing);
+    const subscriptionData = generateSubscriptionData(user, nodes, format, userAgent, settings?.subscription?.happProviderId || '', settings?.routing, {
+        singboxVlessEncryption: settings?.subscription?.singboxVlessEncryption === true,
+    });
     await cache.setSubscription(cacheToken, cacheFormat, subscriptionData);
     return sendCachedSubscription(res, subscriptionData, format, userAgent, settings, hwidHeaders);
 }
@@ -3501,7 +3515,7 @@ router.get('/files/:token', async (req, res) => {
 /**
  * Generate subscription data for caching
  */
-function generateSubscriptionData(user, nodes, format, userAgent, happProviderId = '', routing = null) {
+function generateSubscriptionData(user, nodes, format, userAgent, happProviderId = '', routing = null, opts = {}) {
     let content;
     let needsBase64 = false;
     // Effective format may differ from requested when we transparently upgrade
@@ -3521,7 +3535,9 @@ function generateSubscriptionData(user, nodes, format, userAgent, happProviderId
             break;
         case 'singbox':
         case 'json':
-            content = JSON.stringify(generateSingboxJSON(user, nodes, routing), null, 2);
+            content = JSON.stringify(generateSingboxJSON(user, nodes, routing, {
+                vlessEncryption: opts.singboxVlessEncryption === true,
+            }), null, 2);
             break;
         case 'v2ray-json':
             content = JSON.stringify(generateV2rayJSON(user, nodes, routing), null, 2);
