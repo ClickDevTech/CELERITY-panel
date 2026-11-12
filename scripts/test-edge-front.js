@@ -83,6 +83,7 @@ const {
 const {
     applyFrontPatch,
     captureFrontRollbackState,
+    frontUpdatePaths,
 } = require('../src/services/edgeFront/frontConfig');
 const { selectCaddyAsset } = require('../src/services/edgeFront/release');
 const {
@@ -522,7 +523,54 @@ function makeNode(overrides = {}) {
 
     // A patch is still a patch: sent fields win over the stored ones.
     assert.strictEqual(node.xray.front.publicPort, 443);
+    assert.ok(!('siteHtml' in node.xray.front.rollbackSnapshot.xray.front),
+        'the rollback snapshot does not duplicate the decoy page');
+    assert.ok(!Object.keys(frontUpdatePaths(node.xray.front)).includes('xray.front.siteHtml'),
+        'REST/MCP never write the decoy page');
+}
 
+// ---- front patch without siteMode -------------------------------------------
+{
+    // A partial REST/MCP patch must not reset omitted fields to their defaults:
+    // an absent siteMode used to become 'nginx' and replace the uploaded page.
+    const node = makeNode();
+    const previousFront = {
+        ...node.xray.front,
+        enabled: true,
+        publicPort: 443,
+        siteMode: 'custom',
+        logLevel: 'ERROR',
+        siteHtml: Buffer.from('<html>decoy</html>'),
+        inboundIds: [MAIN_INBOUND_ID, 'extra-ws'],
+        appliedFingerprint: 'abc123',
+        status: 'active',
+    };
+    node.xray.front = { inboundIds: [MAIN_INBOUND_ID], siteHtml: null, status: 'active' };
+
+    assert.strictEqual(applyFrontPatch(node.xray, node, previousFront), null);
+    assert.strictEqual(node.xray.front.siteMode, 'custom');
+    assert.strictEqual(node.xray.front.enabled, true);
+    assert.strictEqual(node.xray.front.logLevel, 'ERROR');
+    assert.deepStrictEqual(node.xray.front.inboundIds, [MAIN_INBOUND_ID]);
+    assert.strictEqual(node.xray.front.siteHtml.toString(), '<html>decoy</html>',
+        'a caller cannot clear the decoy page through the patch');
+    assert.strictEqual(node.xray.front.status, 'pending',
+        'a caller cannot set the provisioning state');
+
+    const paths = frontUpdatePaths(node.xray.front);
+    assert.strictEqual(paths['xray.front.siteMode'], 'custom');
+    assert.strictEqual(paths['xray.front.enabled'], true);
+    assert.ok(!('xray.front.siteHtml' in paths));
+    assert.ok(!('xray.front' in paths), 'the front subdocument is never replaced whole');
+
+    // An explicit switch to nginx is honoured; the page stays stored.
+    node.xray.front = { siteMode: 'nginx' };
+    assert.strictEqual(applyFrontPatch(node.xray, node, previousFront), null);
+    assert.strictEqual(node.xray.front.siteMode, 'nginx');
+    assert.ok(!('xray.front.siteHtml' in frontUpdatePaths(node.xray.front)));
+}
+
+{
     const firstEnable = makeNode();
     firstEnable.port = 443;
     firstEnable.xray.listen = '0.0.0.0';

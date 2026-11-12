@@ -36,7 +36,8 @@ assert.ok(findCollision(legacy), 'the legacy projection must reproduce the colli
 
 const fields = projectionFor(FRONT_HIDDEN_SELECT);
 assert.strictEqual(findCollision(fields), null, `path collision: ${findCollision(fields)}`);
-assert.notStrictEqual(fields['xray.front.siteHtml'], 0, 'siteHtml must be loaded');
+assert.strictEqual(fields['xray.front.siteHtml'], 0,
+    'REST/MCP updates never write the decoy page, so they must not read up to 256 KB of it');
 assert.notStrictEqual(fields['xray.front.rollbackSnapshot'], 0, 'rollbackSnapshot must be loaded');
 assert.strictEqual(fields['xray.manualKey'], 0, 'manualKey must stay hidden');
 

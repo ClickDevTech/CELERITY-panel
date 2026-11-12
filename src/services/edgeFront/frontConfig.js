@@ -22,11 +22,26 @@ function validateFront(xray, node) {
     });
 }
 
-// Hidden front fields a node update must load to carry them over when the
-// front subdocument is written whole. Never combine with an inclusive
-// projection that lists `xray`: MongoDB rejects a parent and its child in one
-// projection ("Path collision at xray.front.siteHtml").
-const FRONT_HIDDEN_SELECT = '+xray.front.siteHtml +xray.front.rollbackSnapshot';
+// Hidden front field a REST/MCP node update must load to keep the pending
+// cutover baseline. siteHtml is left out: those updates never write it (see
+// frontUpdatePaths). Never combine with an inclusive projection that lists
+// `xray`: MongoDB rejects a parent and its child in one projection.
+const FRONT_HIDDEN_SELECT = '+xray.front.rollbackSnapshot';
+
+// The decoy page is only changed by the panel upload/reset routes.
+const FRONT_UPDATE_EXCLUDED_KEYS = new Set(['siteHtml', 'siteHtmlBytes']);
+
+// $set entries for a front written by REST/MCP. Dot-paths leave siteHtml in
+// MongoDB untouched, whatever the merged front object carries.
+function frontUpdatePaths(front) {
+    const paths = {};
+    if (!front || typeof front !== 'object') return paths;
+    for (const [key, value] of Object.entries(front)) {
+        if (FRONT_UPDATE_EXCLUDED_KEYS.has(key) || value === undefined) continue;
+        paths[`xray.front.${key}`] = value;
+    }
+    return paths;
+}
 
 // Persisted until the remote cutover succeeds. The remote transaction restores
 // the previous Xray/Caddy runtime; this snapshot makes MongoDB match it again.
@@ -43,6 +58,9 @@ function captureFrontRollbackState(node) {
     if (xray.front) {
         xray.front = { ...xray.front };
         delete xray.front.rollbackSnapshot;
+        // A rollback keeps the current page (see rollbackFrontDatabaseState),
+        // so a copy of up to 256 KB would only go stale.
+        delete xray.front.siteHtml;
     }
     return {
         ip: plain.ip,
@@ -97,10 +115,12 @@ function applyFrontLayout(xray, node, previousFront) {
 }
 
 // Normalize, lay out and validate in one step; returns the first error or null.
+// Fields the patch omits keep their stored values: normalizeXrayFront maps an
+// absent siteMode to 'nginx', which would replace the uploaded decoy page.
 function applyFrontPatch(xray, node, previousFront, rollbackState = null) {
     if (!xray?.front) return null;
     const previous = previousFront?.toObject ? previousFront.toObject() : (previousFront || {});
-    xray.front = { ...previous, ...normalizeXrayFront(xray.front) };
+    xray.front = { ...previous, ...normalizeXrayFront({ ...previous, ...xray.front }) };
     applyFrontLayout(xray, node, previousFront);
     attachFrontRollbackState(xray, rollbackState, previous);
     return validateFront(xray, node);
@@ -108,6 +128,7 @@ function applyFrontPatch(xray, node, previousFront, rollbackState = null) {
 
 module.exports = {
     FRONT_HIDDEN_SELECT,
+    frontUpdatePaths,
     validateFront,
     captureFrontRollbackState,
     attachFrontRollbackState,

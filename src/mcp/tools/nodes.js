@@ -12,6 +12,7 @@ const cache = require('../../services/cacheService');
 const cryptoService = require('../../services/cryptoService');
 const logger = require('../../utils/logger');
 const { isServerlessNode, checkCascadeMembership } = require('../../utils/nodeTypes');
+const { OBSERVATORY_HTTP_METHODS, normalizeVirtualObservatory } = require('../../utils/virtualObservatory');
 const nodeSetupLock = require('../../utils/nodeSetupLock');
 const {
     mergeCdnConfig,
@@ -30,6 +31,7 @@ const {
 } = require('../../utils/xhttpOptions');
 const {
     FRONT_HIDDEN_SELECT,
+    frontUpdatePaths,
     applyFrontPatch,
     captureFrontRollbackState,
 } = require('../../services/edgeFront/frontConfig');
@@ -141,7 +143,7 @@ const xrayExtraInboundZ = z.object({
 const xrayFrontZ = z.object({
     enabled: z.boolean().optional(),
     publicPort: z.number().int().min(1).max(65535).optional().describe('Port clients connect to; Caddy listens here instead of the inbounds (default 443)'),
-    siteMode: z.enum(['nginx', 'custom']).optional().describe('Decoy site on /: built-in nginx welcome page, or HTML uploaded via the panel'),
+    siteMode: z.enum(['nginx', 'custom']).optional().describe('Decoy site on /: built-in nginx welcome page, or HTML uploaded via the panel. Omit to keep the current mode; "nginx" keeps the uploaded page stored'),
     logLevel: z.enum(['WARN', 'ERROR']).optional().describe('Caddy log level (default WARN). ERROR silences per-request warnings from CDN cancellations but hides other warnings too'),
     inboundIds: z.array(z.string()).optional().describe('"main" for the main inbound, otherwise extraInbounds[].id'),
 });
@@ -159,7 +161,7 @@ const xrayConfigZ = z.object({
     agentToken: z.string().optional(),
     agentTls: z.boolean().optional(),
     extraInbounds: z.array(xrayExtraInboundZ).optional(),
-    front: xrayFrontZ.optional(),
+    front: xrayFrontZ.optional().describe('Caddy front patch: on update, omitted fields keep their stored values. The custom decoy page is uploaded through the panel only and is never changed or removed here'),
 });
 
 const manageNodeSchema = z.object({
@@ -195,6 +197,7 @@ const manageNodeSchema = z.object({
                 interval: z.string().optional().describe('Probe interval, e.g. "1m", "30s" (min "10s")'),
                 timeout: z.string().optional().describe('Probe timeout, e.g. "5s"'),
                 sampling: z.number().int().min(1).max(50).optional().describe('Burst Observatory sample window — recent probe results to keep'),
+                httpMethod: z.enum(OBSERVATORY_HTTP_METHODS).optional().describe('leastLoad (burstObservatory) only: HEAD (default) fetches headers; GET downloads the whole response body on every probe, including the connectivity check. Ignored by sing-box/Mihomo and by leastPing'),
             }).optional(),
         }).optional(),
         cdn: z.object({
@@ -421,6 +424,7 @@ async function manageNode(args, emit) {
 
             // Validate virtual-specific fields up-front so the caller gets a
             // clear 400 instead of a generic ValidationError 500 from save().
+            let virtualObservatory = null;
             if (nodeType === 'virtual') {
                 const v = data.virtual || {};
                 const selectMode = v.selectMode === 'group' ? 'group' : 'manual';
@@ -430,6 +434,8 @@ async function manageNode(args, emit) {
                 if (selectMode === 'manual' && (!Array.isArray(v.sources) || v.sources.length === 0)) {
                     return { error: 'Virtual node (manual): at least one source required', code: 400 };
                 }
+                virtualObservatory = normalizeVirtualObservatory(v.observatory);
+                if (virtualObservatory.error) return { error: virtualObservatory.error, code: 400 };
             } else if (nodeType === 'cdn') {
                 const normalized = normalizeCdnConfig(data.cdn);
                 if (normalized.error) return { error: normalized.error, code: 400 };
@@ -509,13 +515,7 @@ async function manageNode(args, emit) {
                         : 50,
                     idleTimeout: (v.idleTimeout || '').trim(),
                     interruptExistConnections: v.interruptExistConnections !== false,
-                    observatory: {
-                        destination: (v.observatory?.destination || '').trim() || 'http://www.gstatic.com/generate_204',
-                        connectivity: (v.observatory?.connectivity || '').trim(),
-                        interval: (v.observatory?.interval || '').trim() || '1m',
-                        timeout: (v.observatory?.timeout || '').trim() || '5s',
-                        sampling: parseInt(v.observatory?.sampling, 10) || 3,
-                    },
+                    observatory: virtualObservatory.value,
                 };
             } else if (nodeType === 'cdn') {
                 nodeData.cdn = data.cdn;
@@ -583,8 +583,8 @@ async function manageNode(args, emit) {
 
             // findByIdAndUpdate skips pre('validate') hooks, so re-implement
             // type-aware invariants here. Mirror the behaviour of routes/nodes.js PUT.
-            // The front subdocument is written whole, so the decoy page has to be
-            // carried over instead of being dropped by the $set.
+            // The pending rollback baseline is hidden; the decoy page is not loaded
+            // because the front is written by dot-paths that never include it.
             const existing = await HyNode.findById(id)
                 .select(FRONT_HIDDEN_SELECT)
                 .lean();
@@ -631,6 +631,11 @@ async function manageNode(args, emit) {
                 }
                 if (v.selectMode !== 'group' && (!Array.isArray(v.sources) || v.sources.length === 0)) {
                     return { error: 'Virtual node (manual): at least one source required', code: 400 };
+                }
+                if (updates.virtual && typeof updates.virtual === 'object') {
+                    const observatory = normalizeVirtualObservatory(updates.virtual.observatory);
+                    if (observatory.error) return { error: observatory.error, code: 400 };
+                    updates.virtual = { ...updates.virtual, observatory: observatory.value };
                 }
                 updates.ip = null;
                 updates.domain = '';
@@ -680,9 +685,10 @@ async function manageNode(args, emit) {
                     if (frontError) return { error: frontError, code: 400 };
                     // Persist pending state and everything the layout can rewrite.
                     updates.port = frontNode.port;
-                    for (const key of ['front', 'listen', 'security', 'extraInbounds']) {
+                    for (const key of ['listen', 'security', 'extraInbounds']) {
                         if (nextXray[key] !== undefined) updates[`xray.${key}`] = nextXray[key];
                     }
+                    Object.assign(updates, frontUpdatePaths(nextXray.front));
                 }
             }
 

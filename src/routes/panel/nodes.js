@@ -25,6 +25,7 @@ const uaStatsService = require('../../services/uaStatsService');
 const { getActiveGroups, invalidateNodesCache, normalizeSubscriptionVariants } = require('../../utils/helpers');
 const { buildNodeUiMeta } = require('../../utils/nodeUi');
 const { isServerlessNode, checkCascadeMembership } = require('../../utils/nodeTypes');
+const { normalizeVirtualObservatory } = require('../../utils/virtualObservatory');
 const nodeSetupLock = require('../../utils/nodeSetupLock');
 const {
     normalizeCdnConfig,
@@ -161,6 +162,16 @@ function applyVirtualFormFields(nodeData, body) {
         ? Math.min(Math.max(toleranceRaw, 0), 5000)
         : 50;
 
+    const observatory = normalizeVirtualObservatory({
+        destination: body['virtual.observatory.destination'],
+        connectivity: body['virtual.observatory.connectivity'],
+        interval: body['virtual.observatory.interval'],
+        timeout: body['virtual.observatory.timeout'],
+        sampling: body['virtual.observatory.sampling'],
+        httpMethod: body['virtual.observatory.httpMethod'],
+    });
+    if (observatory.error) return observatory.error;
+
     nodeData.virtual = {
         selectMode,
         sources,
@@ -170,13 +181,7 @@ function applyVirtualFormFields(nodeData, body) {
         tolerance,
         idleTimeout: (body['virtual.idleTimeout'] || '').trim(),
         interruptExistConnections: body['virtual.interruptExistConnections'] === 'on',
-        observatory: {
-            destination: (body['virtual.observatory.destination'] || '').trim() || 'http://www.gstatic.com/generate_204',
-            connectivity: (body['virtual.observatory.connectivity'] || '').trim(),
-            interval: (body['virtual.observatory.interval'] || '').trim() || '1m',
-            timeout: (body['virtual.observatory.timeout'] || '').trim() || '5s',
-            sampling: parseInt(body['virtual.observatory.sampling'], 10) || 3,
-        },
+        observatory: observatory.value,
     };
     return null;
 }

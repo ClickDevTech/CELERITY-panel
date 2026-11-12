@@ -15,6 +15,7 @@ const { invalidateNodesCache, normalizeSubscriptionVariants } = require('../util
 const nodeSetup = require('../services/nodeSetup');
 const syncService = require('../services/syncService');
 const { isServerlessNode, checkCascadeMembership } = require('../utils/nodeTypes');
+const { normalizeVirtualObservatory } = require('../utils/virtualObservatory');
 const nodeSetupLock = require('../utils/nodeSetupLock');
 const {
     mergeCdnConfig,
@@ -25,6 +26,7 @@ const {
 const { validateXrayXhttp } = require('../utils/xhttpOptions');
 const {
     FRONT_HIDDEN_SELECT,
+    frontUpdatePaths,
     applyFrontPatch,
     captureFrontRollbackState,
 } = require('../services/edgeFront/frontConfig');
@@ -322,6 +324,7 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
         // skipped on findOneAndUpdate but still runs on .save(); keeping the
         // explicit check here gives callers a clear 400 instead of a generic
         // ValidationError 500).
+        let virtualObservatory = null;
         if (nodeType === 'virtual') {
             const v = virtual || {};
             const selectMode = v.selectMode === 'group' ? 'group' : 'manual';
@@ -331,6 +334,8 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
             if (selectMode === 'manual' && (!Array.isArray(v.sources) || v.sources.length === 0)) {
                 return res.status(400).json({ error: 'Virtual node (manual): at least one source required' });
             }
+            virtualObservatory = normalizeVirtualObservatory(v.observatory);
+            if (virtualObservatory.error) return res.status(400).json({ error: virtualObservatory.error });
         }
         let normalizedCdn = null;
         if (nodeType === 'cdn') {
@@ -413,13 +418,7 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
                     : 50,
                 idleTimeout: (v.idleTimeout || '').trim(),
                 interruptExistConnections: v.interruptExistConnections !== false,
-                observatory: {
-                    destination: (v.observatory?.destination || '').trim() || 'http://www.gstatic.com/generate_204',
-                    connectivity: (v.observatory?.connectivity || '').trim(),
-                    interval: (v.observatory?.interval || '').trim() || '1m',
-                    timeout: (v.observatory?.timeout || '').trim() || '5s',
-                    sampling: parseInt(v.observatory?.sampling, 10) || 3,
-                },
+                observatory: virtualObservatory.value,
             };
         }
         if (nodeType === 'cdn') nodeData.cdn = normalizedCdn;
@@ -485,8 +484,8 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         // findByIdAndUpdate bypasses pre('validate') hooks even with runValidators,
         // so enforce type-specific invariants explicitly here. We need the existing
         // doc to know the resulting type when only one of {type,virtual} is sent.
-        // The front subdocument is written whole, so the decoy page has to be
-        // carried over instead of being dropped by the $set.
+        // The pending rollback baseline is hidden; the decoy page is not loaded
+        // because the front is written by dot-paths that never include it.
         const existing = await HyNode.findById(req.params.id)
             .select(FRONT_HIDDEN_SELECT)
             .lean();
@@ -541,6 +540,11 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
             if (v.selectMode !== 'group' && (!Array.isArray(v.sources) || v.sources.length === 0)) {
                 return res.status(400).json({ error: 'Virtual node (manual): at least one source required' });
             }
+            if (updates.virtual && typeof updates.virtual === 'object') {
+                const observatory = normalizeVirtualObservatory(updates.virtual.observatory);
+                if (observatory.error) return res.status(400).json({ error: observatory.error });
+                updates.virtual = { ...updates.virtual, observatory: observatory.value };
+            }
             // Virtual nodes carry no IP — clear any leftover from a prior type.
             updates.ip = null;
             updates.domain = '';
@@ -587,9 +591,10 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
                 // Persist the pending state and everything the layout rewrites,
                 // even when a partial patch changed only TLS/path/domain.
                 updates.port = frontNode.port;
-                for (const key of ['front', 'listen', 'security', 'extraInbounds']) {
+                for (const key of ['listen', 'security', 'extraInbounds']) {
                     if (nextXray[key] !== undefined) updates[`xray.${key}`] = nextXray[key];
                 }
+                Object.assign(updates, frontUpdatePaths(nextXray.front));
             }
         }
 

@@ -144,6 +144,43 @@ async function run() {
         assert.ok(!persisted.xray.front.rollbackSnapshot);
         assert.strictEqual(invalidations, 1, 'subscription caches are invalidated after rollback');
 
+        // A page uploaded while the cutover was pending outlives the rollback,
+        // even when an older snapshot still carries the previous page.
+        document = makeDocument({
+            _id: 'node-1',
+            type: 'xray',
+            ip: '203.0.113.20',
+            port: 8443,
+            domain: 'node.example.com',
+            status: 'syncing',
+            xray: {
+                listen: '127.0.0.1',
+                transport: 'xhttp',
+                security: 'none',
+                xhttpPath: '/new',
+                front: {
+                    enabled: true,
+                    publicPort: 443,
+                    siteMode: 'custom',
+                    siteHtml: '<html>uploaded while pending</html>',
+                    inboundIds: ['main'],
+                    appliedFingerprint: '',
+                    status: 'pending',
+                    rollbackSnapshot: {
+                        ...previous,
+                        xray: {
+                            ...previous.xray,
+                            front: { ...previous.xray.front, siteMode: 'custom', siteHtml: '<html>stale</html>' },
+                        },
+                    },
+                },
+            },
+        });
+        persisted = null;
+        await rollbackFrontDatabaseState('node-1', 'injected Caddy failure');
+        assert.strictEqual(persisted.xray.front.siteHtml, '<html>uploaded while pending</html>');
+        assert.strictEqual(persisted.xray.front.siteMode, 'custom');
+
         const previousActive = {
             ip: '203.0.113.10',
             port: 8443,

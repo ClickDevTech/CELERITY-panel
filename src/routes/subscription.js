@@ -2099,6 +2099,8 @@ function generateXrayJSON(user, nodes, routing) {
                     sampling: obs.sampling || 3,
                 };
                 if (obs.connectivity) pingConfig.connectivity = obs.connectivity;
+                // Omitted means HEAD in Xray, so the default output stays unchanged.
+                if (obs.httpMethod === 'GET') pingConfig.httpMethod = 'GET';
                 extras.burstObservatory = { subjectSelector: balancerSelector, pingConfig };
             }
 
@@ -3729,5 +3731,6 @@ module.exports.singboxVlessOutboundForInbound = _buildSingboxVlessOutboundForInb
 module.exports.clashVlessProxyForInbound = _buildClashVlessProxyForInbound;
 module.exports.v2rayOutboundsForNode = _buildV2rayOutboundsForNode;
 module.exports.singboxJSON = generateSingboxJSON;
+module.exports.xrayJSON = generateXrayJSON;
 module.exports.clashYAML = generateClashYAML;
 module.exports.resolveCdnOrigins = resolveCdnOrigins;

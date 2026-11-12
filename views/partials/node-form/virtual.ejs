@@ -5,6 +5,7 @@ const v = node?.virtual || {};
 const selectMode = v.selectMode || 'manual';
 const strategy = v.strategy || 'leastLoad';
 const obs = v.observatory || {};
+const obsHttpMethod = obs.httpMethod === 'GET' ? 'GET' : 'HEAD';
 const sourceIds = (v.sources || []).map(s => String(s._id || s));
 const sourceGroupId = v.sourceGroup ? String(v.sourceGroup._id || v.sourceGroup) : '';
 const fallbackToFirst = v.fallbackToFirst !== false;
@@ -179,6 +180,17 @@ const cands = candidateNodes || [];
                        value="<%= obs.sampling || 3 %>" min="1" max="100">
             </div>
         </div>
+
+        <div class="form-group" id="virtualObsHttpMethodGroup" style="<%= strategy === 'leastLoad' ? '' : 'display:none' %>">
+            <div class="nf-label-row">
+                <label for="virtualObsHttpMethod"><%= t('nodes.virtualObsHttpMethod') %></label>
+                <%- include('field-help', { textKey: 'nodes.virtualObsHttpMethodHint', t }) %>
+            </div>
+            <select id="virtualObsHttpMethod" name="virtual.observatory.httpMethod" style="max-width:260px;">
+                <option value="HEAD" <%= obsHttpMethod === 'HEAD' ? 'selected' : '' %>><%= t('nodes.virtualObsHttpMethodHead') %></option>
+                <option value="GET" <%= obsHttpMethod === 'GET' ? 'selected' : '' %>><%= t('nodes.virtualObsHttpMethodGet') %></option>
+            </select>
+        </div>
     </div>
 
     <div class="nf-group">
@@ -231,5 +243,7 @@ function virtualSelectStrategy(id) {
         (id === 'leastPing' || id === 'leastLoad') ? '' : 'none';
     const sampling = document.getElementById('virtualObsSamplingGroup');
     if (sampling) sampling.style.display = id === 'leastLoad' ? '' : 'none';
+    const httpMethod = document.getElementById('virtualObsHttpMethodGroup');
+    if (httpMethod) httpMethod.style.display = id === 'leastLoad' ? '' : 'none';
 }
 </script>

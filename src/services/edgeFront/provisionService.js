@@ -788,8 +788,13 @@ async function rollbackFrontDatabaseState(nodeId, message) {
         if (!hasOwn(restoredXray, 'manualKey') && hasOwn(current.xray, 'manualKey')) {
             restoredXray.manualKey = current.xray.manualKey;
         }
-        if (!hasOwn(restoredXray.front, 'siteHtml') && hasOwn(front, 'siteHtml')) {
+        // The decoy page is uploaded independently of the cutover, so a page
+        // stored while it was pending must survive the rollback. Older
+        // snapshots may still carry a stale copy.
+        if (hasOwn(front, 'siteHtml')) {
             restoredXray.front.siteHtml = front.siteHtml;
+        } else {
+            delete restoredXray.front.siteHtml;
         }
         if (!restoredXray.accessLogs) restoredXray.accessLogs = {};
         if (!hasOwn(restoredXray.accessLogs, 'ingestTokenEncrypted')

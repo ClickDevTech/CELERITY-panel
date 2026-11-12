@@ -462,6 +462,9 @@ const virtualConfigSchema = new mongoose.Schema({
         interval: { type: String, default: '1m' },
         timeout: { type: String, default: '5s' },
         sampling: { type: Number, default: 3 },
+        // burstObservatory (leastLoad) only: GET makes the client download the
+        // whole probe response instead of the headers alone.
+        httpMethod: { type: String, enum: ['HEAD', 'GET'], default: 'HEAD', uppercase: true, trim: true },
     },
     // Clients that resolve the balancer with a latency test (sing-box urltest,
     // Mihomo url-test) rather than Xray's observatory. Xray ignores these and
