@@ -1265,7 +1265,7 @@ function buildClashRules(rules) {
         if (!r.enabled) continue;
         const target = r.action === 'block' ? 'REJECT' : 'DIRECT';
         switch (r.type) {
-            case 'domain_suffix':  result.push(`DOMAIN-SUFFIX,${r.value},${target}`); break;
+            case 'domain_suffix':  result.push(`DOMAIN-SUFFIX,${r.value.replace(/^\+?\./, '')},${target}`); break;
             case 'domain_keyword': result.push(`DOMAIN-KEYWORD,${r.value},${target}`); break;
             case 'domain':         result.push(`DOMAIN,${r.value},${target}`); break;
             case 'geosite':        result.push(`GEOSITE,${r.value},${target}`); break;
@@ -1365,7 +1365,7 @@ function buildClashDns(rules, dns) {
     const policy = {};
     for (const r of (rules || [])) {
         if (!r.enabled || r.action !== 'direct') continue;
-        if (r.type === 'domain_suffix') policy[`+${r.value}`]    = domestic;
+        if (r.type === 'domain_suffix') policy[`+.${r.value.replace(/^\+?\./, '')}`] = domestic;
         if (r.type === 'geosite')       policy[`geosite:${r.value}`] = domestic;
     }
 
