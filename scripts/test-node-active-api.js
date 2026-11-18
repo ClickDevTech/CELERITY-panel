@@ -105,6 +105,7 @@ const stubs = {
     // module does not pull in the panel config.
     '../services/edgeFront/frontConfig': {
         applyFrontPatch: () => null,
+        validateAcme: () => null,
     },
 };
 

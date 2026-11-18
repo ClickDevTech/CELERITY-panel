@@ -496,6 +496,14 @@
             gap: 12px;
         }
         .jobs-grid .form-group.hidden { display: none; }
+        .jobs-grid .form-group.jobs-wide { grid-column: 1 / -1; }
+        .jobs-grid textarea.cron-field {
+            min-height: 72px;
+            resize: vertical;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12.5px;
+        }
+        .jobs-hint { display: block; margin-top: 4px; font-size: 11.5px; color: var(--text-muted); }
         .jobs-meta {
             display: flex;
             flex-wrap: wrap;
@@ -858,11 +866,27 @@
         'jobsBatchStopped', 'jobsBatchCancelled', 'jobsStopCanary', 'jobsStopFailures',
         'jobsStopCancel', 'jobsStopError', 'jobsRollbackOk', 'jobsUnchanged', 'jobsStartedBy',
         'jobsStepPreflight', 'jobsStepDownload', 'jobsStepSync', 'jobsStepVerify', 'jobsStepRollback',
-        'jobsShowLog',
+        'jobsShowLog', 'jobsActionPatch', 'jobsPatchField', 'jobsPatchGroupXray', 'jobsPatchGroupAcl',
+        'jobsPatchGroupHysteria', 'jobsPatchOp', 'jobsPatchOpSet', 'jobsPatchOpAdd', 'jobsPatchOpRemove',
+        'jobsPatchValue', 'jobsPatchValueHint', 'jobsPatchAclHint', 'jobsPatchScope', 'jobsPatchScopeMainExtras',
+        'jobsPatchScopeMain', 'jobsPatchScopeExtras', 'jobsPatchTransport', 'jobsPatchSecurity', 'jobsPatchAny',
+        'jobsPatchPosition', 'jobsPatchPositionStart', 'jobsPatchPositionEnd', 'jobsPatchRolledBack',
+        'jobsPatchConfigRestored',
     ].forEach(function (key) {
         i18nKeys[key] = typeof t !== 'undefined' ? t('broadcast.' + key) : key;
     });
     const jobActions = typeof bulkActions !== 'undefined' && Array.isArray(bulkActions) ? bulkActions : [];
+    const jobFields = typeof configFields !== 'undefined' && Array.isArray(configFields) ? configFields : [];
+    const jobFieldGroup = function (field) {
+        if (field.path === 'aclRules') return 'acl';
+        return field.nodeTypes.indexOf('xray') === -1 ? 'hysteria' : 'xray';
+    };
+    const jobActionText = function (id) {
+        if (id === 'xray_version') return i18nKeys.jobsActionXray;
+        if (id === 'sync') return i18nKeys.jobsActionSync;
+        if (id === 'config_patch') return i18nKeys.jobsActionPatch;
+        return id;
+    };
     const jobsTotpEnabled = typeof totpEnabled !== 'undefined' && totpEnabled === true;
     %>
 
@@ -1036,13 +1060,76 @@
                         <label for="jobsAction"><%= i18nKeys.jobsAction %></label>
                         <select id="jobsAction" class="cron-field" onchange="onJobsActionChange()">
                             <% jobActions.forEach(function(action) { %>
-                            <option value="<%= action.id %>"><%= action.id === 'xray_version' ? i18nKeys.jobsActionXray : (action.id === 'sync' ? i18nKeys.jobsActionSync : action.id) %></option>
+                            <option value="<%= action.id %>"><%= jobActionText(action.id) %></option>
                             <% }); %>
                         </select>
                     </div>
                     <div class="form-group" id="jobsVersionGroup">
                         <label for="jobsVersion"><%= i18nKeys.jobsVersion %></label>
                         <select id="jobsVersion" class="cron-field" onchange="invalidateJobsPreview()"></select>
+                    </div>
+                    <div class="form-group jobs-patch hidden" id="jobsPatchFieldGroup">
+                        <label for="jobsPatchField"><%= i18nKeys.jobsPatchField %></label>
+                        <select id="jobsPatchField" class="cron-field" onchange="onJobsPatchFieldChange()">
+                            <% [['xray', i18nKeys.jobsPatchGroupXray], ['acl', i18nKeys.jobsPatchGroupAcl], ['hysteria', i18nKeys.jobsPatchGroupHysteria]].forEach(function(group) { %>
+                            <optgroup label="<%= group[1] %>">
+                                <% jobFields.filter(function(field) { return jobFieldGroup(field) === group[0]; }).forEach(function(field) { %>
+                                <option value="<%= field.path %>"><%= field.path %></option>
+                                <% }); %>
+                            </optgroup>
+                            <% }); %>
+                        </select>
+                    </div>
+                    <div class="form-group jobs-patch hidden" id="jobsPatchOpGroup">
+                        <label for="jobsPatchOp"><%= i18nKeys.jobsPatchOp %></label>
+                        <select id="jobsPatchOp" class="cron-field" onchange="onJobsPatchFieldChange()">
+                            <option value="set"><%= i18nKeys.jobsPatchOpSet %></option>
+                            <option value="add"><%= i18nKeys.jobsPatchOpAdd %></option>
+                            <option value="remove"><%= i18nKeys.jobsPatchOpRemove %></option>
+                        </select>
+                    </div>
+                    <div class="form-group jobs-patch hidden" id="jobsPatchPositionGroup">
+                        <label for="jobsPatchPosition"><%= i18nKeys.jobsPatchPosition %></label>
+                        <select id="jobsPatchPosition" class="cron-field" onchange="invalidateJobsPreview()">
+                            <option value="start"><%= i18nKeys.jobsPatchPositionStart %></option>
+                            <option value="end"><%= i18nKeys.jobsPatchPositionEnd %></option>
+                        </select>
+                    </div>
+                    <div class="form-group jobs-patch jobs-patch-inbound hidden" id="jobsPatchScopeGroup">
+                        <label for="jobsPatchScope"><%= i18nKeys.jobsPatchScope %></label>
+                        <select id="jobsPatchScope" class="cron-field" onchange="invalidateJobsPreview()">
+                            <option value="main_extras"><%= i18nKeys.jobsPatchScopeMainExtras %></option>
+                            <option value="main"><%= i18nKeys.jobsPatchScopeMain %></option>
+                            <option value="extras"><%= i18nKeys.jobsPatchScopeExtras %></option>
+                        </select>
+                    </div>
+                    <div class="form-group jobs-patch jobs-patch-inbound hidden" id="jobsPatchTransportGroup">
+                        <label for="jobsPatchTransport"><%= i18nKeys.jobsPatchTransport %></label>
+                        <select id="jobsPatchTransport" class="cron-field" onchange="invalidateJobsPreview()">
+                            <option value=""><%= i18nKeys.jobsPatchAny %></option>
+                            <option value="tcp">tcp</option>
+                            <option value="ws">ws</option>
+                            <option value="grpc">grpc</option>
+                            <option value="xhttp">xhttp</option>
+                        </select>
+                    </div>
+                    <div class="form-group jobs-patch jobs-patch-inbound hidden" id="jobsPatchSecurityGroup">
+                        <label for="jobsPatchSecurity"><%= i18nKeys.jobsPatchSecurity %></label>
+                        <select id="jobsPatchSecurity" class="cron-field" onchange="invalidateJobsPreview()">
+                            <option value=""><%= i18nKeys.jobsPatchAny %></option>
+                            <option value="reality">reality</option>
+                            <option value="tls">tls</option>
+                            <option value="none">none</option>
+                        </select>
+                    </div>
+                    <div class="form-group jobs-patch jobs-wide hidden" id="jobsPatchValueGroup">
+                        <label for="jobsPatchValue"><%= i18nKeys.jobsPatchValue %></label>
+                        <textarea id="jobsPatchValue" class="cron-field" maxlength="40000" spellcheck="false" oninput="invalidateJobsPreview()"></textarea>
+                        <select id="jobsPatchBool" class="cron-field" style="display:none" onchange="invalidateJobsPreview()">
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                        </select>
+                        <small class="jobs-hint" id="jobsPatchHint"></small>
                     </div>
                     <div class="form-group" id="jobsPasswordGroup">
                         <label for="jobsPassword"><%= i18nKeys.jobsPassword %></label>
@@ -1509,6 +1596,7 @@
         // ── Bulk jobs ─────────────────────────────────────────────────────
         const JOBS_BASE = '/panel/broadcast/jobs';
         const JOB_ACTIONS = <%- JSON.stringify(jobActions) %>;
+        const JOB_FIELDS = <%- JSON.stringify(jobFields) %>;
         const JOBS_TOTP_ENABLED = <%- jobsTotpEnabled ? 'true' : 'false' %>;
         const JOBS_POLL_MS = 2000;
         const JOB_STATE_LABELS = {
@@ -1542,7 +1630,75 @@
         function jobActionLabel(id) {
             if (id === 'xray_version') return i18n.jobsActionXray;
             if (id === 'sync') return i18n.jobsActionSync;
+            if (id === 'config_patch') return i18n.jobsActionPatch;
             return id;
+        }
+
+        function currentPatchField() {
+            const path = document.getElementById('jobsPatchField').value;
+            return JOB_FIELDS.find(field => field.path === path) || null;
+        }
+
+        function onJobsPatchFieldChange(keepPreview) {
+            const field = currentPatchField();
+            const opSelect = document.getElementById('jobsPatchOp');
+            const ops = field ? field.ops : ['set'];
+            Array.from(opSelect.options).forEach((option) => { option.disabled = !ops.includes(option.value); });
+            if (!ops.includes(opSelect.value)) opSelect.value = 'set';
+
+            const isConfig = currentJobAction()?.id === 'config_patch';
+            const isBool = field?.kind === 'bool';
+            document.getElementById('jobsPatchOpGroup').classList.toggle('hidden', !isConfig || ops.length < 2);
+            document.getElementById('jobsPatchPositionGroup').classList.toggle('hidden', !isConfig || !field?.positional || opSelect.value !== 'add');
+            document.querySelectorAll('.jobs-patch-inbound').forEach((group) => {
+                group.classList.toggle('hidden', !isConfig || field?.level !== 'inbound');
+            });
+            document.getElementById('jobsPatchValue').style.display = isBool ? 'none' : '';
+            document.getElementById('jobsPatchBool').style.display = isBool ? '' : 'none';
+            document.getElementById('jobsPatchHint').textContent = field?.path === 'aclRules'
+                ? i18n.jobsPatchAclHint
+                : (field?.kind === 'list' ? i18n.jobsPatchValueHint : '');
+            if (keepPreview !== true) invalidateJobsPreview();
+        }
+
+        function jobsPatchBody() {
+            const field = currentPatchField();
+            if (!field) return null;
+            const body = {
+                path: field.path,
+                op: document.getElementById('jobsPatchOp').value,
+                value: field.kind === 'bool'
+                    ? document.getElementById('jobsPatchBool').value
+                    : document.getElementById('jobsPatchValue').value,
+            };
+            if (field.positional && body.op === 'add') body.position = document.getElementById('jobsPatchPosition').value;
+            if (field.level === 'inbound') {
+                body.scope = document.getElementById('jobsPatchScope').value;
+                body.inboundFilter = {
+                    transport: document.getElementById('jobsPatchTransport').value,
+                    security: document.getElementById('jobsPatchSecurity').value,
+                };
+            }
+            return body;
+        }
+
+        function jobsRequestBody(action) {
+            const body = { nodeIds: Array.from(selectedNodeIds) };
+            if (action.id === 'xray_version') body.version = document.getElementById('jobsVersion').value;
+            if (action.id === 'config_patch') Object.assign(body, jobsPatchBody());
+            return body;
+        }
+
+        function formatPatchValue(value) {
+            const empty = value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length);
+            const text = empty ? '—' : (Array.isArray(value) ? value.join(' | ') : String(value));
+            return text.length > 300 ? text.slice(0, 297) + '…' : text;
+        }
+
+        function formatPatchChanges(changes) {
+            return (changes || [])
+                .map(change => (change.inbound ? change.inbound + ': ' : '') + formatPatchValue(change.before) + ' → ' + formatPatchValue(change.after))
+                .join('\n');
         }
 
         function syncJobsChipHint() {
@@ -1568,7 +1724,12 @@
         function onJobsActionChange(keepPreview) {
             const action = currentJobAction();
             const isXray = action?.id === 'xray_version';
+            const isConfig = action?.id === 'config_patch';
             document.getElementById('jobsVersionGroup').classList.toggle('hidden', !isXray);
+            ['jobsPatchFieldGroup', 'jobsPatchValueGroup'].forEach((id) => {
+                document.getElementById(id).classList.toggle('hidden', !isConfig);
+            });
+            onJobsPatchFieldChange(true);
             document.getElementById('jobsPasswordGroup').classList.toggle('hidden', !action?.requiresReauth);
             const totpGroup = document.getElementById('jobsTotpGroup');
             if (totpGroup) totpGroup.classList.toggle('hidden', !action?.requiresReauth);
@@ -1714,11 +1875,12 @@
             const items = (data.items || []).slice().sort((a, b) => Number(b.ready) - Number(a.ready));
             items.forEach((item) => {
                 const warnings = (item.warnings || []).join('; ');
+                const details = [formatPatchChanges(item.changes), warnings].filter(Boolean).join('\n');
                 appendJobsRow({
                     label: nodeLabel(item),
                     badge: item.ready ? i18n.jobsReady : i18n.jobsStateSkipped,
                     badgeCls: item.ready ? 'ok' : 'connected',
-                    message: item.ready ? warnings : item.reason,
+                    message: item.ready ? details : item.reason,
                     rowCls: item.ready ? 'ok' : 'muted',
                 });
             });
@@ -1729,7 +1891,7 @@
             jobsActive = batch.state === 'running' || batch.state === 'stopping';
             const counts = batch.counts || {};
             setJobsMeta([
-                { text: jobActionLabel(batch.action) + (batch.params?.version ? ' → v' + batch.params.version : '') },
+                { text: jobActionLabel(batch.action) + (batch.params?.version ? ' → v' + batch.params.version : '') + (batch.params?.path ? ' · ' + batch.params.path : '') },
                 { text: JOB_BATCH_LABELS[batch.state] || batch.state, cls: batch.state === 'done' ? 'ok' : (jobsActive ? '' : 'fail') },
                 { text: i18n.jobsStateDone + ': ' + (counts.done || 0), cls: 'ok' },
                 { text: i18n.jobsStateError + ': ' + (counts.error || 0), cls: counts.error ? 'fail' : '' },
@@ -1746,6 +1908,8 @@
                 if (item.error) parts.push(item.error);
                 if (item.details?.rollbackSucceeded) parts.push(i18n.jobsRollbackOk);
                 else if (item.details?.nodeUnchanged && item.state === 'error') parts.push(i18n.jobsUnchanged);
+                if (item.details?.rolledBack) parts.push(i18n.jobsPatchRolledBack);
+                if (item.details?.configRestored) parts.push(i18n.jobsPatchConfigRestored);
                 const badgeCls = { done: 'ok', error: 'fail', running: 'running', queued: 'connected', skipped: 'connected', cancelled: 'connected' }[item.state];
                 const rowCls = { done: 'ok', error: 'fail', running: 'active', skipped: 'muted', cancelled: 'muted' }[item.state] || '';
                 const hasTask = batch.action === 'xray_version' && (item.state === 'running' || item.state === 'done' || item.state === 'error');
@@ -1797,10 +1961,7 @@
             try {
                 const data = await jobsRequest('/' + encodeURIComponent(action.id) + '/preview', {
                     method: 'POST',
-                    body: JSON.stringify({
-                        nodeIds: Array.from(selectedNodeIds),
-                        version: document.getElementById('jobsVersion').value,
-                    }),
+                    body: JSON.stringify(jobsRequestBody(action)),
                 });
                 jobsPreviewReady = data.ready || 0;
                 renderJobsPreview(data);
@@ -1821,17 +1982,16 @@
             }
             const passwordInput = document.getElementById('jobsPassword');
             const totpInput = document.getElementById('jobsTotp');
-            const body = {
-                nodeIds: Array.from(selectedNodeIds),
-                version: document.getElementById('jobsVersion').value,
-            };
+            const body = jobsRequestBody(action);
             if (action.requiresReauth) {
                 if (!passwordInput.value) return alert(i18n.jobsPasswordRequired);
                 if (JOBS_TOTP_ENABLED && !totpInput?.value) return alert(i18n.jobsTotpRequired);
                 body.currentPassword = passwordInput.value;
                 body.totpToken = totpInput ? totpInput.value : '';
             }
-            const label = jobActionLabel(action.id) + (action.id === 'xray_version' && body.version ? ' v' + body.version : '');
+            const label = jobActionLabel(action.id)
+                + (action.id === 'xray_version' && body.version ? ' v' + body.version : '')
+                + (action.id === 'config_patch' && body.path ? ' (' + body.path + ')' : '');
             if (!confirm(i18n.jobsConfirm.replace('{action}', label).replace('{count}', jobsPreviewReady))) return;
 
             jobsBusy = true;

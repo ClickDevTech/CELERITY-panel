@@ -327,11 +327,21 @@ Executes a shell command on the server and returns the output.
 
 > `nodes:write` scope required
 
-Changes the Xray core version or syncs (pushes config and restarts) many nodes at once. The same engine backs the **Broadcast → Bulk actions** tab in the panel.
+Changes the Xray core version, syncs (pushes config and restarts) or changes one config field on many nodes at once. The same engine backs the **Broadcast → Bulk actions** tab in the panel.
 
-**Operations (`op`):** `releases` | `preview` | `start` | `status` | `cancel`
+**Operations (`op`):** `releases` | `fields` | `preview` | `start` | `status` | `cancel`
 
-**Actions (`action`):** `xray_version` | `sync`
+**Actions (`action`):** `xray_version` | `sync` | `config_patch`
+
+**`config_patch`** changes one field from a fixed list (`op: "fields"` shows it):
+- Xray inbounds: `xray.alpn` (`h3`, `h2`, `http/1.1`, `http/1.0`; TLS inbounds only), `xray.fingerprint`, `xray.fingerprintPool`, `xray.flow`, Reality dest/SNI/short IDs/spiderX, WebSocket/gRPC/XHTTP paths and hosts, XHTTP tuning, `xray.fallbackDest`; `xray.connIdle` on the main inbound.
+- ACL rules (`aclRules`) on Xray and Hysteria nodes.
+- Hysteria: `bandwidth.up`, `bandwidth.down`, `ignoreClientBandwidth`, `hopInterval`, `udpIdleTimeout`, `disableUDP`, `masquerade.proxy.url`.
+- Ports, listen addresses, security/TLS source, domain, the reverse proxy front and secrets are not in the list: they need Auto Setup on the node.
+
+Parameters: `path`, `patchOp` (`set`, or `add`/`remove` for lists), `value`, `scope` (`main`, `main_extras`, `extras`) and `inboundFilter` (`transport`, `security`) for inbound fields, `position` (`start`/`end`) for added ACL rules. New ACL rules go first by default, so they apply before a catch-all such as `direct(all)`; a rule that routes to an outbound the node does not have skips that node.
+
+`preview` shows the before/after value per node and why a node is skipped: the field does not apply (for example ALPN on a Reality inbound), the inbound is served by the reverse proxy front, the result fails the node form checks, or a CDN node that uses this node as its origin would break. When the push fails, the old value is put back (unless the field was changed again in the meantime) and the old config is pushed again.
 
 - One batch runs at a time. The first ready node runs alone as a canary, the rest follow in small waves.
 - After 2 failed nodes no new nodes are started; nodes already running finish.
@@ -352,6 +362,19 @@ Changes the Xray core version or syncs (pushes config and restarts) many nodes a
 
 ```json
 { "name": "bulk_action", "arguments": { "op": "status" } }
+```
+
+</details>
+
+<details>
+<summary>📖 Example: Set ALPN on every TLS inbound and block China on all nodes</summary>
+
+```json
+{ "name": "bulk_action", "arguments": { "op": "preview", "action": "config_patch", "all": true, "path": "xray.alpn", "value": "h2,http/1.1" } }
+```
+
+```json
+{ "name": "bulk_action", "arguments": { "op": "start", "action": "config_patch", "all": true, "path": "aclRules", "patchOp": "add", "value": ["reject(geoip:cn)"], "confirm": true } }
 ```
 
 </details>

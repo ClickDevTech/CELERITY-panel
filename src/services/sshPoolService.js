@@ -10,9 +10,37 @@
  * - Graceful shutdown
  */
 
+const crypto = require('crypto');
 const { Client } = require('ssh2');
 const logger = require('../utils/logger');
 const cryptoService = require('./cryptoService');
+
+/**
+ * Connection target of a node, used to tell whether a pooled connection still
+ * points where the node does. Fields missing from a partial projection stay
+ * undefined and are not compared. Credentials are kept as a hash of their
+ * encrypted form only.
+ */
+function connectionEndpoint(node) {
+    const ssh = node?.ssh;
+    const endpoint = {};
+    if (node && node.ip !== undefined) endpoint.host = String(node.ip || '');
+    if (ssh && ssh.port !== undefined) endpoint.port = Number(ssh.port) || 22;
+    if (ssh && ssh.username !== undefined) endpoint.username = String(ssh.username || 'root');
+    if (ssh && ssh.privateKey !== undefined && ssh.password !== undefined) {
+        endpoint.credential = crypto.createHash('sha256')
+            .update(String(ssh.privateKey || ''))
+            .update('\0')
+            .update(String(ssh.password || ''))
+            .digest('hex');
+    }
+    return endpoint;
+}
+
+function endpointMatches(stored, wanted) {
+    if (!stored) return true;
+    return Object.keys(wanted).every(key => stored[key] === undefined || stored[key] === wanted[key]);
+}
 
 class SSHPool {
     constructor() {
@@ -90,7 +118,14 @@ class SSHPool {
         }
         
         const nodeId = node._id?.toString() || node.id;
-        const existing = this.connections.get(nodeId);
+        let existing = this.connections.get(nodeId);
+
+        // 0. The node moved (IP, port, user or credentials changed): the pooled
+        //    connection or pending handshake would reach the old server.
+        if (existing && !endpointMatches(existing.endpoint, connectionEndpoint(node))) {
+            this.removeConnection(nodeId, 'node changed');
+            existing = undefined;
+        }
         
         // 1. Handshake in progress for this node - reuse the same promise
         //    (issue #70: prevents parallel handshakes during the race window
@@ -164,12 +199,15 @@ class SSHPool {
             return outerPromise;
         }
         
+        const endpoint = connectionEndpoint(node);
+
         // Register placeholder with client identity so every handler
         // can verify ownership before mutating this.connections.
         this.connections.set(nodeId, {
             connecting: true,
             client,
             promise: outerPromise,
+            endpoint,
             lastUsed: Date.now(),
         });
         
@@ -177,15 +215,17 @@ class SSHPool {
             .on('ready', () => {
                 clearTimeout(timeout);
                 
-                // Promote placeholder to full meta only if WE are still
-                // the registered attempt for this nodeId.
+                // Promote placeholder to full meta only if WE are still the
+                // registered attempt. A removed placeholder means the node
+                // changed mid-handshake, so this connection must not be pooled.
                 const cur = this.connections.get(nodeId);
-                if (!cur || cur.client === client) {
+                if (cur && cur.client === client) {
                     this.connections.set(nodeId, {
                         client,
                         nodeId,
                         nodeName,
                         host: node.ip,
+                        endpoint,
                         createdAt: Date.now(),
                         lastUsed: Date.now(),
                         useCount: 1,
@@ -200,11 +240,14 @@ class SSHPool {
                 
                 // Identity-aware delete: never touch another attempt's entry.
                 const cur = this.connections.get(nodeId);
-                if (cur && cur.client === client) {
+                const owned = !!cur && cur.client === client;
+                if (owned) {
                     this.connections.delete(nodeId);
                 }
                 
-                if (retryCount < this.config.maxRetries) {
+                // A superseded attempt must not retry: it would re-register
+                // the old endpoint over the current one.
+                if (owned && retryCount < this.config.maxRetries) {
                     const delay = Math.pow(2, retryCount) * 500;
                     logger.warn(`[SSHPool] ${nodeName}: retry ${retryCount + 1}/${this.config.maxRetries} in ${delay}ms`);
                     

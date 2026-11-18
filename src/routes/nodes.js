@@ -28,6 +28,7 @@ const {
     FRONT_HIDDEN_SELECT,
     frontUpdatePaths,
     applyFrontPatch,
+    validateAcme,
     captureFrontRollbackState,
 } = require('../services/edgeFront/frontConfig');
 const vlessEncryption = require('../utils/vlessEncryption');
@@ -313,7 +314,8 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
             if (listenError) return res.status(400).json({ error: listenError });
             const xhttpError = validateXrayXhttp(xray);
             if (xhttpError) return res.status(400).json({ error: xhttpError });
-            const frontError = applyFrontPatch(xray, frontNode, null);
+            const frontError = applyFrontPatch(xray, frontNode, null)
+                || validateAcme(xray, frontNode);
             if (frontError) return res.status(400).json({ error: frontError });
             vlessEncryption.takeRegenerateIds(xray);
             const encryptionError = await vlessEncryption.applyVlessEncryptionToXray(xray, null);
@@ -595,6 +597,14 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
                     if (nextXray[key] !== undefined) updates[`xray.${key}`] = nextXray[key];
                 }
                 Object.assign(updates, frontUpdatePaths(nextXray.front));
+            }
+            if (frontRuntimeTouched) {
+                const acmeError = validateAcme(nextXray, {
+                    port: updates.port !== undefined ? parseInt(updates.port, 10) : existing.port,
+                    domain: updates.domain !== undefined ? updates.domain : existing.domain,
+                    ip: nextIp,
+                });
+                if (acmeError) return res.status(400).json({ error: acmeError });
             }
         }
 

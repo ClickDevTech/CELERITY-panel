@@ -433,7 +433,13 @@ class NodeSSH {
         try {
             const configPath = this.node.paths?.config || '/etc/hysteria/config.yaml';
             
-            await this.exec(`cp ${configPath} ${configPath}.bak 2>/dev/null || true`);
+            // A stale .bak from an earlier run must never be restored over a
+            // first-time config, so the copy is recreated or removed here.
+            const backup = await this.exec(
+                `if [ -f ${configPath} ]; then cp -p ${configPath} ${configPath}.bak && echo CC_BACKUP_OK; `
+                + `else rm -f ${configPath}.bak; fi`
+            );
+            const backedUp = String(backup.stdout || '').includes('CC_BACKUP_OK');
             await this.writeFile(configPath, configContent);
             
             const checkResult = await this.exec(`/usr/local/bin/hysteria check -c ${configPath} 2>&1 || true`);
@@ -441,11 +447,21 @@ class NodeSSH {
             // If check failed - rollback
             if (checkResult.stdout.includes('error') || checkResult.stderr.includes('error')) {
                 logger.error(`[SSH] Config error on ${this.node.name}: ${checkResult.stdout}`);
-                await this.exec(`mv ${configPath}.bak ${configPath}`);
+                if (backedUp) await this.exec(`mv ${configPath}.bak ${configPath}`);
                 return false;
             }
             
-            return await this.reloadHysteria();
+            if (await this.reloadHysteria()) return true;
+
+            // systemd does not roll a failed start back: put the previous
+            // config in place and start it again so the node keeps serving.
+            if (backedUp) {
+                logger.error(`[SSH] ${this.node.name}: restoring previous Hysteria config after failed restart`);
+                await this.exec(`mv -f ${configPath}.bak ${configPath}`);
+                const restored = await this.reloadHysteria();
+                logger.error(`[SSH] ${this.node.name}: rollback ${restored ? 'succeeded' : 'failed'}`);
+            }
+            return false;
         } catch (error) {
             logger.error(`[SSH] Config update error: ${error.message}`);
             return false;

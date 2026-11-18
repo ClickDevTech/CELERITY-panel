@@ -75,6 +75,7 @@ const bulkActionService = {
   getAction(action) {
     if (action === 'xray_version') return { requiresReauth: true };
     if (action === 'sync') return { requiresReauth: false };
+    if (action === 'config_patch') return { requiresReauth: true };
     const error = new Error('Unknown bulk action');
     error.statusCode = 400;
     error.expose = true;
@@ -354,6 +355,62 @@ async function runRoute(method, path, { body = {}, params = {} } = {}) {
   assert.strictEqual(res.statusCode, 200);
   assert.deepStrictEqual(bulkCalls[0].args, { action: 'xray_version', nodeIds: [id1], params: { version: '26.7.28' } });
   assert.strictEqual(reauthCalls.length, 0, 'preview never asks for credentials');
+
+  // config_patch params are size-capped and only known keys reach the service.
+  reset();
+  res = await runRoute('post', '/broadcast/jobs/:action/preview', {
+    params: { action: 'config_patch' },
+    body: {
+      nodeIds: [id1],
+      path: 'aclRules',
+      op: 'add',
+      value: ['reject(geoip:cn)'],
+      position: 'end',
+      scope: 'main',
+      inboundFilter: { transport: 'xhttp', security: 'tls', extra: 'x' },
+      version: '26.7.28',
+      $where: 'boom',
+    },
+  });
+  assert.strictEqual(res.statusCode, 200);
+  assert.deepStrictEqual(bulkCalls[0].args, {
+    action: 'config_patch',
+    nodeIds: [id1],
+    params: {
+      path: 'aclRules',
+      op: 'add',
+      value: ['reject(geoip:cn)'],
+      scope: 'main',
+      position: 'end',
+      inboundFilter: { transport: 'xhttp', security: 'tls' },
+    },
+  });
+
+  reset();
+  res = await runRoute('post', '/broadcast/jobs/:action/preview', {
+    params: { action: 'config_patch' },
+    body: { nodeIds: [id1], path: 'x'.repeat(500), value: 'v'.repeat(50000) },
+  });
+  assert.strictEqual(bulkCalls[0].args.params.path.length, 64);
+  assert.strictEqual(bulkCalls[0].args.params.value.length, 40000);
+  assert.strictEqual(bulkCalls[0].args.params.inboundFilter, undefined);
+
+  reset();
+  res = await runRoute('post', '/broadcast/jobs/:action/preview', {
+    params: { action: 'config_patch' },
+    body: { nodeIds: [id1], path: 'aclRules', value: ['direct(all)', { $gt: '' }] },
+  });
+  assert.strictEqual(bulkCalls[0].args.params.value, undefined, 'arrays with non-strings are dropped');
+
+  // config_patch start requires re-authentication like a version change.
+  reset();
+  reauthResult = false;
+  res = await runRoute('post', '/broadcast/jobs/:action/start', {
+    params: { action: 'config_patch' },
+    body: { nodeIds: [id1], path: 'xray.alpn', value: 'h2', currentPassword: 'bad' },
+  });
+  assert.strictEqual(res.statusCode, 401);
+  assert.strictEqual(bulkCalls.length, 0);
 
   // Xray start requires re-authentication and never reaches the service on failure.
   reset();

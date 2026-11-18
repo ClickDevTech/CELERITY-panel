@@ -33,6 +33,7 @@ const {
     FRONT_HIDDEN_SELECT,
     frontUpdatePaths,
     applyFrontPatch,
+    validateAcme,
     captureFrontRollbackState,
 } = require('../../services/edgeFront/frontConfig');
 const vlessEncryption = require('../../utils/vlessEncryption');
@@ -454,6 +455,8 @@ async function manageNode(args, emit) {
                         data.port = frontNode.port;
                     }
                     if (data.xray) {
+                        const acmeError = validateAcme(data.xray, { port: data.port || 443, domain: data.domain, ip: data.ip });
+                        if (acmeError) return { error: acmeError, code: 400 };
                         vlessEncryption.takeRegenerateIds(data.xray);
                         const encryptionError = await vlessEncryption.applyVlessEncryptionToXray(data.xray, null);
                         if (encryptionError) return { error: encryptionError, code: 400 };
@@ -689,6 +692,14 @@ async function manageNode(args, emit) {
                         if (nextXray[key] !== undefined) updates[`xray.${key}`] = nextXray[key];
                     }
                     Object.assign(updates, frontUpdatePaths(nextXray.front));
+                }
+                if (frontRuntimeTouched) {
+                    const acmeError = validateAcme(nextXray, {
+                        port: updates.port !== undefined ? updates.port : existing.port,
+                        domain: updates.domain !== undefined ? updates.domain : existing.domain,
+                        ip: nextIp,
+                    });
+                    if (acmeError) return { error: acmeError, code: 400 };
                 }
             }
 

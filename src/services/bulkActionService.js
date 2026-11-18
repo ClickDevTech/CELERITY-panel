@@ -20,6 +20,7 @@ const logger = require('../utils/logger');
 const nodeSetupLock = require('../utils/nodeSetupLock');
 const { mapLimit } = require('../utils/mapLimit');
 const { isServerlessNode } = require('../utils/nodeTypes');
+const nodeConfigFields = require('./nodeConfigFields');
 const MAX_NODES = 200;
 const MAX_FAILURES = 2;
 const BATCH_TTL_MS = 60 * 60 * 1000;
@@ -48,6 +49,89 @@ function xrayVersionService() {
 
 function syncService() {
     return require('./syncService');
+}
+
+function invalidateNodesCache() {
+    return require('../utils/helpers').invalidateNodesCache();
+}
+
+// config_patch validates the final state with the panel form rules, so it
+// needs the whole node, including the manual TLS key the form check reads.
+const PATCH_NODE_SELECT = '+xray.manualKey';
+const REALITY_GUARD_KEYS = new Set(['realityDest', 'realitySni']);
+
+function nodeReadiness(node) {
+    const nodeId = String(node._id);
+    if (node.active === false) return 'Node is disabled';
+    if (isServerlessNode(node)) return 'This node type has no remote service';
+    if (node.cascadeRole === 'bridge') return 'Bridge nodes are configured by cascade links';
+    const hasSsh = !!(node.ssh?.password || node.ssh?.privateKey);
+    const hasAgent = node.type === 'xray' && !!node.xray?.agentToken;
+    if (!hasSsh && !hasAgent) return 'Neither SSH nor agent is configured';
+    if (nodeSetupLock.holder(nodeId)) return `Node is busy: ${nodeSetupLock.holder(nodeId)} is running`;
+    return null;
+}
+
+/**
+ * Plan a patch on one node and check the resulting node with the same rules
+ * as the node form, plus every CDN front that points at it.
+ * @returns {{ reason: string|null, plan: Object, next: Object|null }}
+ */
+function evaluatePatch(node, patch, dependents = []) {
+    const plan = nodeConfigFields.planNodePatch(node, patch);
+    if (plan.reason) return { reason: plan.reason, plan, next: null };
+    const next = nodeConfigFields.applyChanges(node, plan.changes);
+    const helpers = require('../routes/panel/helpers');
+    let error;
+    if (node.type === 'xray') {
+        error = helpers.validateXrayFormFields(next.xray || {}, { port: next.port, domain: next.domain, ip: next.ip })
+            || require('../utils/vlessEncryption').versionError(next.xray || {}, node.xrayVersion, node.name);
+    } else {
+        error = helpers.validateHysteriaFormFields(next);
+    }
+    if (!error && node.type === 'xray' && dependents.length > 0) {
+        const { checkCdnOriginCompat } = require('../utils/cdnConfig');
+        const origin = { type: 'xray', name: node.name, active: node.active !== false, xray: next.xray };
+        for (const dependent of dependents) {
+            const result = checkCdnOriginCompat(dependent.cdn || {}, origin, { allowInactive: true });
+            if (result.error) {
+                error = `CDN node "${dependent.name}" depends on this node: ${result.error}`;
+                break;
+            }
+        }
+    }
+    return { reason: error || null, plan, next };
+}
+
+function changeSummary(changes) {
+    return changes.map(change => ({ inbound: change.label, before: change.before, after: change.after }));
+}
+
+// Put back only the fields this patch wrote, and only where they still hold
+// the patched value: an edit made in the meantime wins.
+async function revertPatch(nodeId, changes) {
+    let reverted = 0;
+    for (const change of changes) {
+        const extra = change.target !== 'main' && change.target !== 'node';
+        const path = extra ? `xray.extraInbounds.$.${change.key}` : change.dbPath;
+        const restore = change.before === null ? { $unset: { [path]: '' } } : { $set: { [path]: change.before } };
+        const filter = extra
+            ? { _id: nodeId, 'xray.extraInbounds': { $elemMatch: { id: change.target, [change.key]: change.after } } }
+            : { _id: nodeId, [change.dbPath]: change.after };
+        const result = await HyNode.updateOne(filter, restore);
+        reverted += result.modifiedCount || 0;
+    }
+    return reverted;
+}
+
+async function pushNode(node) {
+    const report = {};
+    try {
+        const pushed = await syncService().updateNodeConfig(node, { report });
+        return pushed === false ? (report.error || 'Config push failed') : null;
+    } catch (error) {
+        return error.message;
+    }
 }
 
 const ACTIONS = {
@@ -161,6 +245,95 @@ const ACTIONS = {
             return 'sync';
         },
     },
+
+    config_patch: {
+        requiresReauth: true,
+        concurrency: 3,
+        nodeSelect: PATCH_NODE_SELECT,
+        allFilterFor(params) {
+            const def = nodeConfigFields.getField(String(params?.path || ''));
+            if (!def) throw httpError(400, 'This field cannot be changed in bulk');
+            return { type: { $in: def.nodeTypes }, active: true };
+        },
+        async validate(params) {
+            const patch = nodeConfigFields.parsePatch(params);
+            return { publicParams: nodeConfigFields.publicPatch(patch), ctx: { patch } };
+        },
+        async preview(nodes, ctx) {
+            const ids = nodes.filter(node => node.type === 'xray').map(node => node._id);
+            const dependents = ids.length > 0
+                ? await HyNode.find({ type: 'cdn', 'cdn.originNode': { $in: ids } }).select('name cdn').lean()
+                : [];
+            const dependentsByOrigin = new Map();
+            for (const dependent of dependents) {
+                const key = String(dependent.cdn?.originNode || '');
+                if (!dependentsByOrigin.has(key)) dependentsByOrigin.set(key, []);
+                dependentsByOrigin.get(key).push(dependent);
+            }
+            return nodes.map((node) => {
+                const nodeId = String(node._id);
+                const notReady = nodeReadiness(node);
+                if (notReady) return { nodeId, ready: false, reason: notReady, warnings: [] };
+                const { reason, plan } = evaluatePatch(node, ctx.patch, dependentsByOrigin.get(nodeId) || []);
+                const offline = !reason && node.status === 'offline';
+                const warnings = [...plan.notes];
+                if (offline) warnings.push('Node is offline');
+                return {
+                    nodeId,
+                    ready: !reason,
+                    reason,
+                    warnings,
+                    deferred: offline,
+                    changes: reason ? [] : changeSummary(plan.changes),
+                };
+            });
+        },
+        async run(nodeId, ctx) {
+            const doc = await HyNode.findById(nodeId).select(PATCH_NODE_SELECT);
+            if (!doc) return { ok: false, skipped: true, error: 'Node not found' };
+            const node = doc.toObject();
+            const notReady = nodeReadiness(node);
+            if (notReady) return { ok: false, skipped: true, error: notReady };
+            const dependents = node.type === 'xray'
+                ? await HyNode.find({ type: 'cdn', 'cdn.originNode': doc._id }).select('name cdn').lean()
+                : [];
+            const { reason, plan, next } = evaluatePatch(node, ctx.patch, dependents);
+            if (reason) return { ok: false, skipped: true, error: reason };
+
+            for (const change of plan.changes) doc.set(change.dbPath, change.after);
+            if (plan.changes.some(change => REALITY_GUARD_KEYS.has(change.key))) {
+                const { mergeRealityGuard } = require('../routes/panel/helpers');
+                doc.set('xray.realityGuard', mergeRealityGuard(node.xray || {}, next.xray || {}));
+            }
+            await doc.save();
+            await invalidateNodesCache();
+
+            const pushError = await pushNode(doc);
+            if (!pushError) return { ok: true, details: { changed: plan.changes.length } };
+
+            // Nothing reached the node when it was busy; otherwise restore the
+            // previous config there too.
+            const busy = /^Node is busy:/.test(pushError);
+            const reverted = await revertPatch(doc._id, plan.changes);
+            await invalidateNodesCache();
+            let configRestored = false;
+            if (!busy && reverted > 0) {
+                const restored = await HyNode.findById(nodeId);
+                configRestored = !!restored && (await pushNode(restored)) === null;
+            }
+            logger.warn(`[Bulk] config_patch ${ctx.patch.path} on ${node.name} failed: ${pushError}; `
+                + `reverted ${reverted}/${plan.changes.length} field(s), config restored: ${configRestored}`);
+            return {
+                ok: false,
+                skipped: busy,
+                error: pushError,
+                details: { rolledBack: reverted === plan.changes.length, configRestored },
+            };
+        },
+        progress() {
+            return 'config';
+        },
+    },
 };
 
 function getAction(action) {
@@ -182,9 +355,10 @@ function normalizeNodeIds(nodeIds) {
     return unique;
 }
 
-async function allNodeIds(action) {
+async function allNodeIds(action, params = {}) {
     const def = getAction(action);
-    const nodes = await HyNode.find(def.allFilter).select('_id').limit(MAX_NODES).lean();
+    const filter = def.allFilterFor ? def.allFilterFor(params) : def.allFilter;
+    const nodes = await HyNode.find(filter).select('_id').limit(MAX_NODES).lean();
     return nodes.map(node => String(node._id));
 }
 
@@ -192,7 +366,7 @@ async function buildPreview(action, nodeIds, params) {
     const def = getAction(action);
     const ids = normalizeNodeIds(nodeIds);
     const { publicParams, ctx } = await def.validate(params || {});
-    const nodes = await HyNode.find({ _id: { $in: ids } }).select(NODE_SELECT).lean();
+    const nodes = await HyNode.find({ _id: { $in: ids } }).select(def.nodeSelect || NODE_SELECT).lean();
     const byId = new Map(nodes.map(node => [String(node._id), node]));
     const verdicts = new Map((await def.preview(nodes, ctx)).map(v => [v.nodeId, v]));
 
@@ -212,6 +386,7 @@ async function buildPreview(action, nodeIds, params) {
             reason: verdict.reason || null,
             warnings: verdict.warnings || [],
             deferred: !!verdict.deferred,
+            ...(verdict.changes ? { changes: verdict.changes } : {}),
         };
     });
     return { def, publicParams, ctx, items };

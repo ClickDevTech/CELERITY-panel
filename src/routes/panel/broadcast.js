@@ -6,6 +6,7 @@ const Admin = require('../../models/adminModel');
 const HyNode = require('../../models/hyNodeModel');
 const multicastCronService = require('../../services/multicastCronService');
 const bulkActionService = require('../../services/bulkActionService');
+const nodeConfigFields = require('../../services/nodeConfigFields');
 const xrayVersionService = require('../../services/xrayVersionService');
 const logger = require('../../utils/logger');
 const { reauthenticateXrayVersionChange } = require('./helpers');
@@ -147,6 +148,7 @@ router.get('/broadcast', async (req, res) => {
     return res.render('broadcast-terminal', {
       nodes,
       bulkActions: bulkActionService.listActions(),
+      configFields: nodeConfigFields.listFields(),
       totpEnabled,
     });
   } catch (error) {
@@ -199,8 +201,33 @@ function jobActor(req) {
   return `admin:${req.session?.adminUsername || 'unknown'} (IP: ${req.ip})`;
 }
 
-function jobParams(body) {
-  return { version: typeof body?.version === 'string' ? body.version.slice(0, 32) : '' };
+const shortString = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
+
+// Size caps only; bulkActionService/nodeConfigFields validate the content.
+function patchValue(value) {
+  if (typeof value === 'string') return value.slice(0, 40000);
+  if (typeof value === 'boolean' || typeof value === 'number') return value;
+  if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
+    return value.slice(0, 101).map(item => item.slice(0, 600));
+  }
+  return undefined;
+}
+
+function jobParams(action, body) {
+  if (action === 'config_patch') {
+    const filter = body?.inboundFilter && typeof body.inboundFilter === 'object' ? body.inboundFilter : null;
+    return {
+      path: shortString(body?.path, 64),
+      op: shortString(body?.op, 8),
+      value: patchValue(body?.value),
+      scope: shortString(body?.scope, 16),
+      position: shortString(body?.position, 8),
+      inboundFilter: filter
+        ? { transport: shortString(filter.transport, 16), security: shortString(filter.security, 16) }
+        : undefined,
+    };
+  }
+  return { version: shortString(body?.version, 32) };
 }
 
 function jobNodeIds(body) {
@@ -233,7 +260,7 @@ router.post('/broadcast/jobs/:action/preview', jobsPreviewLimiter, async (req, r
     const result = await bulkActionService.preview({
       action: req.params.action,
       nodeIds: jobNodeIds(req.body),
-      params: jobParams(req.body),
+      params: jobParams(req.params.action, req.body),
     });
     return res.json(result);
   } catch (error) {
@@ -249,7 +276,7 @@ router.post('/broadcast/jobs/:action/start', jobsStartLimiter, async (req, res) 
     const result = await bulkActionService.start({
       action: req.params.action,
       nodeIds: jobNodeIds(req.body),
-      params: jobParams(req.body),
+      params: jobParams(req.params.action, req.body),
       actor: jobActor(req),
     });
     return res.status(202).json(result);

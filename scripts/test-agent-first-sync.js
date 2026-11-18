@@ -55,6 +55,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
         };
     }
     if (request === './webhookService') return { EVENTS: {}, emit: () => {} };
+    if (request === './accessLogs/provisionService') return { healNodeIfDrifted: async () => {} };
     if (request === './nodeSetup') {
         return {
             getPanelCertificates: () => null,

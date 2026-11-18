@@ -13,6 +13,7 @@ const {
     restoreFrontInboundLayout,
     releaseFrontInboundLayout,
 } = require('../../utils/xrayFront');
+const { xrayAcmeNeedsPort80, validateXrayAcme } = require('../../utils/xrayAcme');
 
 function validateFront(xray, node) {
     if (!xray?.front?.enabled) return null;
@@ -20,6 +21,13 @@ function validateFront(xray, node) {
         sameVps: nodeSetup.isSameVpsAsPanel(node || {}),
         acmeEmail: String(xray.acmeEmail || '').trim() || String(appConfig.ACME_EMAIL || '').trim(),
     });
+}
+
+// acme.sh without the front: TCP 80 must be free on the node (final state:
+// `node` carries the resulting port, domain and ip).
+function validateAcme(xray, node) {
+    if (!xrayAcmeNeedsPort80(xray)) return null;
+    return validateXrayAcme(xray, node || {}, { sameVps: nodeSetup.isSameVpsAsPanel(node || {}) });
 }
 
 // Hidden front field a REST/MCP node update must load to keep the pending
@@ -130,6 +138,7 @@ module.exports = {
     FRONT_HIDDEN_SELECT,
     frontUpdatePaths,
     validateFront,
+    validateAcme,
     captureFrontRollbackState,
     attachFrontRollbackState,
     applyFrontLayout,

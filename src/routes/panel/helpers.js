@@ -695,7 +695,8 @@ function validateXrayFormFields(xray, node) {
 
 function validateXrayFrontFields(xray, node) {
     // Required lazily: edgeFront pulls in nodeSetup, which pulls in syncService.
-    return require('../../services/edgeFront/frontConfig').validateFront(xray, node);
+    const frontConfig = require('../../services/edgeFront/frontConfig');
+    return frontConfig.validateFront(xray, node) || frontConfig.validateAcme(xray, node);
 }
 
 /**

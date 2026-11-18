@@ -17,6 +17,36 @@ let maxInFlight = 0;
 let startRejections = new Map();
 const syncCalls = [];
 let syncBehavior = async () => true;
+const dependentQueries = [];
+const saves = [];
+
+function readPath(target, dotted) {
+    return dotted.split('.').reduce((cur, key) => (cur == null ? undefined : cur[key]), target);
+}
+
+function writePath(target, dotted, value) {
+    const parts = dotted.split('.');
+    let cur = target;
+    for (const part of parts.slice(0, -1)) {
+        if (cur[part] == null) cur[part] = {};
+        cur = cur[part];
+    }
+    if (value === undefined) delete cur[parts[parts.length - 1]];
+    else cur[parts[parts.length - 1]] = value;
+}
+
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Mongoose-like document over the stored object.
+function asDoc(node) {
+    if (!node) return null;
+    Object.defineProperties(node, {
+        toObject: { value: () => JSON.parse(JSON.stringify(node)), configurable: true },
+        set: { value: (path, value) => writePath(node, path, JSON.parse(JSON.stringify(value))), configurable: true },
+        save: { value: async () => { saves.push(JSON.parse(JSON.stringify(node))); }, configurable: true },
+    });
+    return node;
+}
 
 const HyNode = {
     find(filter) {
@@ -24,6 +54,12 @@ const HyNode = {
         if (filter?._id?.$in) {
             const wanted = new Set(filter._id.$in.map(String));
             result = dbNodes.filter(node => wanted.has(String(node._id)));
+        } else if (filter?.type === 'cdn') {
+            dependentQueries.push(filter);
+            const origins = filter['cdn.originNode']?.$in
+                ? filter['cdn.originNode'].$in.map(String)
+                : [String(filter['cdn.originNode'])];
+            result = dbNodes.filter(node => node.type === 'cdn' && origins.includes(String(node.cdn?.originNode)));
         } else if (filter?.type === 'xray') {
             result = dbNodes.filter(node => node.type === 'xray');
         }
@@ -34,8 +70,37 @@ const HyNode = {
         };
         return query;
     },
-    findById: async id => dbNodes.find(node => String(node._id) === String(id)) || null,
+    findById(id) {
+        const load = () => Promise.resolve(asDoc(dbNodes.find(node => String(node._id) === String(id)) || null));
+        return { select: () => load(), then: (resolve, reject) => load().then(resolve, reject) };
+    },
+    async updateOne(filter, update) {
+        const node = dbNodes.find(item => String(item._id) === String(filter._id));
+        if (!node) return { modifiedCount: 0 };
+        let index = null;
+        for (const [key, expected] of Object.entries(filter)) {
+            if (key === '_id') continue;
+            if (key === 'xray.extraInbounds') {
+                index = (node.xray.extraInbounds || []).findIndex(inbound =>
+                    Object.entries(expected.$elemMatch).every(([k, v]) => same(inbound[k], v)));
+                if (index < 0) return { modifiedCount: 0 };
+            } else if (!same(readPath(node, key), expected)) {
+                return { modifiedCount: 0 };
+            }
+        }
+        const resolve = path => path.replace('$', String(index));
+        for (const [path, value] of Object.entries(update.$set || {})) writePath(node, resolve(path), value);
+        for (const path of Object.keys(update.$unset || {})) writePath(node, resolve(path), undefined);
+        return { modifiedCount: 1 };
+    },
 };
+
+const panelHelpers = {
+    validateXrayFormFields: () => null,
+    validateHysteriaFormFields: () => null,
+    mergeRealityGuard: () => ({ mode: 'auto', status: 'ok' }),
+};
+let cacheInvalidations = 0;
 
 const CascadeLink = {
     find(filter) {
@@ -111,6 +176,9 @@ const stubs = {
     './xrayVersionService': xrayVersionService,
     './syncService': syncService,
     './cascadeService': cascadeService,
+    '../routes/panel/helpers': panelHelpers,
+    '../utils/helpers': { invalidateNodesCache: async () => { cacheInvalidations += 1; } },
+    '../utils/vlessEncryption': { versionError: () => null },
 };
 
 const originalLoad = Module._load;
@@ -147,6 +215,10 @@ function reset() {
     syncBehavior = async () => true;
     syncService.isSyncing = false;
     logs.length = 0;
+    dependentQueries.length = 0;
+    saves.length = 0;
+    cacheInvalidations = 0;
+    panelHelpers.validateXrayFormFields = () => null;
 }
 
 async function finish(nodeId, state, extra) {
@@ -266,6 +338,7 @@ async function expectStatus(promise, statusCode, pattern) {
     assert.deepStrictEqual(service.listActions(), [
         { id: 'xray_version', requiresReauth: true },
         { id: 'sync', requiresReauth: false },
+        { id: 'config_patch', requiresReauth: true },
     ]);
 
     // Xray preview: both ends of a link get it, missing nodes are reported.
@@ -373,6 +446,149 @@ async function expectStatus(promise, statusCode, pattern) {
     assert.strictEqual(snapshot.state, 'done', 'a failed offline node is not a canary stop');
     assert.deepStrictEqual(snapshot.items.map(item => item.state), ['error', 'done', 'done']);
     assert.ok(snapshot.items.every(item => !('deferred' in item)));
+
+    // config_patch: input is checked against the allowlist before any node.
+    reset();
+    await expectStatus(service.preview({ action: 'config_patch', nodeIds: [ids[0]], params: { path: 'ssh.password', value: 'x' } }),
+        400, /cannot be changed in bulk/);
+    await expectStatus(service.preview({ action: 'config_patch', nodeIds: [ids[0]], params: { path: 'xray.alpn', value: 'h2,spdy' } }),
+        400, /alpn/);
+    assert.deepStrictEqual(service.getAction('config_patch').allFilterFor({ path: 'aclRules' }),
+        { type: { $in: ['xray', 'hysteria'] }, active: true });
+    assert.throws(() => service.getAction('config_patch').allFilterFor({ path: 'xray.port' }), error => error.statusCode === 400);
+
+    // config_patch preview: per-node verdicts, before/after, one CDN query.
+    const tlsXray = (id, name, extra = {}) => ({
+        _id: id, name, type: 'xray', status: 'online', ssh: SSH,
+        xray: { security: 'tls', transport: 'ws', wsPath: '/ws', alpn: ['h2'], extraInbounds: [] },
+        ...extra,
+    });
+    dbNodes = [
+        tlsXray(ids[0], 'tls'),
+        { _id: ids[1], name: 'reality', type: 'xray', status: 'online', ssh: SSH, xray: { security: 'reality', alpn: [] } },
+        { _id: ids[2], name: 'hy', type: 'hysteria', status: 'online', ssh: SSH },
+        tlsXray(ids[3], 'off', { active: false }),
+        tlsXray(ids[4], 'bridge', { cascadeRole: 'bridge' }),
+        tlsXray(ids[5], 'busy'),
+        tlsXray(ids[6], 'down', { status: 'offline' }),
+        { _id: ids[7], name: 'front-cdn', type: 'cdn', cdn: { originNode: ids[0], path: '/ws' } },
+    ];
+    assert.ok(nodeSetupLock.acquire(ids[5], 'Node setup'));
+    try {
+        preview = await service.preview({ action: 'config_patch', nodeIds: ids.slice(0, 7), params: { path: 'xray.alpn', value: 'h3,h2' } });
+    } finally {
+        nodeSetupLock.release(ids[5]);
+    }
+    assert.deepStrictEqual(preview.params, { path: 'xray.alpn', op: 'set', value: ['h3', 'h2'], scope: 'main_extras' });
+    const patchReasons = preview.items.map(item => item.reason);
+    assert.strictEqual(patchReasons[0], null);
+    assert.deepStrictEqual(preview.items[0].changes, [{ inbound: 'main', before: ['h2'], after: ['h3', 'h2'] }]);
+    assert.match(patchReasons[1], /security is reality/);
+    assert.match(patchReasons[2], /Not available for hysteria/);
+    assert.strictEqual(patchReasons[3], 'Node is disabled');
+    assert.match(patchReasons[4], /cascade links/);
+    assert.match(patchReasons[5], /busy/);
+    assert.strictEqual(patchReasons[6], null);
+    assert.deepStrictEqual(preview.items[6].warnings, ['Node is offline']);
+    assert.strictEqual(dependentQueries.length, 1, 'CDN dependents are loaded in one query');
+    assert.ok(Array.isArray(dependentQueries[0]['cdn.originNode'].$in));
+
+    // A path change that would break a CDN front is refused for that node only.
+    dependentQueries.length = 0;
+    preview = await service.preview({ action: 'config_patch', nodeIds: [ids[0], ids[6]], params: { path: 'xray.wsPath', value: '/new' } });
+    assert.match(preview.items[0].reason, /CDN node "front-cdn" depends on this node/);
+    assert.strictEqual(preview.items[1].reason, null);
+    assert.strictEqual(dependentQueries.length, 1);
+
+    // The panel form rules see the final state.
+    panelHelpers.validateXrayFormFields = xray => (xray.wsPath === '/bad' ? 'Main inbound: bad path' : null);
+    preview = await service.preview({ action: 'config_patch', nodeIds: [ids[6]], params: { path: 'xray.wsPath', value: '/bad' } });
+    assert.strictEqual(preview.items[0].reason, 'Main inbound: bad path');
+
+    // config_patch run: saved, pushed with a report, cache invalidated.
+    reset();
+    dbNodes = [tlsXray(ids[0], 'a'), tlsXray(ids[1], 'b')];
+    snapshot = await service.start({ action: 'config_patch', nodeIds: ids.slice(0, 2), params: { path: 'xray.alpn', value: 'h3' }, actor: 'admin:test' });
+    await flush(30);
+    snapshot = service.status();
+    assert.strictEqual(snapshot.state, 'done');
+    assert.deepStrictEqual(snapshot.items.map(item => item.state), ['done', 'done']);
+    assert.deepStrictEqual(dbNodes[0].xray.alpn, ['h3']);
+    assert.strictEqual(saves.length, 2);
+    assert.ok(syncCalls.every(call => typeof call.opts.report === 'object'));
+    assert.ok(cacheInvalidations >= 2);
+    assert.ok(logs.some(line => /config_patch batch .* started by admin:test: params=\{"path":"xray.alpn"/.test(line)));
+
+    // Failed push: only the patched field goes back, then the old config is pushed.
+    reset();
+    dbNodes = [tlsXray(ids[0], 'a', { xray: { security: 'tls', transport: 'ws', wsPath: '/ws', alpn: ['h2'], fingerprint: 'chrome', extraInbounds: [
+        { id: 'e1', label: 'x', security: 'tls', transport: 'xhttp', alpn: ['http/1.1'], port: 8443 },
+    ] } })];
+    let pushes = 0;
+    syncBehavior = async (node, opts) => {
+        pushes += 1;
+        if (pushes === 1) {
+            // Someone edits an unrelated field while the push runs.
+            dbNodes[0].xray.fingerprint = 'firefox';
+            opts.report.error = 'xray -test failed';
+            return false;
+        }
+        return true;
+    };
+    await service.start({ action: 'config_patch', nodeIds: [ids[0]], params: { path: 'xray.alpn', value: 'h3' } });
+    await flush(30);
+    snapshot = service.status();
+    assert.strictEqual(snapshot.items[0].state, 'error');
+    assert.strictEqual(snapshot.items[0].error, 'xray -test failed');
+    assert.deepStrictEqual(snapshot.items[0].details, { rolledBack: true, configRestored: true });
+    assert.deepStrictEqual(dbNodes[0].xray.alpn, ['h2'], 'main inbound restored');
+    assert.deepStrictEqual(dbNodes[0].xray.extraInbounds[0].alpn, ['http/1.1'], 'extra inbound restored');
+    assert.strictEqual(dbNodes[0].xray.fingerprint, 'firefox', 'the concurrent edit is kept');
+    assert.strictEqual(pushes, 2, 'the restored config is pushed');
+
+    // A field changed again in the meantime is not overwritten by the rollback.
+    reset();
+    dbNodes = [tlsXray(ids[0], 'a')];
+    syncBehavior = async (node, opts) => {
+        dbNodes[0].xray.alpn = ['http/1.1'];
+        opts.report.error = 'restart failed';
+        return false;
+    };
+    await service.start({ action: 'config_patch', nodeIds: [ids[0]], params: { path: 'xray.alpn', value: 'h3' } });
+    await flush(30);
+    snapshot = service.status();
+    assert.deepStrictEqual(dbNodes[0].xray.alpn, ['http/1.1']);
+    assert.deepStrictEqual(snapshot.items[0].details, { rolledBack: false, configRestored: false });
+    assert.strictEqual(syncCalls.length, 1, 'nothing to restore, no second push');
+
+    // Busy at push time: skipped, the database change is undone, no push retry.
+    reset();
+    dbNodes = [tlsXray(ids[0], 'a'), tlsXray(ids[1], 'b')];
+    syncBehavior = async (node) => {
+        if (String(node._id) === ids[0]) throw new Error('Node is busy: Node setup is running');
+        return true;
+    };
+    await service.start({ action: 'config_patch', nodeIds: ids.slice(0, 2), params: { path: 'xray.alpn', value: 'h3' } });
+    await flush(30);
+    snapshot = service.status();
+    assert.deepStrictEqual(snapshot.items.map(item => item.state), ['skipped', 'done']);
+    assert.deepStrictEqual(dbNodes[0].xray.alpn, ['h2']);
+    assert.strictEqual(syncCalls.filter(call => call.nodeId === ids[0]).length, 1);
+
+    // ACL rules on Hysteria: added before the catch-all, pushed through the lock-aware path.
+    reset();
+    dbNodes = [
+        { _id: ids[0], name: 'hy', type: 'hysteria', status: 'online', ssh: SSH, acl: { enabled: true, type: 'inline' },
+            outbounds: [], aclRules: ['reject(geoip:private)', 'direct(all)'] },
+        { _id: ids[1], name: 'hy-file', type: 'hysteria', status: 'online', ssh: SSH, acl: { enabled: true, type: 'file' }, aclRules: [] },
+    ];
+    preview = await service.preview({ action: 'config_patch', nodeIds: ids.slice(0, 2), params: { path: 'aclRules', op: 'add', value: 'reject(geoip:cn)' } });
+    assert.deepStrictEqual([preview.ready, preview.skipped], [1, 1]);
+    assert.match(preview.items[1].reason, /from a file/);
+    await service.start({ action: 'config_patch', nodeIds: ids.slice(0, 2), params: { path: 'aclRules', op: 'add', value: 'reject(geoip:cn)' } });
+    await flush(30);
+    assert.deepStrictEqual(dbNodes[0].aclRules, ['reject(geoip:cn)', 'reject(geoip:private)', 'direct(all)']);
+    assert.strictEqual(dependentQueries.length, 0, 'Hysteria nodes have no CDN dependents');
 
     // Status is idle before any batch.
     reset();

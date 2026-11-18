@@ -18,8 +18,10 @@ const crypto = require('crypto');
 const logger = require('../../utils/logger');
 const appConfig = require('../../../config');
 const credentialService = require('./credentialService');
+const nodeSetupLock = require('../../utils/nodeSetupLock');
 
 const MIN_AGENT_VERSION = '1.4.0';
+const SSH_REQUIRED_ERROR = 'SSH access is required to enable access logs';
 
 // Minimal semver-ish compare good enough for "x.y.z" agent versions. Missing or
 // unparseable versions are treated as too old.
@@ -158,14 +160,18 @@ async function reconcileNode(node, settings) {
         const fingerprint = desiredFingerprint(shouldShip, settings, tokenHash);
         const applied = node.xray?.accessLogs?.appliedFingerprint || '';
         const currentStatus = node.xray?.accessLogs?.status || 'disabled';
+        const currentEnabled = !!node.xray?.accessLogs?.enabled;
 
         // No-op fast paths (skip the config push + Xray restart):
         //  - the node already runs this exact config and is healthy, OR
         //  - target is "disabled" and the node was never provisioned for access
         //    logs at all (disabled is the default state — nothing to undo).
-        const neverProvisioned = !applied && !(node.xray?.accessLogs?.enabled);
+        // agent-outdated keeps the old fingerprint while the flag is off, so the
+        // flag is compared too.
+        const neverProvisioned = !applied && !currentEnabled;
         const alreadyApplied = fingerprint === applied
-            && currentStatus !== 'error' && currentStatus !== 'pending';
+            && currentEnabled === shouldShip
+            && !['error', 'pending', 'agent-outdated'].includes(currentStatus);
         if (alreadyApplied || (!shouldShip && neverProvisioned)) {
             await HyNode.updateOne({ _id: node._id }, {
                 $set: {
@@ -174,6 +180,25 @@ async function reconcileNode(node, settings) {
                 },
             });
             return { node: node.name, status: currentStatus, skipped: true };
+        }
+
+        // The Xray log section only reaches the node over SSH; an agent-only
+        // node would report success while never writing a log.
+        if (shouldShip && !(node.ssh?.password || node.ssh?.privateKey)) {
+            await HyNode.updateOne({ _id: node._id }, {
+                $set: {
+                    'xray.accessLogs.enabled': false,
+                    'xray.accessLogs.status': 'error',
+                    'xray.accessLogs.lastError': SSH_REQUIRED_ERROR,
+                    'xray.accessLogs.lastReconcileAt': new Date(),
+                },
+            });
+            logger.warn(`[AccessLogs] Node ${node.name}: ${SSH_REQUIRED_ERROR}`);
+            return { node: node.name, status: 'error', error: SSH_REQUIRED_ERROR };
+        }
+
+        if (nodeSetupLock.holder(node._id)) {
+            return { node: node.name, status: 'busy' };
         }
 
         if (!shouldShip) {
@@ -195,7 +220,27 @@ async function reconcileNode(node, settings) {
         // doc so the updated flag is reflected.
         const fresh = await HyNode.findById(node._id);
         const syncService = require('../syncService');
-        await syncService.updateXrayNodeConfig(fresh);
+        const report = {};
+        let pushed;
+        try {
+            pushed = await syncService.updateXrayNodeConfig(fresh, { report });
+        } catch (err) {
+            // Another operation took the node between the check and the push:
+            // put the previous state back and let the next pass retry.
+            if (/^Node is busy:/.test(err.message)) {
+                await HyNode.updateOne({ _id: node._id }, {
+                    $set: {
+                        'xray.accessLogs.enabled': currentEnabled,
+                        'xray.accessLogs.status': currentStatus,
+                    },
+                });
+                return { node: node.name, status: 'busy' };
+            }
+            throw err;
+        }
+        if (pushed === false) {
+            throw new Error(report.error || 'Config push failed');
+        }
 
         await HyNode.updateOne({ _id: node._id }, {
             $set: {
@@ -273,6 +318,116 @@ async function reconcileAll() {
     }
 }
 
+// Self-healing: reconcileAll only runs when the settings form is saved, so a
+// node added or upgraded later would never pick up the global setting. The
+// health check feeds every answering node through healNodeIfDrifted.
+const PENDING_STALE_MS = 15 * 60 * 1000;
+const HEAL_COOLDOWN_MS = 10 * 60 * 1000;
+const HEAL_ERROR_COOLDOWN_MS = 60 * 60 * 1000;
+const healAttempts = new Map(); // nodeId -> { at, failed }
+const healQueue = new Map(); // nodeId -> node
+let healRunning = false;
+
+/**
+ * Why the node's stored access-log state differs from the desired one, or null.
+ * Works on the stored flag: the agent's own flag follows the global setting,
+ * while the Xray log section follows this flag.
+ * @param {Object} node - full node document
+ * @param {Object} settings - panel settings
+ * @param {string} agentVersion - version reported by the agent just now
+ * @param {number} [now]
+ * @returns {string|null}
+ */
+function accessLogsDrift(node, settings, agentVersion, now = Date.now()) {
+    const al = node?.xray?.accessLogs || {};
+    const status = al.status || 'disabled';
+    const enabled = !!al.enabled;
+
+    if (!nodeShouldShip(node, settings)) {
+        return enabled ? 'should be disabled' : null;
+    }
+    // Without an ingest URL the agent cannot ship; restarting Xray for it
+    // would only interrupt users.
+    if (!resolveIngestUrl(settings)) return null;
+
+    if (!agentVersionAtLeast(agentVersion, MIN_AGENT_VERSION)) {
+        return status === 'agent-outdated' ? null : 'agent outdated';
+    }
+    if (!enabled) return 'should be enabled';
+    if (status === 'agent-outdated' || status === 'disabled' || status === 'error') return `status ${status}`;
+    if (status === 'pending') {
+        const at = al.lastReconcileAt ? new Date(al.lastReconcileAt).getTime() : 0;
+        if (now - at > PENDING_STALE_MS) return 'stuck in pending';
+    }
+    return null;
+}
+
+function healCooldownActive(nodeId, now) {
+    for (const [id, attempt] of healAttempts) {
+        if (now - attempt.at >= HEAL_ERROR_COOLDOWN_MS) healAttempts.delete(id);
+    }
+    const last = healAttempts.get(nodeId);
+    if (!last) return false;
+    return now - last.at < (last.failed ? HEAL_ERROR_COOLDOWN_MS : HEAL_COOLDOWN_MS);
+}
+
+async function drainHealQueue() {
+    if (healRunning) return;
+    healRunning = true;
+    try {
+        while (healQueue.size > 0) {
+            const [nodeId, node] = healQueue.entries().next().value;
+            healQueue.delete(nodeId);
+            if (reconcileRunning || nodeSetupLock.holder(nodeId)) {
+                healAttempts.delete(nodeId);
+                continue;
+            }
+            const { getSettings } = require('../../utils/helpers');
+            const settings = await getSettings();
+            const result = await reconcileNode(node, settings);
+            if (result.status === 'busy') {
+                healAttempts.delete(nodeId);
+            } else {
+                healAttempts.set(nodeId, { at: Date.now(), failed: result.status === 'error' });
+                logger.info(`[AccessLogs] Node ${node.name}: self-heal finished with status ${result.status}`);
+            }
+        }
+    } finally {
+        healRunning = false;
+    }
+}
+
+/**
+ * Bring a node in line with the global access-log setting when its stored
+ * state drifted. Cheap when nothing drifted: cached settings, no queries.
+ * Never throws; callers do not await it.
+ * @param {Object} node - full node document from the health check
+ * @param {string} agentVersion - `agent_version` from agent GET /info
+ */
+async function healNodeIfDrifted(node, agentVersion) {
+    try {
+        if (!node || node.type !== 'xray') return;
+        const nodeId = String(node._id);
+        const now = Date.now();
+        if (reconcileRunning || healQueue.has(nodeId) || nodeSetupLock.holder(nodeId)) return;
+        if (healCooldownActive(nodeId, now)) return;
+
+        const { getSettings } = require('../../utils/helpers');
+        const settings = await getSettings();
+        const reason = accessLogsDrift(node, settings, agentVersion, now);
+        if (!reason) return;
+
+        // The document predates the health check that just refreshed the version.
+        node.agentVersion = agentVersion || node.agentVersion;
+        healAttempts.set(nodeId, { at: now, failed: false });
+        logger.info(`[AccessLogs] Node ${node.name}: ${reason}, reconciling`);
+        healQueue.set(nodeId, node);
+        await drainHealQueue();
+    } catch (err) {
+        logger.error(`[AccessLogs] Self-heal failed for ${node?.name || 'node'}: ${err.message}`);
+    }
+}
+
 module.exports = {
     MIN_AGENT_VERSION,
     agentVersionAtLeast,
@@ -282,4 +437,6 @@ module.exports = {
     buildNodeAccessLogsConfig,
     reconcileNode,
     reconcileAll,
+    accessLogsDrift,
+    healNodeIfDrifted,
 };

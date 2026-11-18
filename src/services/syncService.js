@@ -1213,6 +1213,7 @@ class SyncService {
             }
 
             this._healUnsyncedAgent(node, data.last_sync);
+            require('./accessLogs/provisionService').healNodeIfDrifted(node, data.agent_version || '');
             return 0;
         } catch (error) {
             logger.warn(`[Agent] ${node.name}: unavailable - ${error.message}`);
@@ -1313,9 +1314,22 @@ class SyncService {
     }
 
     /**
-     * Update Hysteria config on a specific node
+     * Update Hysteria config on a specific node. Holds the node lock so a
+     * push never overlaps Auto Setup or another push on the same host.
      */
     async _updateHysteriaNodeConfig(node, { report = null } = {}) {
+        const lockKey = String(node?._id || '');
+        if (!nodeSetupLock.acquire(lockKey, 'Hysteria config sync')) {
+            throw new Error(`Node is busy: ${nodeSetupLock.holder(lockKey)} is running`);
+        }
+        try {
+            return await this._pushHysteriaConfig(node, { report });
+        } finally {
+            nodeSetupLock.release(lockKey);
+        }
+    }
+
+    async _pushHysteriaConfig(node, { report = null } = {}) {
         logger.info(`[Sync] Updating config for node ${node.name} (${node.ip})`);
         
         await HyNode.updateOne(

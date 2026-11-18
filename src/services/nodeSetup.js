@@ -13,6 +13,7 @@ const Settings = require('../models/settingsModel');
 const configGenerator = require('./configGenerator');
 const { isServerlessNode } = require('../utils/nodeTypes');
 const { isLoopbackAddress, hasOwnTlsInbound } = require('../utils/xrayFront');
+const { ACME_HTTP_PORT, xrayAcmeNeedsPort80, validateXrayAcme } = require('../utils/xrayAcme');
 const { normalizeOsFamily, nodeOsFamily, buildServiceCommand } = require('../utils/nodeOs');
 
 /**
@@ -1250,6 +1251,21 @@ mkdir -p /usr/local/etc/xray /var/log/xray
 echo "Done: Directory /usr/local/etc/xray ready"
 `;
 
+// acme.sh runs before the general firewall step, so HTTP-01 would hit a closed
+// port on hosts that drop unknown traffic. HTTP-01 is TCP only.
+const ACME_PORT80_FIREWALL_SCRIPT = `
+echo "=== Opening TCP ${ACME_HTTP_PORT} for the ACME HTTP-01 challenge ==="
+if command -v iptables &> /dev/null; then
+    iptables -C INPUT -p tcp --dport ${ACME_HTTP_PORT} -j ACCEPT 2>/dev/null \\
+        || iptables -I INPUT -p tcp --dport ${ACME_HTTP_PORT} -j ACCEPT 2>/dev/null || true
+fi
+if command -v ufw &> /dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    ufw allow ${ACME_HTTP_PORT}/tcp 2>/dev/null || true
+fi
+${IPTABLES_SAVE_SNIPPET}
+echo "Done: TCP ${ACME_HTTP_PORT} open"
+`;
+
 // ACME (acme.sh) setup for tlsSource='acme': issue LE cert for `domain` via
 // HTTP-01 standalone, install to /usr/local/etc/xray/{cert,key}.pem, register
 // acme.sh cron for autonomous renewal. Inputs sanitized at the call-site.
@@ -1268,6 +1284,9 @@ function buildAcmeSetupScript({ domain, email, nodeIp, osFamily }) {
     const port80Show = freebsd
         ? `sockstat -46l -P tcp -p 80 2>/dev/null || true`
         : `ss -tlnp 'sport = :80' 2>/dev/null || true`;
+    const port80Xray = freebsd
+        ? `sockstat -46l -P tcp -p 80 2>/dev/null | awk 'NR > 1 {print $2}' | grep -qx xray`
+        : `ss -tlnpH 'sport = :80' 2>/dev/null | grep -q '"xray"'`;
     const ensureCurl = freebsd
         ? `    if ! command -v curl >/dev/null 2>&1; then
         pkg install -y curl
@@ -1299,11 +1318,24 @@ if [ "\${RESOLVED}" != "\${NODE_IP}" ] && [ -n "\${NODE_IP}" ]; then
     echo "WARN: \${DOMAIN} resolves to \${RESOLVED}, expected \${NODE_IP}. Continuing — anycast/CDN may legitimately differ."
 fi
 
-# Pre-flight 2: port 80 must be free for HTTP-01 standalone.
+CERT_FILE="\${HOME}/.acme.sh/\${DOMAIN}_ecc/\${DOMAIN}.cer"
+
+# Pre-flight 2: port 80 must be free for HTTP-01 standalone. An existing
+# certificate keeps working, only its renewal needs the port.
 if ${port80Busy}; then
-    echo "ERROR: Port 80 is busy on the node. Stop the listener (nginx/apache/caddy/etc.) and retry."
-    ${port80Show}
-    exit 12
+    if ${port80Xray}; then
+        PORT80_HOLDER="Xray itself (an inbound listens on port 80; move it to another port)"
+    else
+        PORT80_HOLDER="another service (nginx/apache/caddy/etc.)"
+    fi
+    if [ -f "\${CERT_FILE}" ]; then
+        echo "WARN: Port 80 is held by \${PORT80_HOLDER}. Keeping the existing certificate; renewals fail until port 80 is free."
+        ${port80Show}
+    else
+        echo "ERROR: Port 80 is held by \${PORT80_HOLDER}. Free port 80 and retry: Let's Encrypt HTTP-01 needs it."
+        ${port80Show}
+        exit 12
+    fi
 fi
 
 if [ ! -f "\${HOME}/.acme.sh/acme.sh" ]; then
@@ -1320,10 +1352,21 @@ ACME="\${HOME}/.acme.sh/acme.sh"
 "\${ACME}" --set-default-ca --server letsencrypt >/dev/null 2>&1 || true
 
 # Skip --issue if cert already present; renewals run via acme.sh cron.
-CERT_FILE="\${HOME}/.acme.sh/\${DOMAIN}_ecc/\${DOMAIN}.cer"
 if [ ! -f "\${CERT_FILE}" ]; then
     echo "Issuing LE cert for \${DOMAIN} via HTTP-01 standalone..."
-    "\${ACME}" --issue --standalone --server letsencrypt -d "\${DOMAIN}" --keylength ec-256
+    set +e
+    ISSUE_OUT=$("\${ACME}" --issue --standalone --server letsencrypt -d "\${DOMAIN}" --keylength ec-256 2>&1)
+    ISSUE_RC=$?
+    set -e
+    printf '%s\\n' "\${ISSUE_OUT}"
+    if [ "\${ISSUE_RC}" -ne 0 ]; then
+        if printf '%s\\n' "\${ISSUE_OUT}" | grep -qiE 'Timeout during connect|Connection refused'; then
+            echo "ERROR: Let's Encrypt could not reach \${DOMAIN} on TCP 80: the port is closed by a firewall or by the hosting provider. Open TCP 80 to the internet and retry."
+        else
+            echo "ERROR: acme.sh could not issue a certificate for \${DOMAIN}; see the output above."
+        fi
+        exit 14
+    fi
 else
     echo "Existing cert present for \${DOMAIN}; skipping --issue (renewals run via acme.sh cron)."
 fi
@@ -1400,13 +1443,12 @@ async function setupXrayNode(node, options = {}) {
             return { success: false, error: msg, logs, realityKeys: null };
         }
 
-        // ACME on same-VPS is incompatible (port 80 held by panel Caddy).
-        if (sameVps && xrayCfgEarly.security === 'tls' && xrayCfgEarly.tlsSource === 'acme') {
-            const msg = `tlsSource='acme' is incompatible with same-VPS deployment: ` +
-                `port 80 is held by the panel's Caddy and cannot be used for HTTP-01. ` +
-                `Switch the node to tlsSource='panel' (panel's LE cert is reused) or move the node to a separate VPS.`;
-            log(`ERROR: ${msg}`);
-            return { success: false, error: msg, logs, realityKeys: null };
+        // ACME needs TCP 80: held by the panel's Caddy on the same VPS, and an
+        // inbound on :80 would block HTTP-01 too.
+        const acmeError = validateXrayAcme(xrayCfgEarly, node, { sameVps });
+        if (acmeError) {
+            log(`ERROR: ${acmeError}`);
+            return { success: false, error: acmeError, logs, realityKeys: null };
         }
 
         if (sameVps) {
@@ -1578,6 +1620,11 @@ fi
             if (!email) {
                 throw new Error('tlsSource=acme requires acmeEmail (or the panel-wide ACME_EMAIL env var).');
             }
+            if (osFamily !== 'freebsd') {
+                log(`Opening TCP ${ACME_HTTP_PORT} for the ACME HTTP-01 challenge...`);
+                const port80Result = await execSSH(conn, ACME_PORT80_FIREWALL_SCRIPT);
+                logs.push(port80Result.output);
+            }
             log(`TLS source: acme — installing acme.sh and issuing LE cert for ${domain}...`);
             const acmeScript = buildAcmeSetupScript({ domain, email, nodeIp: node.ip, osFamily });
             const acmeResult = await execSSH(conn, acmeScript);
@@ -1617,6 +1664,10 @@ fi
         // The front owns the public port, plus :80 for the ACME challenge.
         if (xrayConfig.front?.enabled) {
             externalPorts.push(xrayConfig.front.publicPort || 443, 80);
+        }
+        // acme.sh renews from cron through HTTP-01 on :80.
+        if (xrayAcmeNeedsPort80(xrayConfig)) {
+            externalPorts.push(ACME_HTTP_PORT);
         }
         const allPorts = [...new Set(externalPorts)];
 

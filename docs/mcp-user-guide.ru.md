@@ -327,11 +327,21 @@ curl -X POST https://your-panel.com/api/mcp \
 
 > Требуется scope: `nodes:write`
 
-Меняет версию ядра Xray или синхронизирует (отправляет конфиг и перезапускает) сразу много нод. Тот же механизм работает во вкладке **Broadcast → Массовые действия** в панели.
+Меняет версию ядра Xray, синхронизирует (отправляет конфиг и перезапускает) или меняет одно поле конфига сразу на многих нодах. Тот же механизм работает во вкладке **Broadcast → Массовые действия** в панели.
 
-**Операции (`op`):** `releases` | `preview` | `start` | `status` | `cancel`
+**Операции (`op`):** `releases` | `fields` | `preview` | `start` | `status` | `cancel`
 
-**Действия (`action`):** `xray_version` | `sync`
+**Действия (`action`):** `xray_version` | `sync` | `config_patch`
+
+**`config_patch`** меняет одно поле из фиксированного списка (его показывает `op: "fields"`):
+- inbound'ы Xray: `xray.alpn` (`h3`, `h2`, `http/1.1`, `http/1.0`; только TLS-inbound'ы), `xray.fingerprint`, `xray.fingerprintPool`, `xray.flow`, dest/SNI/short ID/spiderX для Reality, пути и хосты WebSocket/gRPC/XHTTP, тонкая настройка XHTTP, `xray.fallbackDest`; `xray.connIdle` у основного inbound'а;
+- ACL-правила (`aclRules`) на нодах Xray и Hysteria;
+- Hysteria: `bandwidth.up`, `bandwidth.down`, `ignoreClientBandwidth`, `hopInterval`, `udpIdleTimeout`, `disableUDP`, `masquerade.proxy.url`;
+- порты, адреса прослушивания, security и источник TLS, домен, Front и секреты в список не входят: для них нужен Auto Setup на ноде.
+
+Параметры: `path`, `patchOp` (`set`, для списков также `add`/`remove`), `value`, для полей inbound'ов — `scope` (`main`, `main_extras`, `extras`) и `inboundFilter` (`transport`, `security`), для добавляемых ACL-правил — `position` (`start`/`end`). По умолчанию новые ACL-правила ставятся в начало, чтобы сработать раньше общего правила вроде `direct(all)`. Если правило ведёт в outbound, которого на ноде нет, нода пропускается.
+
+`preview` показывает значение «было → станет» по каждой ноде и причину пропуска: поле не применимо (например, ALPN у Reality-inbound'а), inbound обслуживает Front, итог не проходит проверки формы ноды или сломается CDN-нода, для которой эта нода — origin. Если отправка конфига не удалась, старое значение возвращается (если поле за это время не меняли) и старый конфиг отправляется заново.
 
 - Одновременно идёт только один запуск. Первая готовая нода идёт одна как пробная, остальные следуют небольшими волнами.
 - После 2 ошибок новые ноды не запускаются; уже начатые доработают.
@@ -352,6 +362,19 @@ curl -X POST https://your-panel.com/api/mcp \
 
 ```json
 { "name": "bulk_action", "arguments": { "op": "status" } }
+```
+
+</details>
+
+<details>
+<summary>📖 Пример: Задать ALPN на всех TLS-inbound'ах и заблокировать Китай на всех нодах</summary>
+
+```json
+{ "name": "bulk_action", "arguments": { "op": "preview", "action": "config_patch", "all": true, "path": "xray.alpn", "value": "h2,http/1.1" } }
+```
+
+```json
+{ "name": "bulk_action", "arguments": { "op": "start", "action": "config_patch", "all": true, "path": "aclRules", "patchOp": "add", "value": ["reject(geoip:cn)"], "confirm": true } }
 ```
 
 </details>

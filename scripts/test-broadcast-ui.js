@@ -103,6 +103,21 @@ assertIncludes(broadcastRoute, ".select('_id name ip type status flag ssh.port s
   "document.body.classList.toggle('mode-no-terminal'",
 ].forEach(expected => assertIncludes(broadcastView, expected, 'broadcast jobs tab'));
 
+[
+  'id="jobsPatchField"',
+  'id="jobsPatchOp"',
+  'id="jobsPatchValue"',
+  'id="jobsPatchBool"',
+  'id="jobsPatchScope"',
+  'id="jobsPatchTransport"',
+  'id="jobsPatchSecurity"',
+  'id="jobsPatchPosition"',
+  'const JOB_FIELDS = <%- JSON.stringify(jobFields) %>',
+  'function jobsRequestBody(action)',
+  'formatPatchChanges(item.changes)',
+  'item.details?.rolledBack',
+].forEach(expected => assertIncludes(broadcastView, expected, 'broadcast config patch form'));
+
 const jobsPanelIndex = broadcastView.indexOf('id="jobsPanel"');
 assert(nodeSelectorIndex < jobsPanelIndex, 'node selector should appear before jobs panel');
 
@@ -113,6 +128,7 @@ assert(nodeSelectorIndex < jobsPanelIndex, 'node selector should appear before j
   "router.post('/broadcast/jobs/:action/preview', jobsPreviewLimiter",
   "router.post('/broadcast/jobs/:action/start', jobsStartLimiter",
   'reauthenticateXrayVersionChange',
+  'configFields: nodeConfigFields.listFields()',
 ].forEach(expected => assertIncludes(broadcastRoute, expected, 'broadcast jobs route'));
 
 const panelNodesRoute = read('src/routes/panel/nodes.js');
@@ -163,6 +179,30 @@ const requiredBroadcastKeys = [
   'jobsStopCanary',
   'jobsStopFailures',
   'jobsShowLog',
+  'jobsActionPatch',
+  'jobsPatchField',
+  'jobsPatchGroupXray',
+  'jobsPatchGroupAcl',
+  'jobsPatchGroupHysteria',
+  'jobsPatchOp',
+  'jobsPatchOpSet',
+  'jobsPatchOpAdd',
+  'jobsPatchOpRemove',
+  'jobsPatchValue',
+  'jobsPatchValueHint',
+  'jobsPatchAclHint',
+  'jobsPatchScope',
+  'jobsPatchScopeMainExtras',
+  'jobsPatchScopeMain',
+  'jobsPatchScopeExtras',
+  'jobsPatchTransport',
+  'jobsPatchSecurity',
+  'jobsPatchAny',
+  'jobsPatchPosition',
+  'jobsPatchPositionStart',
+  'jobsPatchPositionEnd',
+  'jobsPatchRolledBack',
+  'jobsPatchConfigRestored',
 ];
 
 [
@@ -185,6 +225,7 @@ const packageJson = readJson('package.json');
   'node scripts/test-broadcast-panel.js',
   'node scripts/test-broadcast-ui.js',
   'node scripts/test-bulk-actions.js',
+  'node scripts/test-node-config-fields.js',
 ].forEach(command => assertIncludes(packageJson.scripts.test, command, 'package npm test script'));
 
 console.log('broadcast UI tests passed');
