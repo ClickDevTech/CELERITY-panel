@@ -1090,22 +1090,25 @@ function generateXrayConfig(node, users, options = {}) {
         }
 
         const routingRule = { type: 'field', outboundTag };
-        if (target !== 'all') {
-            if (target.startsWith('geoip:')) {
-                routingRule.ip = [target];
-            } else if (target.startsWith('geosite:')) {
-                routingRule.domain = [target];
+            if (target !== 'all') {
+                if (target === 'protocol:bittorrent') {
+                    routingRule.protocol = ['bittorrent'];
+                    routingRule.inboundTag = vlessInboundTags;
+                } else if (target.startsWith('geoip:')) {
+                    routingRule.ip = [target];
+                } else if (target.startsWith('geosite:')) {
+                    routingRule.domain = [target];
+                } else {
+                    routingRule.domain = [`full:${target}`];
+                }
             } else {
-                routingRule.domain = [`full:${target}`];
+                routingRule.inboundTag = vlessInboundTags;
+                routingRule.ruleTag = 'acl-catch-all';
             }
-        } else {
-            routingRule.inboundTag = vlessInboundTags;
-            routingRule.ruleTag = 'acl-catch-all';
-        }
 
         config.routing.rules.push(routingRule);
-    }
-
+        }
+        
     // geoip:private block is added later by ensurePrivateIpBlock() after cascade rules
 
     return JSON.stringify(config, null, 2);
