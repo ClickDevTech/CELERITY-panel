@@ -7,9 +7,21 @@ import (
 	"log"
 	"net/http"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
+
+// restartXrayCommand returns the service-manager invocation that restarts the
+// xray service on this host: systemd on Linux, rc.d via service(8) on FreeBSD.
+func restartXrayCommand() *exec.Cmd {
+	if runtime.GOOS == "freebsd" {
+		// daemon(8) would inherit the output pipe and CombinedOutput would
+		// block until xray itself exits; detach stdio in a shell instead.
+		return exec.Command("sh", "-c", "service xray restart </dev/null >/dev/null 2>&1")
+	}
+	return exec.Command("systemctl", "restart", "xray")
+}
 
 // API holds dependencies for the HTTP handler layer
 type API struct {
@@ -247,7 +259,7 @@ func (a *API) handleRestart(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[api] Restart: config flush failed: %v", err)
 	}
 
-	out, err := exec.Command("systemctl", "restart", "xray").CombinedOutput()
+	out, err := restartXrayCommand().CombinedOutput()
 	if err != nil {
 		log.Printf("[api] Restart xray error: %v, output: %s", err, out)
 		jsonErr(w, http.StatusInternalServerError, err.Error())

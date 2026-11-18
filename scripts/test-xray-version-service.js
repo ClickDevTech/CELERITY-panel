@@ -58,6 +58,11 @@ const fixture = [
     { tag_name: 'latest; rm -rf /', draft: false, prerelease: false, assets: [] },
 ];
 
+for (const entry of fixture.filter(r => r.assets?.length)) {
+    for (const name of ['Xray-freebsd-64.zip', 'Xray-freebsd-64.zip.dgst']) {
+        entry.assets.push({ name, browser_download_url: `https://github.com/XTLS/Xray-core/releases/download/${entry.tag_name}/${name}` });
+    }
+}
 const releases = service.normalizeReleases(fixture);
 assert.deepStrictEqual(releases.map(release => release.version), ['26.7.28', '26.3.27']);
 assert.strictEqual(releases[0].prerelease, true);
@@ -68,6 +73,8 @@ assert.ok(asset);
 assert.strictEqual(asset.archiveName, 'Xray-linux-64.zip');
 assert.strictEqual(service.selectReleaseAsset(releases[0], 'unknown-arch'), null);
 
+assert.strictEqual(service.selectReleaseAsset(releases[0], 'amd64', 'freebsd').archiveName, 'Xray-freebsd-64.zip');
+assert.strictEqual(service.selectReleaseAsset(releases[0], 'arm64', 'freebsd'), null);
 const poisonedRelease = {
     ...releases[0],
     assets: releases[0].assets.map(item => ({

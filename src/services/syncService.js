@@ -28,6 +28,7 @@ const config = require('../../config');
 const webhook = require('./webhookService');
 const nodeSetup = require('./nodeSetup');
 const nodeSetupLock = require('../utils/nodeSetupLock');
+const { nodeOsFamily, buildServiceCommand } = require('../utils/nodeOs');
 const { getPanelCertificates, isSameVpsAsPanel } = nodeSetup;
 
 // HTTPS agent that ignores self-signed certs (agent uses self-signed cert by default)
@@ -141,10 +142,13 @@ async function restorePreviousXrayConfig(node) {
     const ssh = new NodeSSH(node);
     try {
         await ssh.connect();
+        const restartXray = nodeOsFamily(node) === 'freebsd'
+            ? 'service xray restart </dev/null >/dev/null 2>&1 && sleep 1 && service xray status >/dev/null 2>&1 && '
+            : 'systemctl restart xray && systemctl is-active --quiet xray && ';
         const result = await ssh.exec(
             `test -s /usr/local/etc/xray/config.json.prev && `
             + `cp -f /usr/local/etc/xray/config.json.prev /usr/local/etc/xray/config.json && `
-            + 'systemctl restart xray && systemctl is-active --quiet xray && '
+            + restartXray
             + 'rm -f /usr/local/etc/xray/config.json.prev'
         );
         return result.code === 0;
@@ -800,11 +804,11 @@ class SyncService {
                 // otherwise Xray fails to start and the node goes down.
                 if (node.xray?.accessLogs?.enabled) {
                     try {
+                        const user = nodeOsFamily(node) === 'freebsd' ? 'v2ray' : 'nobody';
                         await ssh.exec(
-                            'mkdir -p /var/log/xray && '
-                            + 'chown nobody /var/log/xray 2>/dev/null || chown nobody:nogroup /var/log/xray 2>/dev/null || true; '
-                            + 'chmod 755 /var/log/xray; '
-                            + 'touch /var/log/xray/access.log && chown nobody /var/log/xray/access.log 2>/dev/null || true'
+                            'mkdir -p /var/log/xray && chmod 755 /var/log/xray && '
+                            + 'touch /var/log/xray/access.log && '
+                            + `chown ${user} /var/log/xray /var/log/xray/access.log`
                         );
                     } catch (dirErr) {
                         logger.warn(`[Xray Sync] Node ${node.name}: access-log dir prep failed: ${dirErr.message}`);
@@ -829,8 +833,11 @@ class SyncService {
                 // failing it — there is nothing to protect there yet.
                 // Permissions are pinned in the same round-trip; exit code 90
                 // marks a permission failure, which a rollback would not fix.
+                const perms = nodeOsFamily(node) === 'freebsd'
+                    ? nodeSetup.buildXrayPermsScript('/usr/local/etc/xray', 'freebsd')
+                    : nodeSetup.XRAY_PERMS_SNIPPET;
                 const test = await ssh.exec(
-                    `PERMS_OUT="$(${nodeSetup.XRAY_PERMS_SNIPPET} 2>&1)" || { echo "$PERMS_OUT"; exit ${XRAY_PERMS_FAILED_CODE}; }; `
+                    `PERMS_OUT="$(${perms} 2>&1)" || { echo "$PERMS_OUT"; exit ${XRAY_PERMS_FAILED_CODE}; }; `
                     + `[ -x ${XRAY_BIN} ] || exit 0; ${XRAY_BIN} run -test -config ${xrayConfigPath} 2>&1`
                 );
                 if (test.code === XRAY_PERMS_FAILED_CODE) {
@@ -935,9 +942,10 @@ class SyncService {
             const ssh = new NodeSSH(node);
             try {
                 await ssh.connect();
-                const restart = await ssh.exec('systemctl restart xray');
+                const restartCmd = buildServiceCommand(nodeOsFamily(node), 'restart', 'xray');
+                const restart = await ssh.exec(restartCmd);
                 if (restart.code !== 0) {
-                    throw new Error(String(restart.stderr || restart.stdout || 'systemctl restart xray failed').trim());
+                    throw new Error(String(restart.stderr || restart.stdout || `${restartCmd} failed`).trim());
                 }
                 logger.info(`[Xray Sync] Node ${node.name}: restarted via SSH`);
             } catch (error) {

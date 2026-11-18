@@ -359,6 +359,14 @@ Modern protocol with Reality support and various transports.
 
 ## 🚀 Xray Node Setup
 
+### FreeBSD nodes
+
+The panel can provision standalone Xray nodes on FreeBSD 14/amd64 over SSH. Use a root account with a POSIX login shell (e.g. `/bin/sh`). The initial setup uses the FreeBSD `xray-core` package and manages Xray and the agent with `rc.d`. The panel image includes the matching agent. Source installations can set `CC_AGENT_FREEBSD_URL` to an HTTPS URL for their own FreeBSD/amd64 agent.
+
+Allow the client port in the host firewall and restrict the agent port (default TCP 62080) to the panel. The packaged Xray service runs as `v2ray`. For a privileged listener such as TCP 443, grant that account the required bind permission using the host's port policy, or select an unprivileged port. [FreeBSD port access control](https://man.freebsd.org/cgi/man.cgi?query=mac_portacl&sektion=4)
+
+Use the panel's Xray version action for subsequent upgrades or rollbacks. A verified official release locks the `xray-core` package to keep a later package upgrade from replacing it. Caddy front and cascade bridge/relay services currently require Linux.
+
 ### Automatic Setup (Recommended)
 
 1. Add node in panel:

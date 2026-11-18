@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -80,7 +79,7 @@ func main() {
 			// Xray still has the old user set. One restart reloads the corrected
 			// config from disk (no gRPC AddUser storm).
 			log.Printf("[main] Stale Xray config on startup, restarting xray once to heal runtime")
-			if out, rerr := exec.Command("systemctl", "restart", "xray").CombinedOutput(); rerr != nil {
+			if out, rerr := restartXrayCommand().CombinedOutput(); rerr != nil {
 				log.Printf("[main] Xray heal restart failed: %v, output: %s", rerr, out)
 			} else {
 				time.Sleep(2 * time.Second)

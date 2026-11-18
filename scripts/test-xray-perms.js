@@ -42,7 +42,7 @@ class FakeClient extends EventEmitter {
         const stream = new EventEmitter();
         stream.stderr = new EventEmitter();
         cb(null, stream);
-        const res = state.rule(command) || { code: 0, out: '' };
+        const res = state.rule(command) || { code: 0, out: command === 'uname -s' ? 'Linux\n' : '' };
         setImmediate(() => {
             if (res.out) stream.emit('data', Buffer.from(res.out));
             stream.emit('close', res.code);
@@ -173,6 +173,16 @@ const isRestart = c => c.includes('systemctl restart xray');
     assert.ok(/systemctl is-active --quiet xray\s*$/.test(state.commands[restartIdx]),
         'the restart script exit code is the service state');
 
+    // FreeBSD setup uses the pkg service account and rc.d; Linux units never run.
+    reset(cmd => cmd === 'uname -s' ? { code: 0, out: 'FreeBSD\n' } : null);
+    result = await nodeSetup.setupXrayNode({ ...xrayNode(), osFamily: 'freebsd' });
+    assert.strictEqual(result.success, true, result.error);
+    assert.ok(state.commands.some(cmd => cmd.includes('id -gn v2ray')));
+    assert.ok(state.commands.some(cmd => cmd.includes('service xray restart')));
+    assert.ok(!state.commands.some(cmd => cmd.includes('systemctl') || cmd.includes('iptables')));
+    assert.ok(!state.uploads.some(file => file.path.endsWith('.service')));
+    assert.strictEqual(state.uploads.find(file => file.path.endsWith('/config.json')).mode, 0o640);
+
     // Xray not active after restart: setup fails with the journal tail.
     reset(c => (isRestart(c)
         ? { code: 3, out: 'Journal (last 15 lines):\nFailed to start: open /usr/local/etc/xray/config.json: permission denied\n' }
@@ -197,7 +207,7 @@ const isRestart = c => c.includes('systemctl restart xray');
     });
     const acme = state.commands.find(c => c.includes('acme.sh'));
     assert.ok(acme, 'ACME script executed');
-    assert.ok(acme.includes('chown "root:${NOBODY_GROUP}"') && acme.includes("chown 'root:${NOBODY_GROUP}'"),
+    assert.ok(acme.includes('chown "root:${XRAY_GROUP}"') && acme.includes("chown 'root:${XRAY_GROUP}'"),
         'initial install and renewal keep root as the owner');
     assert.ok(acme.includes('chmod 640 "${KEY_PATH}"') && acme.includes("chmod 640 '${KEY_PATH}'"));
     assert.ok(!/chown ["']nobody:/.test(acme), 'the key is not handed to nobody');
