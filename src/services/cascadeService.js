@@ -10,6 +10,7 @@ const CascadeLink = require('../models/cascadeLinkModel');
 const HyNode = require('../models/hyNodeModel');
 const configGenerator = require('./configGenerator');
 const NodeSSH = require('./nodeSSH');
+const { nodeOsFamily, buildServiceCommand } = require('../utils/nodeOs');
 const cache = require('./cacheService');
 const logger = require('../utils/logger');
 const webhook = require('./webhookService');
@@ -1054,7 +1055,7 @@ class CascadeService {
                     const ssh = new NodeSSH(portalNode);
                     try {
                         await ssh.connect();
-                        await ssh.exec('systemctl restart xray');
+                        await ssh.exec(buildServiceCommand(nodeOsFamily(portalNode), 'restart', 'xray'));
                     } finally { ssh.disconnect(); }
                 }
             }
@@ -1062,7 +1063,7 @@ class CascadeService {
             const ssh = new NodeSSH(portalNode);
             try {
                 await ssh.connect();
-                await ssh.exec('systemctl restart xray');
+                await ssh.exec(buildServiceCommand(nodeOsFamily(portalNode), 'restart', 'xray'));
             } finally { ssh.disconnect(); }
         }
     }
