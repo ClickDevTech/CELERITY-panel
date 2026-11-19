@@ -37,9 +37,10 @@ const MIN_VLESS_ENC_XRAY_VERSION = '25.9.5';
 const MIN_VLESS_ROUTE_XRAY_VERSION = '25.9.5';
 // Lowest core that runs every cascade link type except mKCP.
 const MIN_CASCADE_XRAY_VERSION = MIN_REVERSE_XRAY_VERSION;
-// Bump when generated link ends stop interoperating with the previous ones:
-// links deployed in an older format are redeployed on the next sync of their nodes.
-const CASCADE_CONFIG_FORMAT = 1;
+// Bump when deployed link ends must be regenerated (they stop interoperating or
+// lack a required rule): links deployed in an older format are redeployed on
+// the next sync of their nodes.
+const CASCADE_CONFIG_FORMAT = 2;
 
 const KCP_NUMERIC_FIELDS = {
     kcpMtu: KCP_LIMITS.mtu,

@@ -304,12 +304,18 @@ function socksGet(socksPort, targetPort, timeoutMs = 4000) {
     });
 }
 
-function localize(config, caFile) {
+/**
+ * Bind to loopback and trust the test CA. `pagePorts` opens exactly the test
+ * pages on the exit side, which blocks private targets like production does;
+ * every other loopback port must stay unreachable through the tunnel.
+ */
+function localize(config, caFile, pagePorts = []) {
     for (const ib of config.inbounds || []) ib.listen = '127.0.0.1';
+    const page = { ip: ['127.0.0.1/32'], port: pagePorts.join(',') };
     for (const ob of config.outbounds || []) {
-        // Newer freedom blocks private targets by default; the test page is on loopback.
-        if (ob.protocol === 'freedom') {
-            ob.settings = { ...ob.settings, finalRules: [{ action: 'allow', ip: ['127.0.0.0/8'] }] };
+        if (ob.protocol === 'freedom' && pagePorts.length > 0) {
+            ob.settings = { ...ob.settings, finalRules: [{ action: 'allow', ...page }, ...(ob.settings?.finalRules || [])] };
+            config.routing.rules.unshift({ type: 'field', ...page, outboundTag: ob.tag });
         }
         const tls = ob.streamSettings?.tlsSettings;
         // Older cores add verify certs only to a self pool, used with disableSystemRoot.
@@ -321,7 +327,7 @@ function localize(config, caFile) {
     return config;
 }
 
-async function runE2e(coreDir, variant, caFile, httpPort, tmpDir) {
+async function runE2e(coreDir, variant, caFile, httpPort, internalPort, tmpDir) {
     const link = { ...variant.link, tunnelPort: await freePort() };
     const socksPort = await freePort();
     const local = { ...exit, ip: '127.0.0.1' };
@@ -343,9 +349,9 @@ async function runE2e(coreDir, variant, caFile, httpPort, tmpDir) {
     const procs = [];
     let log = '';
     try {
-        for (const [name, cfg] of [['tail', tail], ['head', head]]) {
+        for (const [name, cfg, pagePorts] of [['tail', tail, [httpPort]], ['head', head, []]]) {
             const file = path.join(tmpDir, `${variant.tag}-${name}.json`);
-            fs.writeFileSync(file, JSON.stringify(localize(cfg, caFile), null, 2));
+            fs.writeFileSync(file, JSON.stringify(localize(cfg, caFile, pagePorts), null, 2));
             const proc = spawn(path.join(coreDir, BIN), ['run', '-c', file], {
                 env: { ...process.env, XRAY_LOCATION_ASSET: coreDir }, stdio: ['ignore', 'pipe', 'pipe'],
             });
@@ -357,7 +363,12 @@ async function runE2e(coreDir, variant, caFile, httpPort, tmpDir) {
         const deadline = Date.now() + 30000;
         while (Date.now() < deadline) {
             const body = await socksGet(socksPort, httpPort);
-            if (body && body.includes('celerity-e2e-ok')) return 'OK';
+            if (body && body.includes('celerity-e2e-ok')) {
+                const leaked = await socksGet(socksPort, internalPort, 1500);
+                return leaked && leaked.includes('celerity-e2e-internal')
+                    ? 'FAIL: a loopback service of the exit is reachable through the tunnel'
+                    : 'OK';
+            }
             if (procs.some(p => p.exitCode !== null)) break;
             await sleep(700);
         }
@@ -409,24 +420,25 @@ async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
         })),
         routing: { rules: socks.map((_, route) => ({ type: 'field', inboundTag: [`socks-${route}`], outboundTag: `user-${route}` })) },
     };
-    const bridgeB = localize(JSON.parse(gen.generateBridgeConfig(exitLinks[1], local)), caFile);
+    const bridgeB = JSON.parse(gen.generateBridgeConfig(exitLinks[1], local));
     for (const ob of bridgeB.outbounds) {
         if (ob.protocol === 'freedom') ob.settings = { ...ob.settings, redirect: `127.0.0.1:${pages.b}` };
     }
+    const pagePorts = [pages.a, pages.b];
     const processes = [
-        ['portal', portalCfg],
-        ['bridge-a', JSON.parse(gen.generateBridgeConfig(exitLinks[0], local))],
-        ...(scenario === 'routes' ? [['bridge-b', bridgeB]] : []),
-        ['client', clientCfg],
+        ['portal', portalCfg, []],
+        ['bridge-a', JSON.parse(gen.generateBridgeConfig(exitLinks[0], local)), pagePorts],
+        ...(scenario === 'routes' ? [['bridge-b', bridgeB, pagePorts]] : []),
+        ['client', clientCfg, []],
     ];
 
     const procs = [];
     let log = '';
     const fetchVia = async route => (await socksGet(socks[route], pages.a)) || '';
     try {
-        for (const [name, cfg] of processes) {
+        for (const [name, cfg, ports] of processes) {
             const file = path.join(tmpDir, `multi-exit-${scenario}-${name}.json`);
-            fs.writeFileSync(file, JSON.stringify(localize(cfg, caFile), null, 2));
+            fs.writeFileSync(file, JSON.stringify(localize(cfg, caFile, ports), null, 2));
             const proc = spawn(path.join(coreDir, BIN), ['run', '-c', file], {
                 env: { ...process.env, XRAY_LOCATION_ASSET: coreDir }, stdio: ['ignore', 'pipe', 'pipe'],
             });
@@ -516,18 +528,23 @@ async function main() {
         const server = http.createServer((req, res) => res.end('celerity-e2e-ok'));
         await new Promise(r => server.listen(0, '127.0.0.1', r));
         const httpPort = server.address().port;
+        // Stands for cc-agent / Xray API on the exit node: never reachable by clients.
+        const internal = http.createServer((req, res) => res.end('celerity-e2e-internal'));
+        await new Promise(r => internal.listen(0, '127.0.0.1', r));
+        const internalPort = internal.address().port;
         const e2e = {};
         for (const variant of variants) {
             e2e[variant.tag] = {};
             const minVersion = linkXrayRequirement(variant.link)?.version || null;
             for (const v of versions) {
                 if (!required(minVersion, v)) continue;
-                const r = await runE2e(coreDirs[v], variant, caFile, httpPort, tmpDir);
+                const r = await runE2e(coreDirs[v], variant, caFile, httpPort, internalPort, tmpDir);
                 e2e[variant.tag][v] = r;
                 if (r !== 'OK') failures.push(`e2e ${variant.tag} @ ${v}: ${r}`);
             }
         }
         server.close();
+        internal.close();
 
         const pageServers = ['exit-a', 'exit-b'].map(marker => http.createServer((req, res) => res.end(`celerity-e2e-ok ${marker}`)));
         await Promise.all(pageServers.map(s => new Promise(r => s.listen(0, '127.0.0.1', r))));

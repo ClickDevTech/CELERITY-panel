@@ -121,6 +121,13 @@ assert.deepStrictEqual(linkXrayRequirement(link({ mode: 'reverse', tunnelTranspo
     assert.strictEqual(tunnel.settings.address, portal.ip);
     assert.ok(bridge.routing.rules.some(r => r.inboundTag?.[0] === 'bridge' && r.outboundTag === 'freedom'));
     assert.strictEqual(findDeep(bridge, 'domain').length, 0, 'no tunnel-domain rules');
+    // Xray 26.5.9+ drops reverse traffic that no freedom rule allows; private targets stay blocked.
+    const freedom = bridge.outbounds.find(o => o.protocol === 'freedom');
+    assert.deepStrictEqual(freedom.settings.finalRules, [{ action: 'block', ip: ['geoip:private'] }, { action: 'allow' }]);
+    // Older cores have no freedom rules: the routing block must come before the tunnel rule.
+    assert.deepStrictEqual(bridge.routing.rules[0], { type: 'field', ip: ['geoip:private'], outboundTag: 'blackhole' });
+    const hopRules = JSON.parse(gen.generateForwardHopConfig(link())).routing.rules;
+    assert.deepStrictEqual(hopRules[0], { type: 'field', ip: ['geoip:private'], outboundTag: 'blackhole' });
 
     const down = link({ _id: '64d000000000000000000003', mode: 'reverse', tunnelSecurity: 'reality', realityPrivateKey: 'k' });
     const relay = JSON.parse(gen.generateRelayConfig(rev, portal, [down]));

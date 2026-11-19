@@ -1339,6 +1339,8 @@ function normalizeInboundTags(input) {
     return out;
 }
 
+const PRIVATE_IP_BLOCK_RULE = Object.freeze({ type: 'field', ip: ['geoip:private'], outboundTag: 'blackhole' });
+
 /**
  * Generate a standalone Xray JSON config for a Bridge (exit) node.
  * The Bridge initiates a reverse tunnel to the Portal node and releases traffic
@@ -1367,7 +1369,15 @@ function generateBridgeConfig(link, portalNode) {
             {
                 tag: 'freedom',
                 protocol: 'freedom',
-                settings: { domainStrategy: 'UseIPv4' },
+                settings: {
+                    domainStrategy: 'UseIPv4',
+                    // Xray 26.5.9+ drops all reverse-tunnel traffic unless a rule
+                    // allows it; older cores ignore the key.
+                    finalRules: [
+                        { action: 'block', ip: ['geoip:private'] },
+                        { action: 'allow' },
+                    ],
+                },
             },
             {
                 tag: 'blackhole',
@@ -1377,15 +1387,12 @@ function generateBridgeConfig(link, portalNode) {
         routing: {
             domainStrategy: 'IPIfNonMatch',
             rules: [
+                // First, so tunnel traffic never reaches the node's own services.
+                PRIVATE_IP_BLOCK_RULE,
                 {
                     type: 'field',
                     inboundTag: ['bridge'],
                     outboundTag: 'freedom',
-                },
-                {
-                    type: 'field',
-                    ip: ['geoip:private'],
-                    outboundTag: 'blackhole',
                 },
             ],
         },
@@ -1735,10 +1742,10 @@ function generateForwardHopConfig(linkOrLinks) {
         routing: {
             domainStrategy: 'IPIfNonMatch',
             rules: [
+                PRIVATE_IP_BLOCK_RULE,
                 ...inbounds.map(ib => ({
                     type: 'field', inboundTag: [ib.tag], outboundTag: 'freedom',
                 })),
-                { type: 'field', ip: ['geoip:private'], outboundTag: 'blackhole' },
             ],
         },
     };
