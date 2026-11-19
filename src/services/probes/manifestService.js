@@ -53,7 +53,10 @@ function describeNodeInbounds(node) {
     if (node.type === 'xray' || node.type === 'cdn') {
         const inbounds = subscription.getXrayPublishedInbounds(node) || [];
         return inbounds.map((inbound) => ({
-            inboundId: inbound.edgeId || inbound.extraId || INBOUND_MAIN,
+            // Exit entries share the portal inbound, so the exit keeps ids unique.
+            inboundId: [inbound.edgeId || inbound.extraId || INBOUND_MAIN, inbound.exit?.linkId]
+                .filter(Boolean)
+                .join('@'),
             inboundTag: inbound.inboundTag || node.xray?.inboundTag || node._resolvedOrigin?.xray?.inboundTag || 'vless-in',
             label: inbound.nameSuffix || '',
             protocol: 'vless',
@@ -93,18 +96,21 @@ async function buildManifest(probe, subscriptionToken) {
     const baseUrl = resolveBaseUrl(settings);
 
     const nodes = await HyNode.find({ active: true })
-        .select('name flag type ip domain port portRange portConfigs subscriptionVariants sni obfs hopInterval xray virtual cdn groups')
+        .select('name flag type ip domain port portRange portConfigs subscriptionVariants sni obfs hopInterval xray virtual cdn groups cascadePortal')
         .lean();
 
     const byId = new Map(nodes.map((n) => [String(n._id), n]));
     const entries = [];
 
     for (const node of nodes) {
+        if (node.type === 'cdn') node._resolvedOrigin = byId.get(String(node.cdn?.originNode || ''));
+    }
+    // Probes get every exit in their subscription, so expect every exit here.
+    await subscription.attachCascadeExits(nodes, true);
+
+    for (const node of nodes) {
         if (node.type === 'virtual') continue;
-        if (node.type === 'cdn') {
-            node._resolvedOrigin = byId.get(String(node.cdn?.originNode || ''));
-            if (!node._resolvedOrigin || node._resolvedOrigin.type !== 'xray') continue;
-        }
+        if (node.type === 'cdn' && (!node._resolvedOrigin || node._resolvedOrigin.type !== 'xray')) continue;
         const inbounds = describeNodeInbounds(node);
         if (inbounds.length === 0) continue;
         entries.push({

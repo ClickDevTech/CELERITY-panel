@@ -13,6 +13,7 @@ const router = express.Router();
 const QRCode = require('qrcode');
 const HyUser = require('../models/hyUserModel');
 const HyNode = require('../models/hyNodeModel');
+const CascadeLink = require('../models/cascadeLinkModel');
 const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
 const appConfig = require('../../config');
@@ -28,6 +29,12 @@ const { isServerlessNode } = require('../utils/nodeTypes');
 const { isValidXhttpRange, isAllZeroRange } = require('../utils/xhttpOptions');
 const { distributeFingerprints, pickFingerprint } = require('../utils/fingerprints');
 const { buildClientEncryption } = require('../utils/vlessEncryption');
+const {
+    publishesExits,
+    publishesBalanced,
+    uuidWithRoute,
+    PUBLISHED_EXIT_STATUSES,
+} = require('../utils/cascadePublish');
 const {
     isInboundFronted,
     isFrontActive,
@@ -73,7 +80,7 @@ function isBrowser(req) {
 
 async function getUserByToken(token) {
     const user = await HyUser.findOne({ subscriptionToken: token })
-        .populate('nodes', 'active name type status onlineUsers maxOnlineUsers rankingCoefficient domain sni ip port portRange hopInterval subscriptionVariants portConfigs obfs flag xray cascadeRole groups virtual cdn tlsCertSha256')
+        .populate('nodes', 'active name type status onlineUsers maxOnlineUsers rankingCoefficient domain sni ip port portRange hopInterval subscriptionVariants portConfigs obfs flag xray cascadeRole cascadePortal groups virtual cdn tlsCertSha256')
         .populate('groups', '_id name subscriptionTitle maxDevices');
     
     return user;
@@ -134,10 +141,71 @@ async function getActiveNodesWithCache() {
 
     // Include type, xray, obfs, and cascadeRole fields needed for URI generation and filtering
     const nodes = await HyNode.find({ active: true })
-        .select('name type flag ip domain sni port portRange hopInterval subscriptionVariants portConfigs obfs active status onlineUsers maxOnlineUsers rankingCoefficient groups xray cascadeRole virtual cdn tlsCertSha256')
+        .select('name type flag ip domain sni port portRange hopInterval subscriptionVariants portConfigs obfs active status onlineUsers maxOnlineUsers rankingCoefficient groups xray cascadeRole cascadePortal virtual cdn tlsCertSha256')
         .lean();
     await cache.setActiveNodes(nodes);
     return nodes;
+}
+
+/**
+ * Reverse-cascade exits that may be published, grouped by portal id. One
+ * query for the whole fleet, cached next to the active nodes.
+ * @returns {Promise<Object<string, Array>>}
+ */
+async function getCascadeExitsWithCache() {
+    const cached = await cache.getCascadeExits();
+    if (cached) return cached;
+
+    const links = await CascadeLink.find({
+        mode: { $ne: 'forward' },
+        active: true,
+        publishInSubscription: { $ne: false },
+        routeId: { $type: 'number' },
+    })
+        .select('name portalNode bridgeNode routeId subscriptionLabel status priority')
+        .populate('bridgeNode', 'name flag active')
+        .sort({ priority: 1, routeId: 1 })
+        .lean();
+
+    const byPortal = {};
+    for (const link of links) {
+        if (!link.bridgeNode) continue;
+        const portalId = String(link.portalNode);
+        (byPortal[portalId] = byPortal[portalId] || []).push({
+            linkId: String(link._id),
+            routeId: link.routeId,
+            label: link.subscriptionLabel || '',
+            bridgeName: link.bridgeNode.name || link.name,
+            bridgeFlag: link.bridgeNode.flag || '',
+            bridgeActive: link.bridgeNode.active !== false,
+            status: link.status,
+        });
+    }
+    await cache.setCascadeExits(byPortal);
+    return byPortal;
+}
+
+const PUBLISHED_EXIT_SET = new Set(PUBLISHED_EXIT_STATUSES);
+
+/**
+ * Attach `_cascadeExits` to every xray node (and CDN origin) whose portal
+ * publishes its exits. Probes see every exit, customers only working ones.
+ */
+async function attachCascadeExits(nodes, includeDown) {
+    const portals = new Set();
+    for (const node of nodes) {
+        if (node.type === 'xray') portals.add(node);
+        else if (node.type === 'cdn' && node._resolvedOrigin) portals.add(node._resolvedOrigin);
+    }
+    const candidates = [...portals].filter(node => publishesExits(node.cascadePortal));
+    if (candidates.length === 0) return;
+
+    const exitsByPortal = await getCascadeExitsWithCache();
+    for (const node of candidates) {
+        const exits = (exitsByPortal[String(node._id)] || [])
+            .filter(exit => includeDown || (exit.bridgeActive && PUBLISHED_EXIT_SET.has(exit.status)));
+        node._cascadeExits = exits;
+    }
 }
 
 async function getActiveNodes(user) {
@@ -247,6 +315,7 @@ async function getActiveNodes(user) {
 
     resolveCdnOrigins(nodes, allNodesForResolution || nodes, lb.hideOffline !== false && !isProbe);
     resolveVirtualSources(nodes, user);
+    await attachCascadeExits(nodes, isProbe);
 
     return nodes;
 }
@@ -430,14 +499,56 @@ function generateURI(user, node, config, dedupeLabel = _passthroughLabel) {
  * descriptor carries enough state to build a single VLESS URI / Clash proxy
  * / sing-box outbound / v2ray vnext.
  *
+ * When the node (or the CDN origin) is a portal publishing its exits, every
+ * inbound is repeated once per exit with `vlessRoute`/`exit` set; see
+ * _expandCascadeExits.
+ *
  * @param {Object} node - Node document with xray sub-object
  * @returns {Array<Object>} Inbound descriptors with `{port, nameSuffix, ...inboundFields}`
  */
 function getXrayPublishedInbounds(node) {
+    const inbounds = _getXrayBaseInbounds(node);
+    const portal = node.type === 'cdn' ? node._resolvedOrigin : node;
+    return _expandCascadeExits(portal, inbounds);
+}
+
+/**
+ * Balanced entries keep route 0 (no portal rule matches it, so they follow
+ * geo routing and the balancer); each exit entry carries its route id, which
+ * the portal pins to that exit. Exit-major order groups entries per exit.
+ */
+function _expandCascadeExits(portal, inbounds) {
+    const exits = portal?._cascadeExits;
+    if (!Array.isArray(exits) || exits.length === 0 || !publishesExits(portal.cascadePortal)) {
+        return inbounds;
+    }
+    const expanded = publishesBalanced(portal.cascadePortal)
+        ? inbounds.map(inbound => ({ ...inbound, vlessRoute: 0 }))
+        : [];
+    for (const exit of exits) {
+        for (const inbound of inbounds) {
+            expanded.push({ ...inbound, vlessRoute: exit.routeId, exit });
+        }
+    }
+    return expanded;
+}
+
+/**
+ * UUID a client must send for `inbound`: the user's UUID with the route
+ * bytes set when the entry belongs to a cascade portal, or null when the user
+ * has no usable UUID.
+ */
+function _uuidForInbound(user, inbound) {
+    if (!user?.xrayUuid) return null;
+    if (inbound?.vlessRoute === undefined || inbound.vlessRoute === null) return user.xrayUuid;
+    return uuidWithRoute(user.xrayUuid, inbound.vlessRoute);
+}
+
+function _getXrayBaseInbounds(node) {
     if (node.type === 'cdn') {
         const origin = node._resolvedOrigin;
         if (!origin || origin.type !== 'xray') return [];
-        const originInbounds = getXrayPublishedInbounds(origin);
+        const originInbounds = _getXrayBaseInbounds(origin);
         const selectedId = String(node.cdn?.originInboundId || '');
         const source = selectedId
             ? originInbounds.find(inbound => String(inbound.extraId || '') === selectedId)
@@ -633,12 +744,25 @@ function _applyFrontPublication(node, inbound) {
  * is marked as `uniqueName`, in which case the label replaces the node name.
  */
 function _xrayInboundName(node, inbound) {
+    if (inbound.exit) {
+        const { flag, title } = _cascadeExitDisplay(node, inbound.exit);
+        const base = inbound.exit.label || `${flag} ${title}`.trim();
+        return inbound.nameSuffix ? `${base} (${inbound.nameSuffix})` : base;
+    }
     const flag = node.flag || '';
     if (inbound.uniqueName && inbound.nameSuffix) {
         return `${flag} ${inbound.nameSuffix}`.trim();
     }
     const base = `${flag} ${node.name}`.trim();
     return inbound.nameSuffix ? `${base} (${inbound.nameSuffix})` : base;
+}
+
+/** Flag of the exit country and "<entry> → <exit>" title of an exit entry. */
+function _cascadeExitDisplay(node, exit) {
+    return {
+        flag: exit.bridgeFlag || node.flag || '',
+        title: exit.label || `${node.name} → ${exit.bridgeName}`,
+    };
 }
 
 /**
@@ -848,7 +972,7 @@ function _resolveXrayTlsClientHints(node) {
  * vless://{uuid}@{host}:{port}?type={transport}&security={security}&...#{name}
  */
 function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthroughLabel) {
-    const uuid = user.xrayUuid;
+    const uuid = _uuidForInbound(user, inbound);
     if (!uuid) return null;
 
     const host = inbound.address || node.domain || node.ip;
@@ -1405,6 +1529,8 @@ function _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel = _pas
         logger.debug(`[Sub] Clash: skipped "${node.name}" inbound — XHTTP framing is not expressible in xhttp-opts`);
         return { name: '', proxy: null };
     }
+    const uuid = _uuidForInbound(user, inbound);
+    if (!uuid) return { name: '', proxy: null };
     const host = inbound.address || node.domain || node.ip;
     const transport = inbound.transport || 'tcp';
     const security = inbound.security || 'reality';
@@ -1415,7 +1541,7 @@ function _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel = _pas
     type: vless
     server: ${host}
     port: ${inbound.port || node.port || 443}
-    uuid: "${user.xrayUuid}"
+    uuid: "${uuid}"
     udp: true`;
     // Mihomo >= 1.19.13; older cores ignore the key and fail to connect.
     if (inbound.vlessEncryption) {
@@ -1641,13 +1767,15 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound, opts = {}) {
         logger.debug(`[Sub] sing-box: skipped "${node.name}" inbound — VLESS Encryption is off for sing-box in settings`);
         return { tag, outbound: null };
     }
+    const uuid = _uuidForInbound(user, inbound);
+    if (!uuid) return { tag, outbound: null };
 
     const outbound = {
         type: 'vless',
         tag,
         server: host,
         server_port: inbound.port || node.port || 443,
-        uuid: user.xrayUuid,
+        uuid,
     };
     if (inbound.vlessEncryption) {
         outbound.encryption = inbound.vlessEncryption;
@@ -1760,6 +1888,8 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
     if (node.type === 'xray' || node.type === 'cdn') {
         if (!user.xrayUuid) return [];
         getXrayPublishedInbounds(node).forEach((inbound, idx) => {
+            const uuid = _uuidForInbound(user, inbound);
+            if (!uuid) return;
             const host = inbound.address || node.domain || node.ip;
             const transport = inbound.transport || 'tcp';
             const security = inbound.security || 'reality';
@@ -1832,7 +1962,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
                 }
             }
 
-            const vnextUser = { id: user.xrayUuid, encryption: inbound.vlessEncryption || 'none' };
+            const vnextUser = { id: uuid, encryption: inbound.vlessEncryption || 'none' };
             if (transport === 'tcp' && (security === 'reality' || security === 'tls') && inbound.flow) {
                 vnextUser.flow = inbound.flow;
             }
@@ -2416,7 +2546,14 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
                 const uri = generateVlessURIForInbound(user, node, inbound);
                 if (uri) {
                     let location;
-                    if (inbound.uniqueName && inbound.nameSuffix) {
+                    let flag = node.flag || '🌐';
+                    if (inbound.exit) {
+                        const exitDisplay = _cascadeExitDisplay(node, inbound.exit);
+                        flag = exitDisplay.flag || flag;
+                        location = inbound.nameSuffix
+                            ? `${exitDisplay.title} (${inbound.nameSuffix})`
+                            : exitDisplay.title;
+                    } else if (inbound.uniqueName && inbound.nameSuffix) {
                         location = inbound.nameSuffix;
                     } else if (inbound.nameSuffix) {
                         location = `${node.name} (${inbound.nameSuffix})`;
@@ -2425,7 +2562,7 @@ async function generateHTML(user, nodes, token, baseUrl, settings, lang = 'ru', 
                     }
                     allConfigs.push({
                         location,
-                        flag: node.flag || '🌐',
+                        flag,
                         name: 'VLESS',
                         uri,
                     });
@@ -3722,6 +3859,8 @@ module.exports.rejectOrSoftBlock = rejectOrSoftBlock;
 module.exports.getNodeConfigs = getNodeConfigs;
 module.exports.getXrayPublishedInbounds = getXrayPublishedInbounds;
 module.exports.xrayInboundName = _xrayInboundName;
+module.exports.attachCascadeExits = attachCascadeExits;
+module.exports.uuidForInbound = _uuidForInbound;
 // Exposed for tests: both encode assumptions about what upstream publishes
 // (rule-set tags) and what a client needs to be told (XHTTP hints), and getting
 // either wrong silently breaks configs rather than failing loudly.

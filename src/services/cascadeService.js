@@ -22,6 +22,21 @@ const {
     tunnelSocketProtocol,
     findHysteriaUdpConflict,
 } = require('../utils/cascadeTransport');
+const {
+    normalizePortalSettings,
+    publishesExits,
+    isValidRouteId,
+    pickFreeRouteId,
+    PUBLISHED_EXIT_STATUSES,
+} = require('../utils/cascadePublish');
+
+const DEPLOYED_STATUSES = ['deployed', 'online', 'offline'];
+
+/** Portal settings that change the generated Xray config. */
+function portalConfigKey(settings) {
+    const s = normalizePortalSettings(settings);
+    return JSON.stringify([publishesExits(s), s.balancerStrategy, s.fallback, s.probeUrl, s.probeInterval]);
+}
 
 const TOPOLOGY_CACHE_KEY = 'c3:cascade:topology';
 const TOPOLOGY_CACHE_TTL = 15;
@@ -76,6 +91,159 @@ async function pinXrayConfigPerms(ssh, nodeName) {
 
 class CascadeService {
     /**
+     * Portal publication settings of `node`, read from the database when the
+     * caller loaded the node with a projection that dropped them.
+     */
+    async getPortalSettings(node) {
+        if (node?.cascadePortal !== undefined) return normalizePortalSettings(node.cascadePortal);
+        if (!node?._id) return normalizePortalSettings();
+        const stored = await HyNode.findById(node._id).select('cascadePortal').lean();
+        return normalizePortalSettings(stored?.cascadePortal);
+    }
+
+    /**
+     * Give every reverse link of a portal a route id. Allocation races are
+     * settled by the unique {portalNode, routeId} index and retried.
+     */
+    async ensureRouteIds(portalNodeId) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            const links = await CascadeLink.find({ portalNode: portalNodeId, mode: { $ne: 'forward' } })
+                .select('routeId name')
+                .lean();
+            const missing = links.filter(l => !isValidRouteId(l.routeId));
+            if (missing.length === 0) return;
+
+            const used = new Set(links.map(l => l.routeId).filter(isValidRouteId));
+            let raced = false;
+            for (const link of missing) {
+                const routeId = pickFreeRouteId(used);
+                if (routeId === null) {
+                    logger.warn(`[Cascade] No free route id left on portal ${portalNodeId} for link ${link.name}`);
+                    return;
+                }
+                try {
+                    await CascadeLink.updateOne({ _id: link._id, routeId: null }, { $set: { routeId } });
+                    used.add(routeId);
+                } catch (err) {
+                    if (err.code !== 11000) throw err;
+                    raced = true;
+                    break;
+                }
+            }
+            if (!raced) return;
+        }
+    }
+
+    /**
+     * Active links of a portal with bridges populated and route ids allocated.
+     */
+    async loadPortalLinks(portalNodeId) {
+        const query = () => CascadeLink.find({ portalNode: portalNodeId, active: true }).populate('bridgeNode');
+        const links = await query();
+        if (!links.some(l => l.mode !== 'forward' && !isValidRouteId(l.routeId))) return links;
+        await this.ensureRouteIds(portalNodeId);
+        return query();
+    }
+
+    /**
+     * Update the publication settings of a portal and push the portal config
+     * when the change affects it (or always with `forceRedeploy`).
+     * @returns {Promise<{settings: Object, redeployed: boolean, error?: string}>}
+     */
+    async updatePortalSettings(nodeId, fields, { forceRedeploy = false } = {}) {
+        const node = await HyNode.findById(nodeId);
+        if (!node) {
+            const err = new Error('Node not found');
+            err.status = 404;
+            throw err;
+        }
+        if (node.type !== 'xray') {
+            const err = new Error('Only Xray nodes can be cascade portals');
+            err.status = 400;
+            throw err;
+        }
+
+        const before = portalConfigKey(node.cascadePortal);
+        const pending = node.cascadePortal?.redeployPending === true;
+        const $set = {};
+        for (const [key, value] of Object.entries(fields)) $set[`cascadePortal.${key}`] = value;
+        const updated = Object.keys($set).length > 0
+            ? await HyNode.findByIdAndUpdate(nodeId, { $set }, { new: true, runValidators: true })
+            : node;
+
+        await this.ensureRouteIds(nodeId);
+        await this.invalidatePublication();
+
+        const result = {
+            settings: normalizePortalSettings(updated.cascadePortal),
+            redeployed: false,
+            redeployPending: false,
+        };
+        if (!forceRedeploy && !pending && portalConfigKey(updated.cascadePortal) === before) return result;
+
+        const deployedLinks = await CascadeLink.countDocuments({
+            portalNode: nodeId,
+            mode: { $ne: 'forward' },
+            active: true,
+            status: { $in: DEPLOYED_STATUSES },
+        });
+        if (deployedLinks === 0) {
+            if (pending) await this._setRedeployPending(nodeId, false);
+            return result;
+        }
+
+        try {
+            await this._deployPortalConfig(updated);
+            result.redeployed = true;
+        } catch (err) {
+            logger.error(`[Cascade] Portal ${updated.name} redeploy after settings change failed: ${err.message}`);
+            result.error = err.message;
+            result.redeployPending = true;
+        }
+        return result;
+    }
+
+    /**
+     * Remember that the portal config lags behind the stored exit flags, so a
+     * failed or deferred push is retried by the next settings save.
+     */
+    async markPortalRedeployPending(portalNodeId) {
+        await this._setRedeployPending(portalNodeId, true);
+    }
+
+    async _setRedeployPending(portalNodeId, value) {
+        try {
+            await HyNode.updateOne(
+                { _id: portalNodeId, type: 'xray', 'cascadePortal.redeployPending': { $ne: value } },
+                { $set: { 'cascadePortal.redeployPending': value } }
+            );
+        } catch (err) {
+            logger.warn(`[Cascade] Portal ${portalNodeId} redeploy flag update failed: ${err.message}`);
+        }
+    }
+
+    /**
+     * Push the portal config of a link's portal in the background, e.g. after
+     * its balancer or publication flags changed. A failure keeps the portal
+     * marked as pending.
+     */
+    redeployPortalInBackground(portalNodeId) {
+        this.markPortalRedeployPending(portalNodeId).then(() => HyNode.findById(portalNodeId)).then(node => {
+            if (!node || node.type !== 'xray') return null;
+            return this._deployPortalConfig(node);
+        }).catch(err => {
+            logger.warn(`[Cascade] Background portal redeploy failed: ${err.message}`);
+        });
+    }
+
+    /** Drop cached exits and every cached subscription. */
+    async invalidatePublication() {
+        await cache.invalidateNodes();
+        await cache.invalidateAllSubscriptions();
+        await this._invalidateTopologyCache();
+    }
+
+    /**
      * Deploy a single cascade link: upload configs to both Portal and Bridge,
      * restart services, and verify tunnel establishment.
      * @param {Object} link - CascadeLink document (populated with portalNode, bridgeNode)
@@ -129,7 +297,7 @@ class CascadeService {
             });
 
             await this._updateNodeRoles();
-            await this._invalidateTopologyCache();
+            await this.invalidatePublication();
 
             logger.info(`[Cascade] Link ${link.name} deployed, status=${newStatus}`);
             return { success: true };
@@ -208,7 +376,7 @@ class CascadeService {
         }
 
         await this._updateNodeRoles();
-        await this._invalidateTopologyCache();
+        await this.invalidatePublication();
     }
 
     /**
@@ -677,8 +845,10 @@ class CascadeService {
      * Reverse: verify ESTABLISHED connections on Portal's tunnel port.
      * Forward: verify TCP connectivity to Bridge's tunnel port.
      * mKCP: see _probeLink.
+     * @param {Object} [batch] - when given, a published-exit change is recorded
+     *        in `batch.exitsChanged` instead of invalidating caches right away
      */
-    async healthCheckLink(link) {
+    async healthCheckLink(link, batch = null) {
         const isForward = link.mode === 'forward';
         const checkNodeId = isForward ? link.bridgeNode : link.portalNode;
         const checkNode = await HyNode.findById(checkNodeId);
@@ -706,14 +876,33 @@ class CascadeService {
                 webhook.emit(event, { linkId: link._id, name: link.name });
                 logger.info(`[Cascade] Link ${link.name}: ${prevStatus} -> ${newStatus}, latency=${latencyMs}ms`);
             }
+            await this._onExitStatusChange(link, checkNode, prevStatus, newStatus, batch);
 
             return healthy;
         } catch (error) {
             await CascadeLink.updateOne({ _id: link._id }, {
                 $set: { status: 'error', lastError: error.message, lastHealthCheck: new Date() },
             });
+            await this._onExitStatusChange(link, checkNode, link.status, 'error', batch);
             return false;
         }
+    }
+
+    /**
+     * Published exits appear in subscriptions only while they are up, so a
+     * flip between visible and hidden must drop cached subscriptions.
+     * Portals that do not publish exits keep their subscriptions cached.
+     */
+    async _onExitStatusChange(link, portalNode, prevStatus, newStatus, batch) {
+        if (link.mode === 'forward' || link.publishInSubscription === false) return;
+        if (!publishesExits(portalNode?.cascadePortal)) return;
+        const wasVisible = PUBLISHED_EXIT_STATUSES.includes(prevStatus);
+        if (wasVisible === PUBLISHED_EXIT_STATUSES.includes(newStatus)) return;
+        if (batch) {
+            batch.exitsChanged = true;
+            return;
+        }
+        await this.invalidatePublication();
     }
 
     /**
@@ -729,12 +918,17 @@ class CascadeService {
         if (links.length === 0) return;
 
         const CONCURRENCY = 5;
+        const state = { exitsChanged: false };
         for (let i = 0; i < links.length; i += CONCURRENCY) {
             const batch = links.slice(i, i + CONCURRENCY);
-            await Promise.allSettled(batch.map(l => this.healthCheckLink(l)));
+            await Promise.allSettled(batch.map(l => this.healthCheckLink(l, state)));
         }
 
-        await this._invalidateTopologyCache();
+        if (state.exitsChanged) {
+            await this.invalidatePublication();
+        } else {
+            await this._invalidateTopologyCache();
+        }
     }
 
     /**
@@ -754,7 +948,7 @@ class CascadeService {
             // Virtual balancers have no topology endpoint. CDN fronts do and are
             // linked to their origin below.
             HyNode.find({ active: true, type: { $ne: 'virtual' } })
-                .select('name ip domain flag type status onlineUsers cascadeRole mapPosition country port ssh cdn')
+                .select('name ip domain flag type status onlineUsers cascadeRole cascadePortal mapPosition country port ssh cdn')
                 .lean(),
             CascadeLink.find({ active: true })
                 .populate('portalNode', 'name ip')
@@ -779,6 +973,7 @@ class CascadeService {
                 country: n.country || '',
                 port: n.port,
                 sshConfigured: !!(n.ssh?.password || n.ssh?.privateKey),
+                publishMode: normalizePortalSettings(n.cascadePortal).publishMode,
             },
             position: (n.mapPosition?.x != null && n.mapPosition?.y != null)
                 ? { x: n.mapPosition.x, y: n.mapPosition.y }
@@ -800,6 +995,11 @@ class CascadeService {
                 mode: l.mode || 'reverse',
                 muxEnabled: l.muxEnabled || false,
                 tunnelSecurity: l.tunnelSecurity || 'none',
+                routeId: l.routeId ?? null,
+                publishedExit: l.mode !== 'forward'
+                    && l.publishInSubscription !== false
+                    && isValidRouteId(l.routeId)
+                    && publishesExits(nodeById.get(String(l.portalNode?._id || l.portalNode))?.cascadePortal),
             },
         }));
 
@@ -977,6 +1177,18 @@ class CascadeService {
      * @param {Array<string>} [opts.excludeLinkIds] - Link IDs to exclude (used during undeploy)
      */
     async _deployPortalConfig(portalNode, opts = {}) {
+        // Cleared before the links are read, so a flag change racing with this
+        // push marks the portal again; a failed push leaves it marked.
+        await this._setRedeployPending(portalNode._id, false);
+        try {
+            await this._pushPortalConfig(portalNode, opts);
+        } catch (err) {
+            await this._setRedeployPending(portalNode._id, true);
+            throw err;
+        }
+    }
+
+    async _pushPortalConfig(portalNode, opts) {
         const syncService = require('./syncService');
         const users = await syncService._getUsersForNode(portalNode);
 
@@ -985,10 +1197,8 @@ class CascadeService {
 
         const excludeSet = new Set((opts.excludeLinkIds || []).map(String));
 
-        const allPortalLinks = (await CascadeLink.find({
-            portalNode: portalNode._id,
-            active: true,
-        }).populate('bridgeNode')).filter(l => !excludeSet.has(String(l._id)));
+        const allPortalLinks = (await this.loadPortalLinks(portalNode._id))
+            .filter(l => !excludeSet.has(String(l._id)));
 
         const forwardHopCandidates = (await CascadeLink.find({
             bridgeNode: portalNode._id,
@@ -1011,7 +1221,9 @@ class CascadeService {
         ];
 
         if (reverseLinks.length > 0) {
-            configGenerator.applyReversePortal(config, reverseLinks, inboundTags);
+            configGenerator.applyReversePortal(
+                config, reverseLinks, inboundTags, await this.getPortalSettings(portalNode)
+            );
         }
         if (forwardLinks.length > 0) {
             configGenerator.applyForwardChain(config, forwardLinks, inboundTags);

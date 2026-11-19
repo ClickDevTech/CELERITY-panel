@@ -3430,6 +3430,22 @@ html {
 
 .cascade-links-table td { vertical-align: middle; }
 
+/* Cascade exits published in subscriptions (portal node form) */
+.cx-modes .role-card { position: relative; }
+.cx-modes .role-card:focus-within { outline: 2px solid var(--accent, #6366f1); outline-offset: 2px; }
+.cx-mode-input { position: absolute; opacity: 0; pointer-events: none; }
+.cx-exits-table .cx-label { min-width: 160px; }
+.cx-exits-table input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+.cx-preview {
+    padding: 10px 12px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+}
+.cx-preview-head { display: flex; align-items: center; gap: 8px; }
+.cx-preview-list { margin: 6px 0 0; padding-left: 18px; }
+.cx-preview-list li { margin: 2px 0; }
+.cx-preview-list .cx-preview-muted { opacity: 0.6; }
+
 .cascade-node-cell {
     display: flex;
     align-items: center;

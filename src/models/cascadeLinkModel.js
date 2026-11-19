@@ -12,6 +12,7 @@ const {
     KCP_LIMITS,
     KCP_DEFAULTS,
 } = require('../utils/cascadeTransport');
+const { ROUTE_ID_MIN, ROUTE_ID_MAX, SUBSCRIPTION_LABEL_MAX } = require('../utils/cascadePublish');
 
 const cascadeLinkSchema = new mongoose.Schema({
     name: { type: String, required: true },
@@ -82,6 +83,17 @@ const cascadeLinkSchema = new mongoose.Schema({
     // Lower priority value = preferred; also determines chain order for forward mode
     priority: { type: Number, default: 100 },
 
+    // Reverse links only. Value written into the third UUID group of the
+    // per-exit subscription entry and matched by the portal's `vlessRoute`
+    // rule. Allocated server-side, unique per portal; null until allocated.
+    routeId: { type: Number, min: ROUTE_ID_MIN, max: ROUTE_ID_MAX, default: null },
+    // Publish this exit as its own entry when the portal publishes exits.
+    publishInSubscription: { type: Boolean, default: true },
+    // Entry name in client apps; empty builds "<flag> <portal> → <bridge>".
+    subscriptionLabel: { type: String, default: '', trim: true, maxlength: SUBSCRIPTION_LABEL_MAX },
+    // Candidate of the portal's default balancer (non-geo traffic).
+    includeInBalancer: { type: Boolean, default: true },
+
     active: { type: Boolean, default: true },
     status: {
         type: String,
@@ -98,5 +110,9 @@ const cascadeLinkSchema = new mongoose.Schema({
 cascadeLinkSchema.index({ portalNode: 1 });
 cascadeLinkSchema.index({ bridgeNode: 1 });
 cascadeLinkSchema.index({ active: 1, status: 1 });
+cascadeLinkSchema.index(
+    { portalNode: 1, routeId: 1 },
+    { unique: true, partialFilterExpression: { routeId: { $type: 'number' } } }
+);
 
 module.exports = mongoose.model('CascadeLink', cascadeLinkSchema);

@@ -33,6 +33,8 @@ const MIN_KCP_XRAY_VERSION = '26.6.1';
 const MIN_REVERSE_XRAY_VERSION = '25.9.11';
 // VLESS Encryption, which protects VLESS links without TLS/REALITY.
 const MIN_VLESS_ENC_XRAY_VERSION = '25.9.5';
+// `vlessRoute` routing field, used by portals to pin per-exit subscription entries.
+const MIN_VLESS_ROUTE_XRAY_VERSION = '25.9.5';
 // Lowest core that runs every cascade link type except mKCP.
 const MIN_CASCADE_XRAY_VERSION = MIN_REVERSE_XRAY_VERSION;
 // Bump when generated link ends stop interoperating with the previous ones:
@@ -89,7 +91,10 @@ function linkXrayRequirement(link) {
     const { compareVersions } = require('../services/xrayVersionService');
     const needs = [];
     if (isKcpTransport(link?.tunnelTransport)) needs.push({ version: MIN_KCP_XRAY_VERSION, feature: 'mKCP' });
-    if (link?.mode !== 'forward') needs.push({ version: MIN_REVERSE_XRAY_VERSION, feature: 'VLESS Reverse Proxy' });
+    if (link?.mode !== 'forward') {
+        needs.push({ version: MIN_REVERSE_XRAY_VERSION, feature: 'VLESS Reverse Proxy' });
+        needs.push({ version: MIN_VLESS_ROUTE_XRAY_VERSION, feature: 'VLESS route' });
+    }
     if (usesLinkVlessEncryption(link)) needs.push({ version: MIN_VLESS_ENC_XRAY_VERSION, feature: 'VLESS Encryption' });
     return needs.reduce((max, need) => (!max || compareVersions(need.version, max.version) > 0 ? need : max), null);
 }
@@ -201,6 +206,7 @@ module.exports = {
     MIN_KCP_XRAY_VERSION,
     MIN_REVERSE_XRAY_VERSION,
     MIN_VLESS_ENC_XRAY_VERSION,
+    MIN_VLESS_ROUTE_XRAY_VERSION,
     MIN_CASCADE_XRAY_VERSION,
     CASCADE_CONFIG_FORMAT,
     normalizeTransport,

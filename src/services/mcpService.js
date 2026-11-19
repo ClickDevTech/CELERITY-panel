@@ -100,7 +100,9 @@ const TOOLS = {
     },
 
     manage_cascade: {
-        description: 'Manage cascade links between portal and bridge nodes: create, update, delete, deploy, undeploy, reconnect.',
+        description: 'Manage cascade links between portal and bridge nodes: create, update, delete, deploy, undeploy, reconnect. ' +
+            'portal_settings reads or changes how a reverse portal publishes its exits in subscriptions (single/perExit/both) ' +
+            'and balances the shared entry (random/leastPing/leastLoad, fallback direct/block).',
         requiredScope: 'nodes:write',
         inputSchema: zodToInputSchema(cascadeTools.schemas.manageCascade),
     },

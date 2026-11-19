@@ -316,6 +316,14 @@ Virtual и CDN ноды не запускают setup, health-check, traffic col
                 summary: 'Сохранить позиции топологии',
                 description: 'Сохраняет позиции нод на визуальной карте каскада. Требуется скоуп `nodes:write`.',
             },
+            'GET /cascade/portals/{nodeId}/settings': {
+                summary: 'Настройки публикации выходов портала',
+                description: 'Возвращает настройки публикации выходов входной ноды и её reverse-выходы с номерами маршрутов. Требуется скоуп `nodes:read`.',
+            },
+            'PUT /cascade/portals/{nodeId}/settings': {
+                summary: 'Изменить настройки публикации выходов портала',
+                description: 'Частичное обновление. Конфиг портала переразворачивается, только если изменились влияющие на маршрутизацию настройки, осталось неприменённое изменение (redeployPending) или передан forceRedeploy, и у портала есть развёрнутые reverse-связи. Подписки обновляются сразу. Требуется скоуп `nodes:write`.',
+            },
             'POST /mcp': {
                 summary: 'Потоковый HTTP-эндпоинт MCP',
                 description: 'JSON-RPC 2.0 эндпоинт MCP для `initialize`, `ping`, `tools/list`, `tools/call`, `prompts/list` и `prompts/get`.',

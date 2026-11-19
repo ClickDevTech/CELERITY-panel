@@ -17,6 +17,7 @@ const {
     cascadeProtocol,
     usesLinkVlessEncryption,
 } = require('../utils/cascadeTransport');
+const { normalizePortalSettings, publishesExits, isValidRouteId } = require('../utils/cascadePublish');
 const vlessEncryption = require('../utils/vlessEncryption');
 const { buildServerDecryption } = vlessEncryption;
 
@@ -1159,15 +1160,19 @@ WantedBy=multi-user.target
  * @param {string|string[]} clientInboundTags - Tag(s) of the client-facing inbound(s).
  *        A string is accepted for backward compatibility; multiple tags route
  *        traffic from any of the listed inbounds (main + extras) into the cascade.
+ * @param {Object} [portalSettings] - HyNode.cascadePortal; defaults reproduce
+ *        the legacy config (random balancer, direct fallback, no exit rules).
  */
-function applyReversePortal(config, portalLinks, clientInboundTags) {
+function applyReversePortal(config, portalLinks, clientInboundTags, portalSettings) {
     if (!portalLinks || portalLinks.length === 0) return;
     const tags = normalizeInboundTags(clientInboundTags);
+    const settings = normalizePortalSettings(portalSettings);
 
     config.inbounds = config.inbounds || [];
     config.routing = config.routing || { rules: [] };
     config.routing.rules = config.routing.rules || [];
 
+    const exitLinks = [];
     const geoLinks = [];
     const defaultLinks = [];
 
@@ -1184,6 +1189,10 @@ function applyReversePortal(config, portalLinks, clientInboundTags) {
             streamSettings: buildCascadeTunnelStreamSettings(link, { server: true }),
         });
 
+        if (link.publishInSubscription !== false && isValidRouteId(link.routeId)) {
+            exitLinks.push({ link, portalTag });
+        }
+
         // Geo routing only takes effect when at least one tag is set;
         // otherwise fall back to default so client traffic still gets a route.
         const hasGeoTags = link.geoRouting?.enabled &&
@@ -1196,6 +1205,19 @@ function applyReversePortal(config, portalLinks, clientInboundTags) {
     }
 
     if (tags.length === 0) return;
+
+    // Explicitly selected exits win over geo routing and the balancer: the
+    // client picked this exit through the UUID route bytes (Xray 25.9.5+).
+    if (publishesExits(settings)) {
+        for (const { link, portalTag } of exitLinks) {
+            config.routing.rules.push({
+                type: 'field',
+                inboundTag: tags,
+                vlessRoute: String(link.routeId),
+                outboundTag: portalTag,
+            });
+        }
+    }
 
     // Geo-specific routing rules (checked first — order matters in Xray)
     for (const { link, portalTag } of geoLinks) {
@@ -1222,15 +1244,21 @@ function applyReversePortal(config, portalLinks, clientInboundTags) {
     }
 
     // Default (non-geo) links: use balancer when multiple, direct tag when single
-    const defaultTags = defaultLinks.map(d => d.portalTag);
+    const defaultTags = defaultLinks
+        .filter(d => d.link.includeInBalancer !== false)
+        .map(d => d.portalTag);
+    const fallbackTag = settings.fallback === 'block' ? ensureBlockOutbound(config) : 'direct';
     if (defaultTags.length > 1) {
         config.routing.balancers = config.routing.balancers || [];
+        // Xray resolves fallbackTag through the observatory; random has none
+        // and a fallbackTag there keeps the core from starting.
         config.routing.balancers.push({
             tag: 'cascade-balancer',
             selector: defaultTags,
-            strategy: { type: 'random' },
-            fallbackTag: 'direct',
+            strategy: { type: settings.balancerStrategy },
+            ...(settings.balancerStrategy === 'random' ? {} : { fallbackTag }),
         });
+        applyCascadeObservatory(config, defaultTags, settings);
         config.routing.rules.push({
             type: 'field',
             inboundTag: tags,
@@ -1242,6 +1270,52 @@ function applyReversePortal(config, portalLinks, clientInboundTags) {
             inboundTag: tags,
             outboundTag: defaultTags[0],
         });
+    } else if (defaultLinks.length > 0) {
+        // Every default exit was taken out of the balancer: send the remaining
+        // traffic to the fallback explicitly instead of the first outbound.
+        config.routing.rules.push({
+            type: 'field',
+            inboundTag: tags,
+            outboundTag: fallbackTag,
+        });
+    }
+}
+
+/** Tag of a blackhole outbound, added when the config has none. */
+function ensureBlockOutbound(config) {
+    config.outbounds = config.outbounds || [];
+    const existing = config.outbounds.find(o => o.protocol === 'blackhole' && o.tag);
+    if (existing) return existing.tag;
+    config.outbounds.push({ protocol: 'blackhole', tag: 'block' });
+    return 'block';
+}
+
+/**
+ * leastPing needs `observatory`, leastLoad needs `burstObservatory`; both probe
+ * the reverse outbounds by tag prefix. random needs neither.
+ */
+function applyCascadeObservatory(config, subjectTags, settings) {
+    if (settings.balancerStrategy === 'leastPing') {
+        const existing = config.observatory?.subjectSelector || [];
+        config.observatory = {
+            ...(config.observatory || {}),
+            subjectSelector: [...new Set([...existing, ...subjectTags])],
+            probeUrl: settings.probeUrl,
+            probeInterval: settings.probeInterval,
+            enableConcurrency: true,
+        };
+    } else if (settings.balancerStrategy === 'leastLoad') {
+        const existing = config.burstObservatory?.subjectSelector || [];
+        config.burstObservatory = {
+            ...(config.burstObservatory || {}),
+            subjectSelector: [...new Set([...existing, ...subjectTags])],
+            pingConfig: {
+                destination: settings.probeUrl,
+                interval: settings.probeInterval,
+                sampling: 3,
+                timeout: '5s',
+            },
+        };
     }
 }
 

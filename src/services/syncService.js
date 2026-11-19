@@ -668,7 +668,7 @@ class SyncService {
         const CascadeLink = require('../models/cascadeLinkModel');
         const cascadeService = require('./cascadeService');
         const configObj = JSON.parse(configContent);
-        const allPortalLinks = await CascadeLink.find({ portalNode: node._id, active: true }).populate('bridgeNode');
+        const allPortalLinks = await cascadeService.loadPortalLinks(node._id);
         const hopCandidates = await CascadeLink.find({ bridgeNode: node._id, mode: 'forward', active: true });
 
         if (allPortalLinks.length > 0 || hopCandidates.length > 0) {
@@ -688,7 +688,9 @@ class SyncService {
             }, filterOpts);
 
             if (reverseLinks.length > 0) {
-                configGenerator.applyReversePortal(configObj, reverseLinks, inboundTags);
+                configGenerator.applyReversePortal(
+                    configObj, reverseLinks, inboundTags, await cascadeService.getPortalSettings(node)
+                );
             }
             if (forwardLinks.length > 0) {
                 configGenerator.applyForwardChain(configObj, forwardLinks, inboundTags);

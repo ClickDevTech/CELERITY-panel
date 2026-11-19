@@ -258,6 +258,7 @@
         if (d.tunnelPort)     parts.push(':' + d.tunnelPort);
         if (d.latencyMs != null) parts.push(d.latencyMs + 'ms');
         if (d.muxEnabled) parts.push('MUX');
+        if (d.publishedExit) parts.push((i18n.subscriptionExitBadge || 'SUB') + ' #' + d.routeId);
         return parts.join(' ');
     }
 
@@ -680,6 +681,10 @@
             '<div class="info-actions">' +
             '<a href="/panel/nodes/' + d.id + '" class="btn btn-sm btn-outline">' +
             '<i class="ti ti-external-link"></i> ' + (i18n.openNode || 'Open Node') + '</a>' +
+            (d.cascadeRole === 'portal' && d.type === 'xray'
+                ? '<a href="/panel/nodes/' + encodeURIComponent(d.id) + '#cascadeExitsCard" class="btn btn-sm btn-outline">' +
+                  '<i class="ti ti-route-2"></i> ' + (i18n.portalExitSettings || 'Exits in subscription') + '</a>'
+                : '') +
             (d.sshConfigured
                 ? '<a href="/panel/nodes/' + d.id + '/terminal" target="_blank" rel="noopener" class="btn btn-sm btn-outline">' +
                   '<i class="ti ti-terminal-2"></i> ' + (i18n.terminal || 'SSH Terminal') + '</a>'
@@ -927,6 +932,11 @@
         if (geoDomains) geoDomains.value = Array.isArray(link.geoRouting?.domains) ? link.geoRouting.domains.join(', ') : '';
         if (geoGeoip) geoGeoip.value = Array.isArray(link.geoRouting?.geoip) ? link.geoRouting.geoip.join(', ') : '';
 
+        if (form.publishInSubscription) form.publishInSubscription.checked = link.publishInSubscription !== false;
+        if (form.includeInBalancer) form.includeInBalancer.checked = link.includeInBalancer !== false;
+        if (form.subscriptionLabel) form.subscriptionLabel.value = link.subscriptionLabel || '';
+        setRouteIdHint(link.routeId);
+
         var realitySec = document.getElementById('realitySection');
         if (realitySec) realitySec.style.display = form.tunnelSecurity.value === 'reality' ? '' : 'none';
         applyTransportUi();
@@ -1008,6 +1018,8 @@
         if (geoGeoip) geoGeoip.value = '';
         var geoFields = document.getElementById('geoRoutingFields');
         if (geoFields) geoFields.style.display = 'none';
+        setRouteIdHint(null);
+        applySubscriptionUi(false);
     }
 
     async function onAddLinkSubmit(e) {
@@ -1030,6 +1042,12 @@
             muxConcurrency: parseInt(form.muxConcurrency?.value) || 8,
             priority:       parseInt(form.priority?.value) || 100,
         };
+
+        if (data.mode !== 'forward' && form.publishInSubscription) {
+            data.publishInSubscription = !!form.publishInSubscription.checked;
+            data.includeInBalancer = !!form.includeInBalancer?.checked;
+            data.subscriptionLabel = (form.subscriptionLabel?.value || '').trim().slice(0, 64);
+        }
 
         // REALITY fields
         if (data.tunnelSecurity === 'reality') {
@@ -1273,11 +1291,30 @@
 
     var _allLinks = [];
 
+    // Exits are published per portal only for reverse links.
+    function applySubscriptionUi(isForward) {
+        var section = document.getElementById('linkSubscriptionSection');
+        var forwardHint = document.getElementById('linkSubscriptionForwardHint');
+        if (section) section.style.display = isForward ? 'none' : '';
+        if (forwardHint) forwardHint.style.display = isForward ? '' : 'none';
+    }
+
+    function setRouteIdHint(routeId) {
+        var hint = document.getElementById('linkRouteIdHint');
+        if (!hint) return;
+        var hasRoute = routeId !== null && routeId !== undefined;
+        hint.style.display = hasRoute ? '' : 'none';
+        hint.textContent = hasRoute
+            ? (i18n.subscriptionRouteId || 'Route id: {id}').replace('{id}', String(routeId))
+            : '';
+    }
+
     function updateLinkFormWarnings() {
         var form = document.getElementById('addLinkForm');
         if (!form) return;
         var mode = (document.getElementById('linkModeInput') || {}).value || 'reverse';
         var isForward = mode === 'forward';
+        applySubscriptionUi(isForward);
 
         var flowHint = document.getElementById('modeFlowHint');
         if (flowHint) {

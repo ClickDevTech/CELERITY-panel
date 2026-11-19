@@ -3128,6 +3128,186 @@ function switchNodesViewNetwork() {
     sessionStorage.setItem('nodesView', 'network');
 }
 
+// ── Cascade exits in subscriptions (portal) ───────────────────────────────────
+
+const cxI18n = {
+    strategyHints: {
+        random: <%- JSON.stringify(t('nodes.cascadeStrategyRandomHint')) %>,
+        leastPing: <%- JSON.stringify(t('nodes.cascadeStrategyLeastPingHint')) %>,
+        leastLoad: <%- JSON.stringify(t('nodes.cascadeStrategyLeastLoadHint')) %>,
+    },
+    balanced: <%- JSON.stringify(t('nodes.cascadePreviewBalanced')) %>,
+    hiddenUntilOnline: <%- JSON.stringify(t('nodes.cascadePreviewHiddenUntilOnline')) %>,
+    empty: <%- JSON.stringify(t('nodes.cascadePreviewEmpty')) %>,
+    noBalancer: <%- JSON.stringify(t('nodes.cascadePreviewNoBalancer')) %>,
+    saving: <%- JSON.stringify(t('nodes.cascadeExitsSaving')) %>,
+    saved: <%- JSON.stringify(t('nodes.cascadeExitsSaved')) %>,
+    savedRedeployed: <%- JSON.stringify(t('nodes.cascadeExitsSavedRedeployed')) %>,
+    redeployFailed: <%- JSON.stringify(t('nodes.cascadeExitsRedeployFailed')) %>,
+    invalidInterval: <%- JSON.stringify(t('nodes.cascadeProbeIntervalInvalid')) %>,
+    error: <%- JSON.stringify(t('common.error')) %>,
+};
+
+const CX_VISIBLE_STATUSES = ['deployed', 'online'];
+
+function cxState() {
+    const card = document.getElementById('cascadeExitsCard');
+    if (!card) return null;
+    const mode = (card.querySelector('input[name="cxPublishMode"]:checked') || {}).value || 'single';
+    const exits = Array.from(card.querySelectorAll('.cx-exit-row')).map(row => ({
+        row,
+        linkId: row.dataset.linkId,
+        bridgeName: row.dataset.bridgeName || '',
+        bridgeFlag: row.dataset.bridgeFlag || '',
+        status: row.dataset.status || '',
+        label: row.querySelector('.cx-label').value.trim(),
+        publish: row.querySelector('.cx-publish').checked,
+        balancer: row.querySelector('.cx-balancer').checked,
+    }));
+    return {
+        card,
+        nodeId: card.dataset.nodeId,
+        nodeName: card.dataset.nodeName || '',
+        nodeFlag: card.dataset.nodeFlag || '',
+        inbounds: parseInt(card.dataset.inbounds, 10) || 1,
+        settings: {
+            publishMode: mode,
+            balancerStrategy: document.getElementById('cxStrategy').value,
+            fallback: document.getElementById('cxFallback').value,
+            probeUrl: document.getElementById('cxProbeUrl').value.trim(),
+            probeInterval: document.getElementById('cxProbeInterval').value.trim(),
+        },
+        exits,
+    };
+}
+
+function cxAppendPreviewItem(list, text, muted) {
+    const li = document.createElement('li');
+    li.textContent = text;
+    if (muted) li.className = 'cx-preview-muted';
+    list.appendChild(li);
+}
+
+// Mirrors subscription naming: balanced entry = node name, exit entry =
+// custom label or "<exit flag> <entry> → <exit>".
+function renderCascadeExitsPreview() {
+    const s = cxState();
+    if (!s) return;
+    const list = document.getElementById('cxPreviewList');
+    list.textContent = '';
+    const mode = s.settings.publishMode;
+    const published = s.exits.filter(e => e.publish);
+    const visibleCount = published.filter(e => CX_VISIBLE_STATUSES.includes(e.status)).length;
+    // With no working exit the subscription falls back to the balanced entry.
+    const exitsShown = mode !== 'single' && visibleCount > 0;
+    let count = 0;
+
+    if (mode !== 'perExit' || !exitsShown) {
+        cxAppendPreviewItem(list, `${s.nodeFlag} ${s.nodeName}`.trim() + ' — ' + cxI18n.balanced, false);
+        count++;
+    }
+    if (mode !== 'single') {
+        for (const exit of published) {
+            const name = exit.label || `${exit.bridgeFlag || s.nodeFlag} ${s.nodeName} → ${exit.bridgeName}`.trim();
+            const visible = CX_VISIBLE_STATUSES.includes(exit.status);
+            cxAppendPreviewItem(list, visible ? name : `${name} — ${cxI18n.hiddenUntilOnline}`, !visible);
+            if (visible) count++;
+        }
+        if (published.length === 0) cxAppendPreviewItem(list, cxI18n.empty, true);
+    }
+    if (s.exits.every(e => !e.balancer)) cxAppendPreviewItem(list, cxI18n.noBalancer, true);
+
+    document.getElementById('cxPreviewCount').textContent = String(count * s.inbounds);
+}
+
+function onCascadeExitsChange() {
+    const s = cxState();
+    if (!s) return;
+    s.card.querySelectorAll('.cx-modes .role-card').forEach(card => {
+        card.classList.toggle('active', card.querySelector('input').checked);
+    });
+    const strategy = s.settings.balancerStrategy;
+    document.getElementById('cxStrategyHint').textContent = cxI18n.strategyHints[strategy] || '';
+    document.getElementById('cxProbeRow').style.display = strategy === 'random' ? 'none' : '';
+    // random never probes exits, so it only falls back when no exit is in the balancer.
+    const usesFallback = strategy !== 'random' || s.exits.every(e => !e.balancer);
+    document.getElementById('cxFallbackWarn').style.display = s.settings.fallback === 'direct' && usesFallback ? '' : 'none';
+    document.getElementById('cxSaveStatus').textContent = '';
+    renderCascadeExitsPreview();
+}
+
+async function cxRequest(url, body) {
+    const res = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+}
+
+async function saveCascadeExits() {
+    const s = cxState();
+    if (!s) return;
+    if (s.settings.balancerStrategy !== 'random' && !/^\d{1,5}(ms|s|m|h)$/.test(s.settings.probeInterval)) {
+        alert(cxI18n.invalidInterval);
+        return;
+    }
+    const btn = document.getElementById('cxSaveBtn');
+    const status = document.getElementById('cxSaveStatus');
+    const pendingWarn = document.getElementById('cxPendingWarn');
+    btn.disabled = true;
+    status.textContent = cxI18n.saving;
+
+    // Link flags first with the portal push deferred, then one portal
+    // redeploy covers both, so Xray on the portal restarts only once. The
+    // server marks deferred pushes, so a failed save is applied by the next one.
+    let flagsChanged = false;
+    try {
+        for (const exit of s.exits) {
+            const row = exit.row;
+            const patch = {};
+            if (exit.label !== (row.dataset.origLabel || '')) patch.subscriptionLabel = exit.label;
+            if (exit.publish !== (row.dataset.origPublish === '1')) patch.publishInSubscription = exit.publish;
+            if (exit.balancer !== (row.dataset.origBalancer === '1')) patch.includeInBalancer = exit.balancer;
+            if (Object.keys(patch).length === 0) continue;
+            if (patch.publishInSubscription !== undefined || patch.includeInBalancer !== undefined) flagsChanged = true;
+            await cxRequest('/api/cascade/links/' + encodeURIComponent(exit.linkId), { ...patch, deferPortalRedeploy: true });
+            row.dataset.origLabel = exit.label;
+            row.dataset.origPublish = exit.publish ? '1' : '0';
+            row.dataset.origBalancer = exit.balancer ? '1' : '0';
+        }
+
+        const settings = { ...s.settings };
+        if (settings.balancerStrategy === 'random') {
+            delete settings.probeUrl;
+            delete settings.probeInterval;
+        }
+        const result = await cxRequest(
+            '/api/cascade/portals/' + encodeURIComponent(s.nodeId) + '/settings',
+            { ...settings, forceRedeploy: flagsChanged }
+        );
+        if (result.redeployError) {
+            status.textContent = cxI18n.redeployFailed.replace('{error}', result.redeployError);
+        } else {
+            status.textContent = result.redeployed ? cxI18n.savedRedeployed : cxI18n.saved;
+        }
+        if (pendingWarn) pendingWarn.style.display = result.redeployPending ? '' : 'none';
+    } catch (err) {
+        status.textContent = cxI18n.error + ': ' + err.message;
+        if (pendingWarn && flagsChanged) pendingWarn.style.display = '';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', onCascadeExitsChange);
+} else {
+    onCascadeExitsChange();
+}
+
 // ── SNI Scanner ───────────────────────────────────────────────────────────────
 
 const sniI18n = {

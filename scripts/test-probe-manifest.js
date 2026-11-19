@@ -110,6 +110,9 @@ async function withStubs(run) {
             const base = `${node.flag || ''} ${node.name}`.trim();
             return inbound.nameSuffix ? `${base} (${inbound.nameSuffix})` : base;
         },
+        async attachCascadeExits(nodes, includeDown) {
+            assert.strictEqual(includeDown, true, 'probes expect every exit, up or down');
+        },
     };
 
     Module._load = function patchedLoad(request, parent, isMain) {
@@ -224,7 +227,7 @@ async function withStubs(run) {
         path.join(__dirname, '..', 'src', 'routes', 'subscription.js'),
         'utf8'
     );
-    for (const helper of ['getNodeConfigs', 'getXrayPublishedInbounds', 'xrayInboundName']) {
+    for (const helper of ['getNodeConfigs', 'getXrayPublishedInbounds', 'xrayInboundName', 'attachCascadeExits']) {
         assert.ok(
             subscriptionSource.includes(`module.exports.${helper} =`),
             `subscription must export ${helper} for the probe manifest`

@@ -248,6 +248,159 @@
 </div>
 <% } %>
 
+<%# ========== Cascade exits in subscriptions (edit only, reverse portal) ========== %>
+<%
+    const _cxLinks = (node?._id && node.type === 'xray' && Array.isArray(cascadeLinks))
+        ? cascadeLinks.filter(l => l.portalNode && String(l.portalNode._id) === String(node._id) && l.mode !== 'forward')
+        : [];
+    // The edit route passes normalized settings; the card is edit-only.
+    const _cx = node?.cascadePortal || {};
+    const _cxInbounds = 1 + ((node?.xray?.extraInbounds) || []).filter(i => i && i.port).length;
+%>
+<% if (_cxLinks.length > 0) { %>
+<div class="card mt-3" id="cascadeExitsCard"
+     data-node-id="<%= node._id %>"
+     data-node-name="<%= node.name %>"
+     data-node-flag="<%= node.flag || '' %>"
+     data-inbounds="<%= _cxInbounds %>">
+    <div class="card-header">
+        <h2><i class="ti ti-route-2" style="margin-right:6px"></i> <%= t('nodes.cascadeExitsTitle') %></h2>
+        <span class="badge badge-secondary"><%= _cxLinks.length %></span>
+    </div>
+    <div class="card-body">
+        <p class="hint" style="margin-top:0"><%= t('nodes.cascadeExitsHint') %></p>
+
+        <div class="cascade-role-picker cx-modes" role="radiogroup" aria-label="<%= t('nodes.cascadePublishMode') %>">
+            <% [
+                ['single', 'ti-arrows-shuffle', 'cascadePublishSingle', 'cascadePublishSingleDesc'],
+                ['perExit', 'ti-list-details', 'cascadePublishPerExit', 'cascadePublishPerExitDesc'],
+                ['both', 'ti-stack-2', 'cascadePublishBoth', 'cascadePublishBothDesc'],
+            ].forEach(([mode, icon, titleKey, descKey]) => { %>
+            <label class="role-card <%= _cx.publishMode === mode ? 'active' : '' %>">
+                <input type="radio" name="cxPublishMode" value="<%= mode %>" class="cx-mode-input"
+                       <%= _cx.publishMode === mode ? 'checked' : '' %> onchange="onCascadeExitsChange()">
+                <span class="role-card-icon role-portal"><i class="ti <%= icon %>"></i></span>
+                <span class="role-card-body">
+                    <span class="role-card-name"><%= t('nodes.' + titleKey) %></span>
+                    <span class="role-card-desc"><%= t('nodes.' + descKey) %></span>
+                </span>
+            </label>
+            <% }); %>
+        </div>
+
+        <div class="form-row mt-3">
+            <div class="form-group">
+                <label for="cxStrategy"><%= t('nodes.cascadeBalancerStrategy') %></label>
+                <select id="cxStrategy" class="form-control" onchange="onCascadeExitsChange()">
+                    <option value="random" <%= _cx.balancerStrategy === 'random' ? 'selected' : '' %>><%= t('nodes.cascadeStrategyRandom') %></option>
+                    <option value="leastPing" <%= _cx.balancerStrategy === 'leastPing' ? 'selected' : '' %>><%= t('nodes.cascadeStrategyLeastPing') %></option>
+                    <option value="leastLoad" <%= _cx.balancerStrategy === 'leastLoad' ? 'selected' : '' %>><%= t('nodes.cascadeStrategyLeastLoad') %></option>
+                </select>
+                <small class="hint" id="cxStrategyHint"></small>
+            </div>
+            <div class="form-group">
+                <label for="cxFallback"><%= t('nodes.cascadeFallback') %></label>
+                <select id="cxFallback" class="form-control" onchange="onCascadeExitsChange()">
+                    <option value="direct" <%= _cx.fallback === 'direct' ? 'selected' : '' %>><%= t('nodes.cascadeFallbackDirect') %></option>
+                    <option value="block" <%= _cx.fallback === 'block' ? 'selected' : '' %>><%= t('nodes.cascadeFallbackBlock') %></option>
+                </select>
+                <small class="hint"><%= t('nodes.cascadeFallbackHint') %></small>
+            </div>
+        </div>
+        <div class="form-row" id="cxProbeRow" style="<%= _cx.balancerStrategy === 'random' ? 'display:none;' : '' %>">
+            <div class="form-group">
+                <label for="cxProbeUrl"><%= t('nodes.cascadeProbeUrl') %></label>
+                <input type="url" id="cxProbeUrl" class="form-control" maxlength="255"
+                       value="<%= _cx.probeUrl %>" oninput="onCascadeExitsChange()">
+            </div>
+            <div class="form-group">
+                <label for="cxProbeInterval"><%= t('nodes.cascadeProbeInterval') %></label>
+                <input type="text" id="cxProbeInterval" class="form-control" maxlength="8"
+                       pattern="\d{1,5}(ms|s|m|h)" value="<%= _cx.probeInterval %>" oninput="onCascadeExitsChange()">
+            </div>
+        </div>
+        <div class="alert alert-warning" id="cxFallbackWarn" style="<%= _cx.fallback === 'direct' ? '' : 'display:none;' %>">
+            <i class="ti ti-alert-triangle"></i> <%= t('nodes.cascadeFallbackDirectWarn') %>
+        </div>
+
+        <div class="table-responsive mt-2">
+            <table class="table cascade-links-table cx-exits-table">
+                <thead>
+                    <tr>
+                        <th><%= t('nodes.cascadeExitColumn') %></th>
+                        <th><%= t('nodes.cascadeExitLabel') %></th>
+                        <th title="<%= t('nodes.cascadeExitPublishHint') %>"><%= t('nodes.cascadeExitPublish') %></th>
+                        <th title="<%= t('nodes.cascadeExitBalancerHint') %>"><%= t('nodes.cascadeExitBalancer') %></th>
+                        <th title="<%= t('nodes.cascadeExitRouteHint') %>"><%= t('nodes.cascadeExitRoute') %></th>
+                        <th><%= t('common.status') %></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% _cxLinks.forEach(link => {
+                        const bridgeName = link.bridgeNode ? link.bridgeNode.name : link.name;
+                        const bridgeFlag = (link.bridgeNode && link.bridgeNode.flag) || '';
+                        const statusClass = link.status === 'online' ? 'success' : (link.status === 'error' ? 'danger' : (link.status === 'deployed' ? 'info' : 'warning'));
+                    %>
+                    <tr class="cx-exit-row"
+                        data-link-id="<%= link._id %>"
+                        data-bridge-name="<%= bridgeName %>"
+                        data-bridge-flag="<%= bridgeFlag %>"
+                        data-status="<%= link.status %>"
+                        data-orig-label="<%= link.subscriptionLabel || '' %>"
+                        data-orig-publish="<%= link.publishInSubscription !== false ? '1' : '0' %>"
+                        data-orig-balancer="<%= link.includeInBalancer !== false ? '1' : '0' %>">
+                        <td>
+                            <span class="cascade-node-cell"><%= bridgeFlag %> <%= bridgeName %></span>
+                            <% if (link.geoRouting && link.geoRouting.enabled) { %>
+                            <span class="badge badge-info" title="<%= t('nodes.cascadeExitGeoHint') %>">geo</span>
+                            <% } %>
+                        </td>
+                        <td>
+                            <input type="text" class="form-control cx-label" maxlength="64"
+                                   value="<%= link.subscriptionLabel || '' %>"
+                                   placeholder="<%= `${bridgeFlag || node.flag || ''} ${node.name} → ${bridgeName}`.trim() %>"
+                                   oninput="onCascadeExitsChange()">
+                        </td>
+                        <td>
+                            <input type="checkbox" class="cx-publish"
+                                   <%= link.publishInSubscription !== false ? 'checked' : '' %> onchange="onCascadeExitsChange()">
+                        </td>
+                        <td>
+                            <input type="checkbox" class="cx-balancer"
+                                   <%= link.includeInBalancer !== false ? 'checked' : '' %> onchange="onCascadeExitsChange()">
+                        </td>
+                        <td><code><%= link.routeId != null ? link.routeId : '—' %></code></td>
+                        <td><span class="badge badge-<%= statusClass %>"><%= link.status %></span></td>
+                    </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="cx-preview mt-2">
+            <div class="cx-preview-head">
+                <strong><%= t('nodes.cascadePreviewTitle') %></strong>
+                <span class="badge badge-secondary" id="cxPreviewCount"></span>
+            </div>
+            <ul class="cx-preview-list" id="cxPreviewList"></ul>
+            <small class="hint" id="cxPreviewInbounds" style="<%= _cxInbounds > 1 ? '' : 'display:none;' %>">
+                <%= t('nodes.cascadePreviewInbounds').replace('{count}', _cxInbounds) %>
+            </small>
+        </div>
+
+        <div class="xrv-actions mt-2">
+            <button type="button" class="btn btn-primary" id="cxSaveBtn" onclick="saveCascadeExits()">
+                <i class="ti ti-device-floppy"></i> <%= t('nodes.cascadeExitsSave') %>
+            </button>
+            <span class="hint" id="cxSaveStatus" role="status" aria-live="polite"></span>
+        </div>
+        <div class="alert alert-warning mt-2" id="cxPendingWarn" style="<%= _cx.redeployPending ? '' : 'display:none;' %>">
+            <i class="ti ti-alert-triangle"></i> <%= t('nodes.cascadeExitsRedeployPending') %>
+        </div>
+    </div>
+</div>
+<% } %>
+
 <%# ========== Management (edit only — hidden for virtual: nothing to setup/restart/terminal-into) ========== %>
 <% if (node?._id && node.type !== 'virtual' && node.type !== 'cdn') { %>
 <div class="card mt-3">

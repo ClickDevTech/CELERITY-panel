@@ -34,6 +34,7 @@ const PREFIX = {
     DEVICES: 'devices:',     // devices:{userId} - Hash with device IPs
     ONLINE: 'online',        // online (stores all sessions) - legacy
     NODES: 'nodes:active',   // nodes:active
+    CASCADE_EXITS: 'cascade:exits', // reverse-cascade exits published in subscriptions
     SETTINGS: 'settings',    // settings
     TRAFFIC_STATS: 'traffic:stats', // Total traffic stats
     GROUPS: 'groups:active', // Active groups
@@ -457,13 +458,36 @@ class CacheService {
     }
 
     /**
+     * Reverse-cascade exits grouped by portal; shares the active-nodes TTL.
+     */
+    async getCascadeExits() {
+        if (!this.isConnected()) return null;
+        try {
+            const data = await this.redis.get(PREFIX.CASCADE_EXITS);
+            return data ? JSON.parse(data) : null;
+        } catch (err) {
+            logger.error(`[Cache] getCascadeExits error: ${err.message}`);
+            return null;
+        }
+    }
+
+    async setCascadeExits(exits) {
+        if (!this.isConnected()) return;
+        try {
+            await this.redis.setex(PREFIX.CASCADE_EXITS, this.ttl.ACTIVE_NODES, JSON.stringify(exits));
+        } catch (err) {
+            logger.error(`[Cache] setCascadeExits error: ${err.message}`);
+        }
+    }
+
+    /**
      * Invalidate nodes cache
      */
     async invalidateNodes() {
         if (!this.isConnected()) return;
         
         try {
-            await this.redis.del(PREFIX.NODES);
+            await this.redis.del(PREFIX.NODES, PREFIX.CASCADE_EXITS);
             logger.debug('[Cache] INVALIDATE nodes');
         } catch (err) {
             logger.error(`[Cache] invalidateNodes error: ${err.message}`);

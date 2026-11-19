@@ -21,6 +21,14 @@ const {
     isValidXhttpRange,
     validateXrayXhttp,
 } = require('../utils/xhttpOptions');
+const {
+    CASCADE_PUBLISH_MODES,
+    CASCADE_BALANCER_STRATEGIES,
+    CASCADE_FALLBACKS,
+    DURATION_RE,
+    PROBE_URL_RE,
+    PORTAL_DEFAULTS,
+} = require('../utils/cascadePublish');
 
 const xhttpRangeValidator = {
     validator: value => !value || isValidXhttpRange(value),
@@ -480,6 +488,28 @@ const virtualConfigSchema = new mongoose.Schema({
     interruptExistConnections: { type: Boolean, default: true },
 }, { _id: false });
 
+// Reverse-cascade portal: how its exits are published to subscriptions and how
+// the default (non-geo, non-explicit) traffic is spread across them.
+const cascadePortalSchema = new mongoose.Schema({
+    // single  — one entry, traffic is balanced across exits (legacy behaviour)
+    // perExit — one entry per exit, selected through the VLESS UUID route bytes
+    // both    — the balanced entry plus one entry per exit
+    publishMode: { type: String, enum: CASCADE_PUBLISH_MODES, default: PORTAL_DEFAULTS.publishMode },
+    balancerStrategy: {
+        type: String, enum: CASCADE_BALANCER_STRATEGIES, default: PORTAL_DEFAULTS.balancerStrategy,
+    },
+    // Outbound used by the balancer when no exit is alive. 'direct' leaks the
+    // portal IP, 'block' drops the connection instead.
+    fallback: { type: String, enum: CASCADE_FALLBACKS, default: PORTAL_DEFAULTS.fallback },
+    probeUrl: {
+        type: String, default: PORTAL_DEFAULTS.probeUrl, trim: true, maxlength: 255, match: PROBE_URL_RE,
+    },
+    probeInterval: { type: String, default: PORTAL_DEFAULTS.probeInterval, trim: true, match: DURATION_RE },
+    // Exit flags changed but the portal config was not pushed yet; the next
+    // settings save or portal deploy applies them.
+    redeployPending: { type: Boolean, default: false },
+}, { _id: false });
+
 const cdnEdgeSchema = new mongoose.Schema({
     id: { type: String, required: true, trim: true, maxlength: 64 },
     label: { type: String, default: '', trim: true, maxlength: 64 },
@@ -628,6 +658,8 @@ const hyNodeSchema = new mongoose.Schema({
         enum: ['standalone', 'portal', 'relay', 'bridge'],
         default: 'standalone',
     },
+    // Only meaningful while this xray node is the portal of reverse links.
+    cascadePortal: { type: cascadePortalSchema, default: () => ({}) },
     mapPosition: {
         x: { type: Number, default: null },
         y: { type: Number, default: null },

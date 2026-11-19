@@ -212,7 +212,35 @@ function buildCases() {
             }
         }
     }
-    return { configs, variants };
+
+    // Several exits on one portal: vlessRoute rules, geo, balancer + observatory.
+    const exits = multiExitLinks();
+    const exitsMin = exits.map(l => linkXrayRequirement(l)?.version)
+        .filter(Boolean)
+        .reduce((max, v) => (!max || compareVersions(v, max) > 0 ? v : max), null);
+    for (const [suffix, settings] of [
+        ['', { publishMode: 'both' }],
+        ['-leastping', { publishMode: 'perExit', balancerStrategy: 'leastPing', fallback: 'block' }],
+        ['-leastload', { publishMode: 'both', balancerStrategy: 'leastLoad', fallback: 'block' }],
+    ]) {
+        add(`rev-portal-multi-exit${suffix}`, exitsMin,
+            () => mainWith(cfg => gen.applyReversePortal(cfg, exits, ['vless-in'], settings)));
+    }
+    return { configs, variants, multiExitMin: exitsMin };
+}
+
+function multiExitLinks() {
+    return [
+        { id: '64f000000000000000000001', transport: 'tcp', security: 'reality' },
+        { id: '64f000000000000000000002', transport: 'xhttp', security: 'none' },
+        { id: '64f000000000000000000003', transport: 'tcp', security: 'reality', geo: true },
+    ].map((spec, i) => ({
+        ...link(spec.id, 'reverse', spec.transport, spec.security),
+        tunnelPort: 10086 + i,
+        routeId: i + 1,
+        // The core cache ships geoip.dat only, so no geosite: rules here.
+        ...(spec.geo ? { geoRouting: { enabled: true, domains: ['domain:example.com'], geoip: ['geoip:private'] } } : {}),
+    }));
 }
 
 // ─── Config load test ───────────────────────────────────────────────────────
@@ -341,6 +369,105 @@ async function runE2e(coreDir, variant, caFile, httpPort, tmpDir) {
     }
 }
 
+const USER_UUID = 'b831381d-6324-4d53-ad4f-8cda48b30811';
+const routedUuid = route => USER_UUID.replace(/^(\w{8}-\w{4}-)\w{4}/, `$1${route.toString(16).padStart(4, '0')}`);
+
+/**
+ * One portal with exits A and B, a client whose SOCKS ports 1080+N send the
+ * user UUID with route N. Exit B redirects to its own page, so the response
+ * tells which bridge carried the request.
+ *   routes: route 1 must reach A and route 2 must reach B.
+ *   leastPing/leastLoad: only A runs; the balanced entry (route 0) must keep
+ *   working, which a random balancer over a dead exit would not.
+ */
+async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
+    const local = { ...exit, ip: '127.0.0.1' };
+    const exitLinks = [];
+    for (const [i, id] of ['64f0000000000000000000a1', '64f0000000000000000000a2'].entries()) {
+        exitLinks.push({ ...link(id, 'reverse', 'tcp', 'none'), tunnelPort: await freePort(), routeId: i + 1 });
+    }
+    const portalPort = await freePort();
+    const socks = [await freePort(), await freePort(), await freePort()];
+    const settings = scenario === 'routes'
+        ? { publishMode: 'both' }
+        : { publishMode: 'both', balancerStrategy: scenario, fallback: 'block', probeUrl: `http://127.0.0.1:${pages.a}/`, probeInterval: '2s' };
+
+    const portalCfg = {
+        log: { loglevel: 'warning' },
+        inbounds: [{ tag: 'vless-in', port: portalPort, protocol: 'vless', settings: { clients: [{ id: USER_UUID }], decryption: 'none' } }],
+        outbounds: [{ tag: 'direct', protocol: 'freedom' }],
+        routing: { rules: [] },
+    };
+    gen.applyReversePortal(portalCfg, exitLinks, ['vless-in'], settings);
+    const clientCfg = {
+        log: { loglevel: 'warning' },
+        inbounds: socks.map((port, route) => ({ tag: `socks-${route}`, port, protocol: 'socks', settings: { udp: false } })),
+        outbounds: socks.map((_, route) => ({
+            tag: `user-${route}`,
+            protocol: 'vless',
+            settings: { address: '127.0.0.1', port: portalPort, id: routedUuid(route), encryption: 'none' },
+        })),
+        routing: { rules: socks.map((_, route) => ({ type: 'field', inboundTag: [`socks-${route}`], outboundTag: `user-${route}` })) },
+    };
+    const bridgeB = localize(JSON.parse(gen.generateBridgeConfig(exitLinks[1], local)), caFile);
+    for (const ob of bridgeB.outbounds) {
+        if (ob.protocol === 'freedom') ob.settings = { ...ob.settings, redirect: `127.0.0.1:${pages.b}` };
+    }
+    const processes = [
+        ['portal', portalCfg],
+        ['bridge-a', JSON.parse(gen.generateBridgeConfig(exitLinks[0], local))],
+        ...(scenario === 'routes' ? [['bridge-b', bridgeB]] : []),
+        ['client', clientCfg],
+    ];
+
+    const procs = [];
+    let log = '';
+    const fetchVia = async route => (await socksGet(socks[route], pages.a)) || '';
+    try {
+        for (const [name, cfg] of processes) {
+            const file = path.join(tmpDir, `multi-exit-${scenario}-${name}.json`);
+            fs.writeFileSync(file, JSON.stringify(localize(cfg, caFile), null, 2));
+            const proc = spawn(path.join(coreDir, BIN), ['run', '-c', file], {
+                env: { ...process.env, XRAY_LOCATION_ASSET: coreDir }, stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            proc.stdout.on('data', d => { log += `[${name}] ${d}`; });
+            proc.stderr.on('data', d => { log += `[${name}] ${d}`; });
+            procs.push(proc);
+        }
+
+        const deadline = Date.now() + 40000;
+        const expectations = scenario === 'routes' ? [[1, 'exit-a'], [2, 'exit-b']] : [[0, 'exit-a']];
+        let verdict = 'no response through the tunnel';
+        for (const [route, marker] of expectations) {
+            let streak = 0;
+            // Balancers need several clean answers in a row: a random pick over a
+            // dead exit would fail about half of them.
+            const needed = scenario === 'routes' ? 3 : 8;
+            while (streak < needed && Date.now() < deadline && procs.every(p => p.exitCode === null)) {
+                const body = await fetchVia(route);
+                if (body.includes(marker)) {
+                    streak++;
+                } else {
+                    if (body.includes('celerity-e2e-ok')) {
+                        verdict = `route ${route} reached the wrong exit`;
+                        if (scenario === 'routes') break;
+                    }
+                    streak = 0;
+                    await sleep(500);
+                }
+            }
+            if (streak < needed) {
+                if (VERBOSE) console.log(`\n--- multi-exit-${scenario} @ ${path.basename(coreDir)} ---\n${log}`);
+                const tailLines = log.trim().split(/\r?\n/).slice(-3).join(' | ');
+                return `FAIL: ${verdict}${tailLines ? `: ${tailLines.slice(0, 400)}` : ''}`;
+            }
+        }
+        return 'OK';
+    } finally {
+        for (const p of procs) p.kill();
+    }
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 function printTable(title, rows, versions, results) {
@@ -401,7 +528,24 @@ async function main() {
             }
         }
         server.close();
-        printTable('end-to-end through the tunnel', variants.map(v => v.tag), versions, e2e);
+
+        const pageServers = ['exit-a', 'exit-b'].map(marker => http.createServer((req, res) => res.end(`celerity-e2e-ok ${marker}`)));
+        await Promise.all(pageServers.map(s => new Promise(r => s.listen(0, '127.0.0.1', r))));
+        const pages = { a: pageServers[0].address().port, b: pageServers[1].address().port };
+        const multiRows = ['routes', 'leastPing', 'leastLoad']
+            .map(scenario => ({ scenario, tag: `multi-exit-${scenario}` }))
+            .filter(row => !ONLY || new RegExp(ONLY).test(row.tag));
+        for (const { scenario, tag } of multiRows) {
+            e2e[tag] = {};
+            for (const v of versions) {
+                if (!required(all.multiExitMin, v)) continue;
+                const r = await runMultiExitE2e(coreDirs[v], scenario, caFile, pages, tmpDir);
+                e2e[tag][v] = r;
+                if (r !== 'OK') failures.push(`e2e ${tag} @ ${v}: ${r}`);
+            }
+        }
+        pageServers.forEach(s => s.close());
+        printTable('end-to-end through the tunnel', [...variants.map(v => v.tag), ...multiRows.map(r => r.tag)], versions, e2e);
     }
 
     fs.rmSync(tmpDir, { recursive: true, force: true });

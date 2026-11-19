@@ -10,7 +10,6 @@ const mongoose = require('mongoose');
 const CascadeLink = require('../models/cascadeLinkModel');
 const HyNode = require('../models/hyNodeModel');
 const cascadeService = require('../services/cascadeService');
-const cache = require('../services/cacheService');
 const logger = require('../utils/logger');
 const { requireScope } = require('../middleware/auth');
 const { isServerlessNode } = require('../utils/nodeTypes');
@@ -22,9 +21,14 @@ const {
     sanitizeKcpInput,
     generateKcpPassword,
 } = require('../utils/cascadeTransport');
+const {
+    normalizePortalSettings,
+    sanitizeLinkPublishInput,
+    sanitizePortalSettingsInput,
+} = require('../utils/cascadePublish');
 
 async function invalidateCascadeCache() {
-    await cache.invalidateAllSubscriptions();
+    await cascadeService.invalidatePublication();
 }
 
 const deployLimiter = rateLimit({
@@ -206,6 +210,10 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
         if (kcpInput.error) {
             return res.status(400).json({ error: kcpInput.error });
         }
+        const publishInput = sanitizeLinkPublishInput(req.body);
+        if (publishInput.error) {
+            return res.status(400).json({ error: publishInput.error });
+        }
 
         const [portalNode, bridgeNode] = await Promise.all([
             HyNode.findById(portalNodeId),
@@ -266,6 +274,7 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
             muxConcurrency: parseInt(muxConcurrency) || 8,
             priority: parseInt(priority) || 100,
             ...kcpInput.fields,
+            ...publishInput.fields,
         };
         if (isKcpTransport(trans)) {
             linkData.kcpPassword = generateKcpPassword();
@@ -293,6 +302,9 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
         }
 
         const link = await CascadeLink.create(linkData);
+        if (linkMode !== 'forward') {
+            await cascadeService.ensureRouteIds(portalNodeId);
+        }
 
         const populated = await CascadeLink.findById(link._id)
             .populate('portalNode', 'name ip flag status')
@@ -449,6 +461,22 @@ router.put('/links/:id', requireScope('nodes:write'), async (req, res) => {
             if (conflict) return res.status(400).json({ error: conflict });
         }
 
+        const publishInput = sanitizeLinkPublishInput(req.body);
+        if (publishInput.error) {
+            return res.status(400).json({ error: publishInput.error });
+        }
+        Object.assign(updates, publishInput.fields);
+        // Label is subscription-only; the flags change the portal routing.
+        const flagKeys = ['publishInSubscription', 'includeInBalancer'];
+        let portalRoutingChanged = false;
+        if (flagKeys.some(key => publishInput.fields[key] !== undefined)) {
+            currentLink = currentLink || await CascadeLink.findById(req.params.id);
+            if (!currentLink) return res.status(404).json({ error: 'Cascade link not found' });
+            portalRoutingChanged = flagKeys.some(key =>
+                publishInput.fields[key] !== undefined && publishInput.fields[key] !== (currentLink[key] !== false)
+            );
+        }
+
         // Geo-routing settings
         if (req.body.geoRouting !== undefined) {
             const gr = req.body.geoRouting;
@@ -488,18 +516,33 @@ router.put('/links/:id', requireScope('nodes:write'), async (req, res) => {
 
         logger.info(`[Cascade API] Updated link ${link.name}`);
 
+        // Null when the portal node was deleted and the link left dangling.
+        const portalId = link.portalNode?._id || link.portalNode;
+        if (portalId && link.mode !== 'forward' && link.routeId == null) {
+            await cascadeService.ensureRouteIds(portalId);
+            const refreshed = await CascadeLink.findById(link._id).select('routeId').lean();
+            link.routeId = refreshed?.routeId ?? null;
+        }
+
         // Invalidate subscription cache
         await invalidateCascadeCache();
 
+        const isDeployed = ['deployed', 'online', 'offline'].includes(link.status);
         // Auto-redeploy chain if link was deployed and settings changed
-        if (req.body.autoRedeploy && ['deployed', 'online', 'offline'].includes(link.status)) {
-            cascadeService.deployChain(link.portalNode._id || link.portalNode).then(result => {
+        if (portalId && req.body.autoRedeploy && isDeployed) {
+            cascadeService.deployChain(portalId).then(result => {
                 if (!result.success) {
                     logger.warn(`[Cascade API] Auto-redeploy failed: ${result.errors.join('; ')}`);
                 }
             }).catch(err => {
                 logger.warn(`[Cascade API] Auto-redeploy failed: ${err.message}`);
             });
+        } else if (portalId && portalRoutingChanged && isDeployed && link.mode !== 'forward') {
+            if (req.body.deferPortalRedeploy === true) {
+                await cascadeService.markPortalRedeployPending(portalId);
+            } else {
+                cascadeService.redeployPortalInBackground(portalId);
+            }
         }
 
         res.json(link);
@@ -558,15 +601,19 @@ router.patch('/links/:id/reconnect', requireScope('nodes:write'), async (req, re
         }
 
         const updates = { status: 'pending', lastError: '' };
+        const portalChanged = !!portalNodeId && portalNodeId !== String(link.portalNode);
         if (portalNodeId) updates.portalNode = portalNodeId;
         if (bridgeNodeId) updates.bridgeNode = bridgeNodeId;
+        // Route ids are unique per portal; the new portal allocates its own.
+        if (portalChanged) updates.routeId = null;
 
-        const updated = await CascadeLink.findByIdAndUpdate(
-            req.params.id,
-            { $set: updates },
-            { new: true }
-        ).populate('portalNode', 'name ip flag status')
-         .populate('bridgeNode', 'name ip flag status');
+        await CascadeLink.updateOne({ _id: req.params.id }, { $set: updates });
+        if (portalChanged && link.mode !== 'forward') {
+            await cascadeService.ensureRouteIds(effectivePortalId);
+        }
+        const updated = await CascadeLink.findById(req.params.id)
+            .populate('portalNode', 'name ip flag status')
+            .populate('bridgeNode', 'name ip flag status');
 
         logger.info(`[Cascade API] Reconnected link ${updated.name}`);
 
@@ -742,6 +789,94 @@ router.get('/links/:id/health', requireScope('nodes:read'), async (req, res) => 
     } catch (error) {
         logger.error(`[Cascade API] Health error: ${error.message}`);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// ==================== PORTAL PUBLICATION ====================
+
+/**
+ * Settings plus the data the panel needs to preview subscription entries.
+ */
+async function buildPortalSettingsResponse(node) {
+    const links = await CascadeLink.find({ portalNode: node._id, mode: { $ne: 'forward' } })
+        .select('name routeId publishInSubscription subscriptionLabel includeInBalancer status active geoRouting')
+        .populate('bridgeNode', 'name flag')
+        .sort({ routeId: 1 })
+        .lean();
+    const extraInbounds = (node.xray?.extraInbounds || []).filter(i => i && i.port).length;
+    return {
+        nodeId: String(node._id),
+        name: node.name,
+        flag: node.flag || '',
+        settings: normalizePortalSettings(node.cascadePortal),
+        redeployPending: node.cascadePortal?.redeployPending === true,
+        publishedInbounds: 1 + extraInbounds,
+        exits: links.map(l => ({
+            linkId: String(l._id),
+            name: l.name,
+            routeId: l.routeId ?? null,
+            bridgeName: l.bridgeNode?.name || '',
+            bridgeFlag: l.bridgeNode?.flag || '',
+            publishInSubscription: l.publishInSubscription !== false,
+            includeInBalancer: l.includeInBalancer !== false,
+            subscriptionLabel: l.subscriptionLabel || '',
+            status: l.status,
+            active: l.active !== false,
+            geoRouting: !!l.geoRouting?.enabled,
+        })),
+    };
+}
+
+/**
+ * GET /cascade/portals/:nodeId/settings — publication settings of a portal
+ */
+router.get('/portals/:nodeId/settings', requireScope('nodes:read'), async (req, res) => {
+    try {
+        if (!isValidObjectId(req.params.nodeId)) {
+            return res.status(400).json({ error: 'Invalid node ID' });
+        }
+        const node = await HyNode.findById(req.params.nodeId)
+            .select('name flag type cascadePortal xray.extraInbounds.port')
+            .lean();
+        if (!node) return res.status(404).json({ error: 'Node not found' });
+        if (node.type !== 'xray') return res.status(400).json({ error: 'Only Xray nodes can be cascade portals' });
+        res.json(await buildPortalSettingsResponse(node));
+    } catch (error) {
+        logger.error(`[Cascade API] Portal settings read error: ${error.message}`);
+        res.status(500).json({ error: 'Failed to load portal settings' });
+    }
+});
+
+/**
+ * PUT /cascade/portals/:nodeId/settings — update publication settings and
+ * redeploy the portal config when the change affects it
+ */
+router.put('/portals/:nodeId/settings', requireScope('nodes:write'), deployLimiter, async (req, res) => {
+    try {
+        if (!isValidObjectId(req.params.nodeId)) {
+            return res.status(400).json({ error: 'Invalid node ID' });
+        }
+        const input = sanitizePortalSettingsInput(req.body);
+        if (input.error) return res.status(400).json({ error: input.error });
+
+        const result = await cascadeService.updatePortalSettings(req.params.nodeId, input.fields, {
+            // Set by the panel after saving link flags with deferPortalRedeploy.
+            forceRedeploy: req.body.forceRedeploy === true,
+        });
+        const node = await HyNode.findById(req.params.nodeId)
+            .select('name flag type cascadePortal xray.extraInbounds.port')
+            .lean();
+        logger.info(`[Cascade API] Portal ${node?.name} publication settings updated`);
+        res.json({
+            ...(await buildPortalSettingsResponse(node)),
+            redeployed: result.redeployed,
+            redeployError: result.error || null,
+        });
+    } catch (error) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        if (error.name === 'ValidationError') return res.status(400).json({ error: error.message });
+        logger.error(`[Cascade API] Portal settings update error: ${error.message}`);
+        res.status(500).json({ error: 'Failed to update portal settings' });
     }
 });
 

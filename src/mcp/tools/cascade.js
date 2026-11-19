@@ -7,7 +7,6 @@ const { z } = require('zod');
 const CascadeLink = require('../../models/cascadeLinkModel');
 const HyNode = require('../../models/hyNodeModel');
 const cascadeService = require('../../services/cascadeService');
-const cache = require('../../services/cacheService');
 const logger = require('../../utils/logger');
 const { isServerlessNode } = require('../../utils/nodeTypes');
 const {
@@ -20,9 +19,18 @@ const {
     sanitizeKcpInput,
     generateKcpPassword,
 } = require('../../utils/cascadeTransport');
+const {
+    CASCADE_PUBLISH_MODES,
+    CASCADE_BALANCER_STRATEGIES,
+    CASCADE_FALLBACKS,
+    SUBSCRIPTION_LABEL_MAX,
+    normalizePortalSettings,
+    sanitizeLinkPublishInput,
+    sanitizePortalSettingsInput,
+} = require('../../utils/cascadePublish');
 
 async function invalidateCascadeCache() {
-    await cache.invalidateAllSubscriptions();
+    await cascadeService.invalidatePublication();
 }
 
 // ─── Schemas ────────────────────────────────────────────────────────────────
@@ -37,8 +45,19 @@ const queryCascadeSchema = z.object({
 });
 
 const manageCascadeSchema = z.object({
-    action: z.enum(['create', 'update', 'delete', 'deploy', 'undeploy', 'reconnect']),
-    id: z.string().optional().describe('Link _id (required for all except create)'),
+    action: z.enum(['create', 'update', 'delete', 'deploy', 'undeploy', 'reconnect', 'portal_settings']),
+    id: z.string().optional().describe('Link _id (required for all except create and portal_settings)'),
+    nodeId: z.string().optional().describe('Portal node _id (required for portal_settings)'),
+    portal: z.object({
+        publishMode: z.enum(CASCADE_PUBLISH_MODES).optional()
+            .describe('single: one balanced entry (default); perExit: one entry per exit; both: balanced entry plus one per exit'),
+        balancerStrategy: z.enum(CASCADE_BALANCER_STRATEGIES).optional()
+            .describe('Balancer of the shared entry; leastPing/leastLoad add an observatory on the portal'),
+        fallback: z.enum(CASCADE_FALLBACKS).optional()
+            .describe('Where the shared entry goes when leastPing/leastLoad find no live exit or no exit is in the balancer: direct leaks the portal IP, block drops traffic'),
+        probeUrl: z.string().max(255).optional().describe('http(s) URL probed by leastPing/leastLoad'),
+        probeInterval: z.string().max(8).optional().describe('Probe interval such as 30s, 1m, 500ms'),
+    }).optional().describe('portal_settings: fields to change; omit to read the current settings, pass {} to apply a pending portal redeploy'),
     data: z.object({
         name: z.string().optional(),
         portalNodeId: z.string().optional(),
@@ -58,6 +77,12 @@ const manageCascadeSchema = z.object({
         kcpHeader: z.enum(KCP_HEADERS).optional().describe('mKCP packet-header camouflage'),
         mode: z.enum(['reverse', 'forward']).optional(),
         priority: z.number().int().optional(),
+        publishInSubscription: z.boolean().optional()
+            .describe('Reverse only: publish this exit as a separate subscription entry when the portal uses perExit/both'),
+        includeInBalancer: z.boolean().optional()
+            .describe('Reverse only: use this exit for the shared (balanced) entry'),
+        subscriptionLabel: z.string().max(SUBSCRIPTION_LABEL_MAX).optional()
+            .describe('Entry name in subscriptions; empty uses "<portal> → <bridge>"'),
     }).optional(),
 });
 
@@ -127,6 +152,8 @@ async function manageCascade(args, emit) {
             if (protocolError) return { error: protocolError, code: 400 };
             const kcpInput = sanitizeKcpInput(data);
             if (kcpInput.error) return { error: kcpInput.error, code: 400 };
+            const publishInput = sanitizeLinkPublishInput(data);
+            if (publishInput.error) return { error: publishInput.error, code: 400 };
 
             const portCheckField = linkMode === 'forward' ? 'bridgeNode' : 'portalNode';
             const portCheckId = linkMode === 'forward' ? data.bridgeNodeId : data.portalNodeId;
@@ -165,8 +192,12 @@ async function manageCascade(args, emit) {
                 muxEnabled: false,
                 muxConcurrency: 8,
                 ...kcpInput.fields,
+                ...publishInput.fields,
                 ...(isKcpTransport(trans) ? { kcpPassword: generateKcpPassword() } : {}),
             });
+            if (linkMode !== 'forward') {
+                await cascadeService.ensureRouteIds(data.portalNodeId);
+            }
 
             await invalidateCascadeCache();
             logger.info(`[MCP] Created cascade link ${data.name}: ${portalNode.name} -> ${bridgeNode.name}`);
@@ -186,7 +217,8 @@ async function manageCascade(args, emit) {
                 if (data[k] !== undefined) updates[k] = data[k];
             }
             const current = await CascadeLink.findById(id)
-                .select('mode portalNode bridgeNode tunnelPort tunnelProtocol tunnelTransport tunnelSecurity kcpPassword').lean();
+                .select('mode portalNode bridgeNode tunnelPort tunnelProtocol tunnelTransport tunnelSecurity kcpPassword ' +
+                    'status publishInSubscription includeInBalancer').lean();
             if (!current) return { error: `Cascade link '${id}' not found`, code: 404 };
             const effectiveMode = updates.mode || current.mode || 'reverse';
             if (updates.tunnelProtocol === undefined && effectiveMode !== 'forward' && current.tunnelProtocol === 'vmess') {
@@ -203,6 +235,13 @@ async function manageCascade(args, emit) {
             const kcpInput = sanitizeKcpInput(data);
             if (kcpInput.error) return { error: kcpInput.error, code: 400 };
             Object.assign(updates, kcpInput.fields);
+            const publishInput = sanitizeLinkPublishInput(data);
+            if (publishInput.error) return { error: publishInput.error, code: 400 };
+            Object.assign(updates, publishInput.fields);
+            // Label is subscription-only; the flags change the portal routing.
+            const portalRoutingChanged = ['publishInSubscription', 'includeInBalancer'].some(key =>
+                publishInput.fields[key] !== undefined && publishInput.fields[key] !== (current[key] !== false)
+            );
             if (isKcpTransport(effectiveTrans) && !current.kcpPassword) {
                 updates.kcpPassword = generateKcpPassword();
             }
@@ -222,8 +261,48 @@ async function manageCascade(args, emit) {
                 .populate('portalNode', 'name ip status')
                 .populate('bridgeNode', 'name ip status');
             if (!link) return { error: `Cascade link '${id}' not found`, code: 404 };
+            const portalId = link.portalNode?._id || link.portalNode;
+            if (portalId && link.mode !== 'forward' && link.routeId == null) {
+                await cascadeService.ensureRouteIds(portalId);
+                const refreshed = await CascadeLink.findById(link._id).select('routeId').lean();
+                link.routeId = refreshed?.routeId ?? null;
+            }
             await invalidateCascadeCache();
+            if (portalId && portalRoutingChanged && link.mode !== 'forward'
+                && ['deployed', 'online', 'offline'].includes(link.status)) {
+                cascadeService.redeployPortalInBackground(portalId);
+            }
             return { success: true, link };
+        }
+
+        case 'portal_settings': {
+            if (!parsed.nodeId) throw new Error('nodeId is required for portal_settings');
+            const node = await HyNode.findById(parsed.nodeId).select('name type cascadePortal').lean();
+            if (!node) return { error: 'Node not found', code: 404 };
+            if (node.type !== 'xray') return { error: 'Only Xray nodes can be cascade portals', code: 400 };
+
+            if (!parsed.portal) {
+                return {
+                    success: true,
+                    nodeId: String(node._id),
+                    settings: normalizePortalSettings(node.cascadePortal),
+                    redeployPending: node.cascadePortal?.redeployPending === true,
+                };
+            }
+            const input = sanitizePortalSettingsInput(parsed.portal);
+            if (input.error) return { error: input.error, code: 400 };
+
+            emit('progress', { message: `Updating portal '${node.name}' publication settings...` });
+            const result = await cascadeService.updatePortalSettings(parsed.nodeId, input.fields);
+            logger.info(`[MCP] Portal ${node.name} publication settings updated`);
+            return {
+                success: true,
+                nodeId: String(node._id),
+                settings: result.settings,
+                redeployed: result.redeployed,
+                redeployPending: result.redeployPending,
+                redeployError: result.error || null,
+            };
         }
 
         case 'delete': {
@@ -294,7 +373,7 @@ async function manageCascade(args, emit) {
 
 async function getTopology() {
     const [nodes, links] = await Promise.all([
-        HyNode.find({ active: true }).select('name ip status cascadeRole country type').lean(),
+        HyNode.find({ active: true }).select('name ip status cascadeRole cascadePortal.publishMode country type').lean(),
         CascadeLink.find({})
             .populate('portalNode', 'name ip status')
             .populate('bridgeNode', 'name ip status')
@@ -309,6 +388,9 @@ async function getTopology() {
             status: l.status,
             mode: l.mode,
             tunnelPort: l.tunnelPort,
+            routeId: l.routeId ?? null,
+            publishInSubscription: l.publishInSubscription !== false,
+            includeInBalancer: l.includeInBalancer !== false,
             portal: l.portalNode ? { _id: l.portalNode._id, name: l.portalNode.name } : null,
             bridge: l.bridgeNode ? { _id: l.bridgeNode._id, name: l.bridgeNode.name } : null,
         })),

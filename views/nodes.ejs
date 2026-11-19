@@ -669,6 +669,35 @@ function nodeMetaFor(node) {
                     </div>
                 </details>
 
+                <!-- Subscription publication (reverse only) -->
+                <details class="form-details" id="linkSubscriptionSection">
+                    <summary><i class="ti ti-route-2"></i> <%= t('network.subscriptionSection') %></summary>
+                    <div class="form-hint" style="margin:4px 0 8px"><%= t('network.subscriptionSectionHint') %></div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-checkbox">
+                                <input type="checkbox" name="publishInSubscription" id="linkPublishInSubscription" checked>
+                                <span><%= t('network.publishInSubscription') %></span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-checkbox">
+                                <input type="checkbox" name="includeInBalancer" id="linkIncludeInBalancer" checked>
+                                <span><%= t('network.includeInBalancer') %></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="linkSubscriptionLabel"><%= t('network.subscriptionLabel') %></label>
+                        <input type="text" name="subscriptionLabel" id="linkSubscriptionLabel" class="form-input" maxlength="64"
+                               placeholder="<%= t('network.subscriptionLabelPlaceholder') %>">
+                        <div class="form-hint" id="linkRouteIdHint" style="display:none"></div>
+                    </div>
+                </details>
+                <div class="form-hint" id="linkSubscriptionForwardHint" style="display:none">
+                    <i class="ti ti-info-circle"></i> <%= t('network.subscriptionForwardHint') %>
+                </div>
+
                 <div class="form-actions">
                     <label class="form-checkbox" style="margin-right:auto">
                         <input type="checkbox" name="autoDeploy" checked>
@@ -1357,6 +1386,9 @@ window._networkI18n = {
     tunnelPortForwardHint: <%- JSON.stringify(t('network.tunnelPortForwardHint')) %>,
     realityTunnelHint: <%- JSON.stringify(t('network.realityTunnelHint')) %>,
     portConflictClientHint: <%- JSON.stringify(t('network.portConflictClientHint')) %>,
+    subscriptionRouteId: <%- JSON.stringify(t('network.subscriptionRouteId')) %>,
+    subscriptionExitBadge: <%- JSON.stringify(t('network.subscriptionExitBadge')) %>,
+    portalExitSettings: <%- JSON.stringify(t('network.portalExitSettings')) %>,
     routeEntry: <%- JSON.stringify(t('network.routeEntry')) %>,
     routeExit: <%- JSON.stringify(t('network.routeExit')) %>,
     routeEncryption: <%- JSON.stringify(t('network.routeEncryption')) %>,
