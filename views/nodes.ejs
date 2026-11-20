@@ -31,7 +31,6 @@ function nodeMetaFor(node) {
             </button>
             <button class="view-tab" id="tabNetwork" onclick="switchNodesView('network')">
                 <i class="ti ti-topology-star-3"></i> <%= t('network.title') %>
-                <span class="beta-badge" style="margin-left:4px"><%= t('network.betaBadge') %></span>
                 <% if (linksCount) { %><span class="tab-badge"><%= linksCount %></span><% } %>
             </button>
         </div>
@@ -60,14 +59,17 @@ function nodeMetaFor(node) {
         </div>
     </div>
     <div class="page-header-center" id="networkToolbar" style="display:none">
-        <div class="filters-bar">
-            <button class="btn btn-sm" id="btnAutoLayout" title="<%= t('network.autoLayout') %>">
-                <i class="ti ti-layout-distribute-horizontal"></i> <%= t('network.autoLayout') %>
+        <div class="filters-bar" role="group" aria-label="<%= t('network.map.viewSwitch') %>">
+            <button type="button" class="btn btn-sm" data-nm-view="chains" title="<%= t('network.map.viewChainsHint') %>">
+                <i class="ti ti-route"></i> <%= t('network.map.viewChains') %>
             </button>
-            <button class="btn btn-sm" id="btnFitView" title="<%= t('network.fitView') %>">
-                <i class="ti ti-arrows-maximize"></i>
+            <button type="button" class="btn btn-sm" data-nm-view="graph" title="<%= t('network.map.viewGraphHint') %>">
+                <i class="ti ti-topology-star-3"></i> <%= t('network.map.viewGraph') %>
             </button>
-            <button class="btn btn-sm" id="btnRefresh" title="<%= t('network.refresh') %>">
+            <button type="button" class="btn btn-sm" data-nm-view="geo" title="<%= t('network.map.viewGeoHint') %>">
+                <i class="ti ti-world"></i> <%= t('network.map.viewGeo') %> <span class="nm-view-hint"><%= t('network.map.overview') %></span>
+            </button>
+            <button type="button" class="btn btn-sm" id="btnNetworkRefresh" title="<%= t('network.refresh') %>" aria-label="<%= t('network.refresh') %>">
                 <i class="ti ti-refresh"></i>
             </button>
         </div>
@@ -77,7 +79,7 @@ function nodeMetaFor(node) {
         <a href="/panel/nodes/add" class="btn btn-primary"><i class="ti ti-server-2"></i> <%= t('nodes.addNode') %></a>
     </div>
     <div class="page-header-right" id="networkActions" style="display:none">
-        <button class="btn btn-primary" id="btnAddLink"><i class="ti ti-plus"></i> <%= t('network.addLink') %></button>
+        <button type="button" class="btn btn-primary" id="btnAddLink"><i class="ti ti-link-plus"></i> <%= t('network.addLink') %></button>
     </div>
 </div>
 
@@ -414,50 +416,26 @@ function nodeMetaFor(node) {
 
 <!-- Network Map View (hidden by default, loaded on demand) -->
 <div id="viewNetwork" style="display:none">
-    <link rel="stylesheet" href="/css/network.min.css">
-    <div class="network-page">
-        <div class="network-container">
-            <div id="cy" class="cytoscape-canvas"></div>
-
-            <!-- Empty state -->
-            <div class="network-empty" id="networkEmpty" style="display:none">
-                <i class="ti ti-topology-star-3"></i>
-                <p><%= t('network.noNodesOrLinks') %></p>
+    <link rel="stylesheet" href="/css/network.min.css?v=<%= appVersion %>">
+    <%
+        const networkI18n = Object.assign({}, (typeof locales !== 'undefined' && locales && locales.network) || {}, {
+            delete: t('common.delete'),
+            edit: t('common.edit'),
+            save: t('common.save'),
+            terminal: t('nodes.terminal'),
+            sshNotConfigured: t('nodes.sshNotConfigured'),
+        });
+    %>
+    <script type="application/json" id="networkI18n"><%- JSON.stringify(networkI18n).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029') %></script>
+    <div class="network-page" id="networkRoot">
+        <div class="nm-bar"></div>
+        <div class="nm-body">
+            <div class="nm-stage"></div>
+            <aside class="nm-insp" aria-label="<%= t('network.map.inspector') %>"></aside>
+            <div class="nm-state">
+                <i class="ti ti-loader-2 nm-spin"></i>
+                <p><%= t('network.loadingTopology') %></p>
             </div>
-
-            <!-- Legend -->
-            <div class="network-legend" id="networkLegend">
-                <div class="legend-title"><%= t('network.legendTitle') %></div>
-                <div class="legend-section">
-                    <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span><%= t('network.legendOnline') %></div>
-                    <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span><%= t('network.legendOffline') %></div>
-                    <div class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span><%= t('network.legendDeployed') %></div>
-                    <div class="legend-item"><span class="legend-dot" style="background:#64748b"></span><%= t('network.legendPending') %></div>
-                </div>
-                <div class="legend-divider"></div>
-                <div class="legend-section">
-                    <div class="legend-item"><span class="legend-role legend-portal"></span><%= t('network.legendPortal') %></div>
-                    <div class="legend-item"><span class="legend-role legend-bridge"></span><%= t('network.legendBridge') %></div>
-                    <div class="legend-item"><span class="legend-role legend-relay"></span><%= t('network.legendRelay') %></div>
-                </div>
-                <div class="legend-divider"></div>
-                <div class="legend-section">
-                    <div class="legend-item"><span class="legend-line legend-line-forward"></span><%= t('network.legendForwardLine') %></div>
-                    <div class="legend-item"><span class="legend-line legend-line-reverse"></span><%= t('network.legendReverseLine') %></div>
-                </div>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- Node/Edge info modal -->
-    <div class="modal-overlay" id="nodeInfoModal">
-        <div class="modal-card modal-card-sm">
-            <div class="modal-header">
-                <h3 id="nodeInfoTitle"><i class="ti ti-info-circle"></i> <span id="nodeInfoTitleText"></span></h3>
-                <button class="modal-close" id="nodeInfoClose"><i class="ti ti-x"></i></button>
-            </div>
-            <div class="modal-body" id="nodeInfoBody"></div>
         </div>
     </div>
 
@@ -465,15 +443,11 @@ function nodeMetaFor(node) {
     <div class="modal-overlay" id="addLinkModal">
         <div class="modal-card modal-card-lg">
             <div class="modal-header">
-                <h3><i class="ti ti-link"></i> <span id="linkModalTitle"><%= t('network.addLink') %></span> <span class="beta-badge"><%= t('network.betaBadge') %></span></h3>
+                <h3><i class="ti ti-link"></i> <span id="linkModalTitle"><%= t('network.addLink') %></span></h3>
                 <button class="modal-close" id="modalClose"><i class="ti ti-x"></i></button>
             </div>
             <form id="addLinkForm" class="modal-body">
                 <input type="hidden" name="linkId" id="linkIdInput" value="">
-                <div class="form-warning" id="formBetaNotice">
-                    <strong><%= t('network.betaTitle') %></strong>
-                    <%= t('network.betaDescription') %>
-                </div>
                 <div class="form-group">
                     <label><%= t('network.linkName') %></label>
                     <input type="text" name="name" class="form-input" required placeholder="YandexCloud → France">
@@ -705,72 +679,6 @@ function nodeMetaFor(node) {
                     </label>
                     <button type="button" class="btn" id="modalCancel"><%= t('common.cancel') %></button>
                     <button type="submit" class="btn btn-primary" id="linkModalSubmit"><i class="ti ti-plus"></i> <%= t('network.createLink') %></button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Quick Link Modal (opened by drag-to-create on map) -->
-    <div class="modal-overlay" id="quickLinkModal">
-        <div class="modal-card modal-card-sm">
-            <div class="modal-header">
-                <h3><i class="ti ti-link"></i> <span id="quickLinkTitle"><%= t('network.quickLinkTitle') %></span></h3>
-                <button class="modal-close" id="quickModalClose"><i class="ti ti-x"></i></button>
-            </div>
-            <form id="quickLinkForm" class="modal-body">
-                <input type="hidden" id="quickPortalId">
-                <input type="hidden" id="quickBridgeId">
-                <input type="hidden" id="quickLinkMode" value="reverse">
-                <div class="quick-link-nodes">
-                    <div class="quick-node portal">
-                        <div class="quick-node-label"><%= t('network.quickLinkPortal') %></div>
-                        <div class="quick-node-name" id="quickPortalName"></div>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-icon" id="quickSwapBtn" title="<%= t('network.swapNodes') %>">
-                        <i class="ti ti-arrows-exchange"></i>
-                    </button>
-                    <div class="quick-node bridge">
-                        <div class="quick-node-label"><%= t('network.quickLinkBridge') %></div>
-                        <div class="quick-node-name" id="quickBridgeName"></div>
-                    </div>
-                </div>
-                <!-- Quick Mode Switcher -->
-                <div class="form-group" style="margin-top:10px">
-                    <div class="mode-switcher mode-switcher-sm" id="quickModeSwitcher">
-                        <button type="button" class="mode-btn active" data-mode="reverse">
-                            <i class="ti ti-arrows-exchange"></i> <%= t('network.modeReverse') %>
-                        </button>
-                        <button type="button" class="mode-btn" data-mode="forward">
-                            <i class="ti ti-arrow-right"></i> <%= t('network.modeForward') %>
-                        </button>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label><%= t('network.linkName') %></label>
-                    <input type="text" id="quickLinkName" class="form-input" required>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label><%= t('network.tunnelPort') %></label>
-                        <input type="number" id="quickTunnelPort" class="form-input" value="10086" min="1" max="65535">
-                    </div>
-                    <div class="form-group">
-                        <label><%= t('network.tunnelProtocol') %></label>
-                        <select id="quickTunnelProtocol" class="form-input">
-                            <option value="vless">VLESS</option>
-                            <option value="vmess">VMess</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-actions">
-                    <label class="form-checkbox" style="margin-right:auto">
-                        <input type="checkbox" id="quickAutoDeploy" checked>
-                        <span><%= t('network.autoDeploy') %></span>
-                    </label>
-                    <button type="button" class="btn" id="quickModalCancel"><%= t('common.cancel') %></button>
-                    <button type="submit" class="btn btn-primary" id="quickLinkSubmit">
-                        <i class="ti ti-plus"></i> <%= t('network.createLink') %>
-                    </button>
                 </div>
             </form>
         </div>
@@ -1326,111 +1234,11 @@ function switchNodesView(view) {
     }
 }
 
-window._networkI18n = {
-    selectPortal: <%- JSON.stringify(t('network.selectPortal')) %>,
-    selectBridge: <%- JSON.stringify(t('network.selectBridge')) %>,
-    errorLoadingNodes: <%- JSON.stringify(t('network.errorLoadingNodes')) %>,
-    fillRequired: <%- JSON.stringify(t('network.fillRequired')) %>,
-    loadingTopology: <%- JSON.stringify(t('network.loadingTopology')) %>,
-    noNodesOrLinks: <%- JSON.stringify(t('network.noNodesOrLinks')) %>,
-    drawerStatus: <%- JSON.stringify(t('network.drawerStatus')) %>,
-    drawerIP: <%- JSON.stringify(t('network.drawerIP')) %>,
-    drawerType: <%- JSON.stringify(t('network.drawerType')) %>,
-    drawerRole: <%- JSON.stringify(t('network.drawerRole')) %>,
-    drawerOnline: <%- JSON.stringify(t('network.drawerOnline')) %>,
-    drawerPort: <%- JSON.stringify(t('network.drawerPort')) %>,
-    openNode: <%- JSON.stringify(t('network.openNode')) %>,
-    drawerTunnelPort: <%- JSON.stringify(t('network.drawerTunnelPort')) %>,
-    drawerProtocolTransport: <%- JSON.stringify(t('network.drawerProtocolTransport')) %>,
-    drawerLatency: <%- JSON.stringify(t('network.drawerLatency')) %>,
-    confirmDeploy: <%- JSON.stringify(t('network.confirmDeploy')) %>,
-    confirmDeleteLink: <%- JSON.stringify(t('network.confirmDeleteLink')) %>,
-    deploying: <%- JSON.stringify(t('network.deploying')) %>,
-    deleting: <%- JSON.stringify(t('network.deleting')) %>,
-    reconnecting: <%- JSON.stringify(t('network.reconnecting')) %>,
-    deploySuccess: <%- JSON.stringify(t('network.deploySuccess')) %>,
-    deleteSuccess: <%- JSON.stringify(t('network.deleteSuccess')) %>,
-    reconnectSuccess: <%- JSON.stringify(t('network.reconnectSuccess')) %>,
-    reconnectFailed: <%- JSON.stringify(t('network.reconnectFailed')) %>,
-    deployFailed: <%- JSON.stringify(t('network.deployFailed')) %>,
-    networkError: <%- JSON.stringify(t('network.networkError')) %>,
-    deploy: <%- JSON.stringify(t('network.deploy')) %>,
-    delete: <%- JSON.stringify(t('common.delete')) %>,
-    changeBridge: <%- JSON.stringify(t('network.changeBridge')) %>,
-    changePortal: <%- JSON.stringify(t('network.changePortal')) %>,
-    reconnectModal: <%- JSON.stringify(t('network.reconnectModal')) %>,
-    newBridgeNode: <%- JSON.stringify(t('network.newBridgeNode')) %>,
-    newPortalNode: <%- JSON.stringify(t('network.newPortalNode')) %>,
-    quickLinkTitle: <%- JSON.stringify(t('network.quickLinkTitle')) %>,
-    quickLinkPortal: <%- JSON.stringify(t('network.quickLinkPortal')) %>,
-    quickLinkBridge: <%- JSON.stringify(t('network.quickLinkBridge')) %>,
-    swapNodes: <%- JSON.stringify(t('network.swapNodes')) %>,
-    rolePortal: <%- JSON.stringify(t('network.rolePortal')) %>,
-    roleBridge: <%- JSON.stringify(t('network.roleBridge')) %>,
-    roleRelay: <%- JSON.stringify(t('network.roleRelay')) %>,
-    addLink: <%- JSON.stringify(t('network.addLink')) %>,
-    createLink: <%- JSON.stringify(t('network.createLink')) %>,
-    linkMode: <%- JSON.stringify(t('network.linkMode')) %>,
-    modeReverse: <%- JSON.stringify(t('network.modeReverse')) %>,
-    modeForward: <%- JSON.stringify(t('network.modeForward')) %>,
-    modeReverseHint: <%- JSON.stringify(t('network.modeReverseHint')) %>,
-    modeForwardHint: <%- JSON.stringify(t('network.modeForwardHint')) %>,
-    modeReverseFlow: <%- JSON.stringify(t('network.modeReverseFlow')) %>,
-    modeForwardFlow: <%- JSON.stringify(t('network.modeForwardFlow')) %>,
-    modeReverseWarning: <%- JSON.stringify(t('network.modeReverseWarning')) %>,
-    modeForwardWarning: <%- JSON.stringify(t('network.modeForwardWarning')) %>,
-    betaBadge: <%- JSON.stringify(t('network.betaBadge')) %>,
-    betaTitle: <%- JSON.stringify(t('network.betaTitle')) %>,
-    betaDescription: <%- JSON.stringify(t('network.betaDescription')) %>,
-    tunnelPortReverseHint: <%- JSON.stringify(t('network.tunnelPortReverseHint')) %>,
-    tunnelPortForwardHint: <%- JSON.stringify(t('network.tunnelPortForwardHint')) %>,
-    realityTunnelHint: <%- JSON.stringify(t('network.realityTunnelHint')) %>,
-    portConflictClientHint: <%- JSON.stringify(t('network.portConflictClientHint')) %>,
-    subscriptionRouteId: <%- JSON.stringify(t('network.subscriptionRouteId')) %>,
-    subscriptionExitBadge: <%- JSON.stringify(t('network.subscriptionExitBadge')) %>,
-    portalExitSettings: <%- JSON.stringify(t('network.portalExitSettings')) %>,
-    routeEntry: <%- JSON.stringify(t('network.routeEntry')) %>,
-    routeExit: <%- JSON.stringify(t('network.routeExit')) %>,
-    routeEncryption: <%- JSON.stringify(t('network.routeEncryption')) %>,
-    routePath: <%- JSON.stringify(t('network.routePath')) %>,
-    undeployLink: <%- JSON.stringify(t('network.undeployLink')) %>,
-    confirmDeployChain: <%- JSON.stringify(t('network.confirmDeployChain')) %>,
-    syncingChain: <%- JSON.stringify(t('network.syncingChain')) %>,
-    chainDeploySuccess: <%- JSON.stringify(t('network.chainDeploySuccess')) %>,
-    chainDeployFailed: <%- JSON.stringify(t('network.chainDeployFailed')) %>,
-    syncChain: <%- JSON.stringify(t('network.syncChain')) %>,
-    confirmUndeploy: <%- JSON.stringify(t('network.confirmUndeploy')) %>,
-    undeploying: <%- JSON.stringify(t('network.undeploying')) %>,
-    undeploySuccess: <%- JSON.stringify(t('network.undeploySuccess')) %>,
-    edit: <%- JSON.stringify(t('common.edit')) %>,
-    save: <%- JSON.stringify(t('common.save')) %>,
-    terminal: <%- JSON.stringify(t('nodes.terminal')) %>,
-    sshNotConfigured: <%- JSON.stringify(t('nodes.sshNotConfigured')) %>,
-    nodes: <%- JSON.stringify(t('network.nodes')) %>,
-    internetDesc: <%- JSON.stringify(t('network.internetDesc')) %>,
-    internetExitDesc: <%- JSON.stringify(t('network.internetExitDesc')) %>,
-    internetExit: <%- JSON.stringify(t('network.internetExit')) %>
-};
-
 function loadNetworkScripts() {
-    const scripts = [
-        'https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.4/cytoscape.min.js',
-        'https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js',
-        'https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js',
-        'https://cdn.jsdelivr.net/npm/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.min.js',
-        '/js/network.min.js'
-    ];
-
-    let idx = 0;
-    function next() {
-        if (idx >= scripts.length) return;
-        const s = document.createElement('script');
-        s.src = scripts[idx];
-        s.onload = function() { idx++; next(); };
-        s.onerror = function() { idx++; next(); };
-        document.body.appendChild(s);
-    }
-    next();
+    const s = document.createElement('script');
+    s.type = 'module';
+    s.src = '/js/network/dist/index.js?v=<%= encodeURIComponent(appVersion) %>';
+    document.body.appendChild(s);
 }
 
 // Restore network view after page load

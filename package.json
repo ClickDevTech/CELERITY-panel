@@ -1,6 +1,6 @@
 {
   "name": "c3-celerity",
-  "version": "1.6.31",
+  "version": "1.6.32",
   "description": "C³ CELERITY - Management panel for Hysteria 2 nodes by Click Connect",
   "keywords": [
     "nodejs",
@@ -32,11 +32,13 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "node scripts/test-session-cookie-config.js && node scripts/test-i18n-fallback.js && node scripts/test-node-ui-meta.js && node scripts/test-node-active-api.js && node scripts/test-auth-subscription-boundaries.js && node scripts/test-error-sanitizer.js && node scripts/test-subscription-xhttp-ruleset.js && node scripts/test-subscription-variants.js && node scripts/test-cdn-config.js && node scripts/test-cdn-discovery.js && node scripts/test-xhttp-options.js && node scripts/test-cascade-kcp.js && node scripts/test-cascade-xray-compat.js && node scripts/test-cascade-multi-exit-subscription.js && node scripts/test-xray-listen.js && node scripts/test-vless-encryption.js && node scripts/test-edge-front.js && node scripts/test-edge-front-cutover.js && node scripts/test-edge-front-db-rollback.js && node scripts/test-node-update-projection.js && node scripts/test-virtual-observatory.js && node scripts/test-xray-version-service.js && node scripts/test-freebsd-setup.js && node scripts/test-freebsd-update.js && node scripts/test-agent-readiness.js && node scripts/test-agent-first-sync.js && node scripts/test-ssh-pool.js && node scripts/test-hysteria-rollback.js && node scripts/test-xray-acme.js && node scripts/test-setup-ejs-validation.js && node scripts/test-security-ejs-validation.js && node scripts/test-remote-cron-service.js && node scripts/test-node-cron-panel.js && node scripts/test-node-cron-ui.js && node scripts/test-multicast-cron-service.js && node scripts/test-broadcast-panel.js && node scripts/test-broadcast-ui.js && node scripts/test-bulk-actions.js && node scripts/test-node-config-fields.js && node scripts/test-update-service.js && node scripts/test-reality-guard.js && node scripts/test-sni-resolve.js && node scripts/test-xray-perms.js && npm run test:access-logs && npm run test:probes",
+    "test": "node scripts/test-session-cookie-config.js && node scripts/test-i18n-fallback.js && node scripts/test-node-ui-meta.js && node scripts/test-node-active-api.js && node scripts/test-auth-subscription-boundaries.js && node scripts/test-error-sanitizer.js && node scripts/test-subscription-xhttp-ruleset.js && node scripts/test-subscription-variants.js && node scripts/test-cdn-config.js && node scripts/test-cdn-discovery.js && node scripts/test-xhttp-options.js && node scripts/test-cascade-kcp.js && node scripts/test-cascade-xray-compat.js && node scripts/test-cascade-multi-exit-subscription.js && node scripts/test-xray-listen.js && node scripts/test-vless-encryption.js && node scripts/test-edge-front.js && node scripts/test-edge-front-cutover.js && node scripts/test-edge-front-db-rollback.js && node scripts/test-node-update-projection.js && node scripts/test-virtual-observatory.js && node scripts/test-xray-version-service.js && node scripts/test-freebsd-setup.js && node scripts/test-freebsd-update.js && node scripts/test-agent-readiness.js && node scripts/test-agent-first-sync.js && node scripts/test-ssh-pool.js && node scripts/test-hysteria-rollback.js && node scripts/test-xray-acme.js && node scripts/test-setup-ejs-validation.js && node scripts/test-security-ejs-validation.js && node scripts/test-remote-cron-service.js && node scripts/test-node-cron-panel.js && node scripts/test-node-cron-ui.js && node scripts/test-multicast-cron-service.js && node scripts/test-broadcast-panel.js && node scripts/test-broadcast-ui.js && node scripts/test-bulk-actions.js && node scripts/test-node-config-fields.js && node scripts/test-update-service.js && node scripts/test-reality-guard.js && node scripts/test-sni-resolve.js && node scripts/test-xray-perms.js && node scripts/test-network-model.js && node scripts/test-cascade-positions-validation.js && npm run test:access-logs && npm run test:probes",
     "test:access-logs": "node scripts/test-access-logs-credentials.js && node scripts/test-access-logs-ingest.js && node scripts/test-access-logs-clickhouse.js && node scripts/test-access-logs-heal.js",
     "test:probes": "node scripts/test-probe-enroll.js && node scripts/test-probe-ingest.js && node scripts/test-probe-route.js && node scripts/test-probe-history.js && node scripts/test-probe-manifest.js && node scripts/test-probe-rollup.js && node scripts/test-probe-exclusion.js",
     "test:xray-matrix": "node scripts/test-xray-core-matrix.js",
-    "build:assets": "npx --yes esbuild public/css/style.css public/css/network.css --minify --loader:.css=css --outdir=public/css --out-extension:.css=.min.css --allow-overwrite && npx --yes esbuild public/js/network.js --minify --outfile=public/js/network.min.js"
+    "build:assets": "esbuild public/css/style.css public/css/network.css --minify --loader:.css=css --outdir=public/css --out-extension:.css=.min.css --allow-overwrite && npm run build:network && npm run build:vendor",
+    "build:network": "node scripts/build-network.js",
+    "build:vendor": "node scripts/copy-network-vendor.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "~3.1111.0",
@@ -72,8 +74,17 @@
     "zod": "^4.6.6"
   },
   "devDependencies": {
+    "country-flag-emoji-polyfill": "0.1.10",
+    "cytoscape": "3.35.0",
+    "cytoscape-dagre": "4.1.0",
+    "d3-geo": "3.1.2",
+    "d3-selection": "3.0.1",
+    "d3-zoom": "3.0.1",
+    "esbuild": "0.28.2",
     "express-static-gzip": "^3.0.1",
     "lightningcss-cli": "^1.32.0",
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "topojson-client": "3.1.0",
+    "world-atlas": "2.0.2"
   }
 }

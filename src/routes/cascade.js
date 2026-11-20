@@ -26,6 +26,7 @@ const {
     sanitizeLinkPublishInput,
     sanitizePortalSettingsInput,
 } = require('../utils/cascadePublish');
+const { parsePositionsBody } = require('../utils/cascadeTopology');
 
 async function invalidateCascadeCache() {
     await cascadeService.invalidatePublication();
@@ -899,17 +900,16 @@ router.get('/topology', requireScope('nodes:read'), async (req, res) => {
  * POST /cascade/topology/positions — save node positions from the map editor
  */
 router.post('/topology/positions', requireScope('nodes:write'), async (req, res) => {
+    const parsed = parsePositionsBody(req.body);
+    if (!parsed.ok) {
+        return res.status(400).json({ error: parsed.error });
+    }
     try {
-        const { positions } = req.body;
-        if (!Array.isArray(positions)) {
-            return res.status(400).json({ error: 'positions must be an array' });
-        }
-
-        await cascadeService.savePositions(positions);
+        await cascadeService.savePositions(parsed.positions);
         res.json({ success: true });
     } catch (error) {
         logger.error(`[Cascade API] Positions error: ${error.message}`);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Failed to save positions' });
     }
 });
 

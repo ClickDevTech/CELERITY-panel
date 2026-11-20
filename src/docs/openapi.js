@@ -2927,7 +2927,7 @@ integrations. Resolution is bound to the collection interval (~5 min), not per-s
                 requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['positions'], properties: { positions: { type: 'array', items: { type: 'object' } } } } } } },
                 responses: {
                     200: { description: 'Saved', content: { 'application/json': { schema: { $ref: '#/components/schemas/Success' } } } },
-                    400: { description: 'positions must be an array', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' }, examples: { invalid: { value: { error: 'positions must be an array' } } } } } },
+                    400: { description: 'Invalid positions body', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' }, examples: { invalid: { value: { error: 'invalid positions' } } } } } },
                     401: { $ref: '#/components/responses/Unauthorized' },
                     403: { $ref: '#/components/responses/Forbidden' },
                 },

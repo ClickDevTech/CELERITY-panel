@@ -40,6 +40,13 @@ function portalConfigKey(settings) {
 
 const TOPOLOGY_CACHE_KEY = 'c3:cascade:topology';
 const TOPOLOGY_CACHE_TTL = 15;
+const TOPOLOGY_ERROR_MAX = 300;
+
+/** Error text shown on the network map; bounded so the cached payload stays small. */
+function truncateTopologyError(value) {
+    const text = typeof value === 'string' ? value.trim() : '';
+    return text.length > TOPOLOGY_ERROR_MAX ? `${text.slice(0, TOPOLOGY_ERROR_MAX - 1)}…` : text;
+}
 
 /**
  * Safe Redis helpers — cache module exposes .redis but may not be connected.
@@ -948,7 +955,7 @@ class CascadeService {
             // Virtual balancers have no topology endpoint. CDN fronts do and are
             // linked to their origin below.
             HyNode.find({ active: true, type: { $ne: 'virtual' } })
-                .select('name ip domain flag type status onlineUsers cascadeRole cascadePortal mapPosition country port ssh cdn')
+                .select('name ip domain flag type status onlineUsers cascadeRole cascadePortal mapPosition country port ssh cdn lastError lastSync')
                 .lean(),
             CascadeLink.find({ active: true })
                 .populate('portalNode', 'name ip')
@@ -974,6 +981,8 @@ class CascadeService {
                 port: n.port,
                 sshConfigured: !!(n.ssh?.password || n.ssh?.privateKey),
                 publishMode: normalizePortalSettings(n.cascadePortal).publishMode,
+                lastError: truncateTopologyError(n.lastError),
+                lastSync: n.lastSync || null,
             },
             position: (n.mapPosition?.x != null && n.mapPosition?.y != null)
                 ? { x: n.mapPosition.x, y: n.mapPosition.y }
@@ -1000,6 +1009,8 @@ class CascadeService {
                     && l.publishInSubscription !== false
                     && isValidRouteId(l.routeId)
                     && publishesExits(nodeById.get(String(l.portalNode?._id || l.portalNode))?.cascadePortal),
+                lastError: truncateTopologyError(l.lastError),
+                lastHealthCheck: l.lastHealthCheck || null,
             },
         }));
 
