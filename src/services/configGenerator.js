@@ -1095,6 +1095,9 @@ function generateXrayConfig(node, users, options = {}) {
                 if (target === 'protocol:bittorrent') {
                     routingRule.protocol = ['bittorrent'];
                     routingRule.inboundTag = vlessInboundTags;
+                } else if (target.startsWith('port:')) {
+                    routingRule.port = target.slice(5);
+                    routingRule.inboundTag = vlessInboundTags;
                 } else if (target.startsWith('geoip:')) {
                     routingRule.ip = [target];
                 } else if (target.startsWith('geosite:')) {
