@@ -24,6 +24,7 @@ const {
 } = require('../utils/cascadeTransport');
 const {
     normalizePortalSettings,
+    portalListeners,
     publishesExits,
     isValidRouteId,
     pickFreeRouteId,
@@ -35,7 +36,7 @@ const DEPLOYED_STATUSES = ['deployed', 'online', 'offline'];
 /** Portal settings that change the generated Xray config. */
 function portalConfigKey(settings) {
     const s = normalizePortalSettings(settings);
-    return JSON.stringify([publishesExits(s), s.balancerStrategy, s.fallback, s.probeUrl, s.probeInterval]);
+    return JSON.stringify([publishesExits(s), s.balancerStrategy, s.fallback, s.probeUrl, s.probeInterval, s.inboundRoutes]);
 }
 
 const TOPOLOGY_CACHE_KEY = 'c3:cascade:topology';
@@ -170,10 +171,31 @@ class CascadeService {
             throw err;
         }
 
+        const savedRoutes = normalizePortalSettings(node.cascadePortal).inboundRoutes;
+        const previous = new Map(savedRoutes.map(r => [r.inboundId, r.linkId]));
+        const newRoutes = (fields.inboundRoutes || []).filter(r => previous.get(r.inboundId) !== r.linkId);
+        const pinsChanged = fields.inboundRoutes !== undefined
+            && (fields.inboundRoutes.length !== savedRoutes.length || newRoutes.length > 0);
+        if (newRoutes.length) {
+            const inboundIds = new Set(portalListeners(node).map(i => i.id));
+            const ids = [...new Set(newRoutes.map(r => r.linkId))];
+            const count = await CascadeLink.countDocuments({
+                _id: { $in: ids }, portalNode: nodeId, mode: { $ne: 'forward' },
+            });
+            if (count !== ids.length || newRoutes.some(r => !inboundIds.has(r.inboundId))) {
+                const err = new Error('Inbound routes must reference listeners and reverse links of this portal');
+                err.status = 400;
+                throw err;
+            }
+        }
+
         const before = portalConfigKey(node.cascadePortal);
         const pending = node.cascadePortal?.redeployPending === true;
         const $set = {};
-        for (const [key, value] of Object.entries(fields)) $set[`cascadePortal.${key}`] = value;
+        if (pinsChanged) $set['cascadePortal.redeployPending'] = true;
+        for (const [key, value] of Object.entries(fields)) {
+            if (key !== 'inboundRoutes' || pinsChanged) $set[`cascadePortal.${key}`] = value;
+        }
         const updated = Object.keys($set).length > 0
             ? await HyNode.findByIdAndUpdate(nodeId, { $set }, { new: true, runValidators: true })
             : node;
@@ -194,8 +216,7 @@ class CascadeService {
             active: true,
             status: { $in: DEPLOYED_STATUSES },
         });
-        if (deployedLinks === 0) {
-            if (pending) await this._setRedeployPending(nodeId, false);
+        if (deployedLinks === 0 && !pinsChanged && !pending) {
             return result;
         }
 

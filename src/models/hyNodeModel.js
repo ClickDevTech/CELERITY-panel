@@ -491,6 +491,10 @@ const virtualConfigSchema = new mongoose.Schema({
 // Reverse-cascade portal: how its exits are published to subscriptions and how
 // the default (non-geo, non-explicit) traffic is spread across them.
 const cascadePortalSchema = new mongoose.Schema({
+    inboundRoutes: { type: [new mongoose.Schema({
+        inboundId: { type: String, required: true },
+        linkId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    }, { _id: false })], default: [] },
     // single  — one entry, traffic is balanced across exits (legacy behaviour)
     // perExit — one entry per exit, selected through the VLESS UUID route bytes
     // both    — the balanced entry plus one entry per exit

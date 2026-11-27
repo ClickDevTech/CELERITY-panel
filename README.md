@@ -202,6 +202,20 @@ Client ──▶ Portal ──▶ Relay (opt.) ──▶ Bridge (exit) ──▶
 - All nodes in the chain must have a public IP
 - REALITY is supported on each hop to encrypt inter-server traffic
 
+#### Choose an exit by listener
+
+On a reverse portal, open the cascade exits card and choose **Fixed exit by listener**. Assign the main listener or an extra inbound to a reverse link. Several listeners can share a bridge. The subscription publishes each pinned listener once with the user's usual UUID. Other listeners keep the portal's per-exit or balanced entries.
+
+| Entry point | Listener on the portal | Example exit |
+| --- | --- | --- |
+| Separate public ports | VLESS on 443 and 444 | Germany and the Netherlands |
+| One HTTPS address and port | Two WS or XHTTP paths, such as `/one` and `/two`, behind the panel's Caddy front | A different bridge per path |
+| Two TLS names on one IP and port | An operator-managed SNI frontend sends each name to its own listener | A different bridge per name |
+
+For the SNI case, configure DNS, certificates and the frontend separately. When it terminates TLS, bind the downstream plaintext listeners to loopback. The selection on the portal is by listener tag. Changing only the SNI on one VLESS listener does not select another bridge.
+
+Specific node ACLs still run first. The listener's fixed exit takes precedence over a route encoded in the client UUID, destination-based cascade rules and the portal balancer. If the selected bridge disconnects or its link is removed, the pinned route stops forwarding. Select **Use portal routing** to release the pin.
+
 #### REALITY Between Nodes
 
 Tunnel-REALITY is configured **independently** from the client-facing REALITY on the Portal node. This enables:

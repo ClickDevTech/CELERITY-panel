@@ -55,6 +55,7 @@ function frontPublicHost(node = {}) {
 function listXrayInbounds(xray = {}, nodePort = 443) {
     const main = {
         id: MAIN_INBOUND_ID,
+        inboundTag: xray.inboundTag || 'vless-in',
         label: '',
         port: nodePort || 443,
         listen: xray.listen || '0.0.0.0',
@@ -70,6 +71,7 @@ function listXrayInbounds(xray = {}, nodePort = 443) {
         .filter(inbound => inbound && inbound.id && String(inbound.id) !== MAIN_INBOUND_ID)
         .map(inbound => ({
             id: String(inbound.id),
+            inboundTag: inbound.inboundTag,
             label: String(inbound.label || '').trim(),
             port: inbound.port,
             listen: inbound.listen || '0.0.0.0',
@@ -421,6 +423,7 @@ module.exports = {
     frontClientAlpn,
     frontPublicHost,
     frontBasePath,
+    listXrayInbounds,
     buildFrontRoutes,
     assignFrontLoopbackPorts,
     captureFrontInboundLayout,

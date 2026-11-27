@@ -10,6 +10,12 @@
  * subscription builder so every entry point applies the same rules.
  */
 
+const { listXrayInbounds } = require('./xrayFront');
+
+function portalListeners(node) {
+    return listXrayInbounds(node.xray || {}, node.port).map(({ id, inboundTag, label, port }) => ({ id, inboundTag, label, port }));
+}
+
 const CASCADE_PUBLISH_MODES = ['single', 'perExit', 'both'];
 const CASCADE_BALANCER_STRATEGIES = ['random', 'leastPing', 'leastLoad'];
 const CASCADE_FALLBACKS = ['direct', 'block'];
@@ -33,6 +39,7 @@ const LONE_SURROGATE_RE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF
 const PUBLISHED_EXIT_STATUSES = Object.freeze(['deployed', 'online']);
 
 const PORTAL_DEFAULTS = Object.freeze({
+    inboundRoutes: Object.freeze([]),
     publishMode: 'single',
     balancerStrategy: 'random',
     fallback: 'direct',
@@ -47,6 +54,9 @@ const PORTAL_DEFAULTS = Object.freeze({
 function normalizePortalSettings(raw) {
     const src = raw && typeof raw.toObject === 'function' ? raw.toObject() : (raw || {});
     return {
+        inboundRoutes: (Array.isArray(src.inboundRoutes) ? src.inboundRoutes : []).map(route => ({
+            inboundId: route.inboundId, linkId: String(route.linkId),
+        })),
         publishMode: CASCADE_PUBLISH_MODES.includes(src.publishMode) ? src.publishMode : PORTAL_DEFAULTS.publishMode,
         balancerStrategy: CASCADE_BALANCER_STRATEGIES.includes(src.balancerStrategy)
             ? src.balancerStrategy
@@ -90,6 +100,22 @@ function sanitizePortalSettingsInput(input = {}) {
         || pickEnum('balancerStrategy', CASCADE_BALANCER_STRATEGIES)
         || pickEnum('fallback', CASCADE_FALLBACKS);
     if (enumError) return { fields: {}, error: enumError };
+
+    if (input.inboundRoutes !== undefined) {
+        if (!Array.isArray(input.inboundRoutes)) return { fields: {}, error: 'inboundRoutes must be an array' };
+        const seen = new Set();
+        fields.inboundRoutes = [];
+        for (const route of input.inboundRoutes) {
+            if (typeof route?.inboundId !== 'string' || !route.inboundId || seen.has(route.inboundId)) {
+                return { fields: {}, error: 'Each inbound route needs a distinct inboundId' };
+            }
+            if (typeof route.linkId !== 'string' || !/^[0-9a-f]{24}$/i.test(route.linkId)) {
+                return { fields: {}, error: 'Each inbound route needs a reverse link ID' };
+            }
+            seen.add(route.inboundId);
+            fields.inboundRoutes.push({ inboundId: route.inboundId, linkId: route.linkId.toLowerCase() });
+        }
+    }
 
     if (input.probeUrl !== undefined) {
         const url = String(input.probeUrl || '').trim();
@@ -182,6 +208,7 @@ function uuidWithRoute(uuid, routeId) {
 }
 
 module.exports = {
+    portalListeners,
     CASCADE_PUBLISH_MODES,
     CASCADE_BALANCER_STRATEGIES,
     CASCADE_FALLBACKS,

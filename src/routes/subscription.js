@@ -522,11 +522,15 @@ function _expandCascadeExits(portal, inbounds) {
     if (!Array.isArray(exits) || exits.length === 0 || !publishesExits(portal.cascadePortal)) {
         return inbounds;
     }
-    const expanded = publishesBalanced(portal.cascadePortal)
-        ? inbounds.map(inbound => ({ ...inbound, vlessRoute: 0 }))
-        : [];
+    const pinnedIds = new Set((portal.cascadePortal.inboundRoutes || []).map(route => route.inboundId));
+    const unpinned = inbounds.filter(i => !pinnedIds.has(i.extraId || 'main'));
+    const balanced = publishesBalanced(portal.cascadePortal);
+    const expanded = inbounds.flatMap(i => {
+        if (pinnedIds.has(i.extraId || 'main')) return [i];
+        return balanced ? [{ ...i, vlessRoute: 0 }] : [];
+    });
     for (const exit of exits) {
-        for (const inbound of inbounds) {
+        for (const inbound of unpinned) {
             expanded.push({ ...inbound, vlessRoute: exit.routeId, exit });
         }
     }

@@ -17,6 +17,12 @@ const CASCADE_PUBLISH_PROPERTIES = {
 };
 
 const CASCADE_PORTAL_SETTINGS_PROPERTIES = {
+    inboundRoutes: {
+        type: 'array', description: 'Fixed reverse exits for selected listeners. Use main or the stable extra inbound ID. PUT replaces the list; an empty list clears it. A missing exit blocks the listener.',
+        items: { type: 'object', required: ['inboundId', 'linkId'], properties: {
+            inboundId: { type: 'string' }, linkId: { type: 'string', pattern: '^[a-fA-F0-9]{24}$' },
+        } },
+    },
     publishMode: { type: 'string', enum: ['single', 'perExit', 'both'], default: 'single', description: 'single: one balanced entry; perExit: one entry per exit; both: balanced entry plus one per exit. Per-exit entries reuse the portal inbounds and select the exit via vlessRoute (UUID third group, Xray 25.9.5+).' },
     balancerStrategy: { type: 'string', enum: ['random', 'leastPing', 'leastLoad'], default: 'random', description: 'Balancer of the shared entry. leastPing adds an observatory, leastLoad a burstObservatory on the portal.' },
     fallback: { type: 'string', enum: ['direct', 'block'], default: 'direct', description: 'Where the shared entry goes when leastPing/leastLoad find no live exit, or when no exit takes part in balancing. random does not probe exits and never falls back otherwise. direct leaves through the portal IP.' },
@@ -1454,7 +1460,10 @@ These endpoints are not under \`/api\` and are not part of this specification:
                     flag: { type: 'string' },
                     settings: { type: 'object', properties: CASCADE_PORTAL_SETTINGS_PROPERTIES },
                     redeployPending: { type: 'boolean', description: 'Exit flags changed but the portal config was not applied yet (deferred or failed push). The next PUT applies it.' },
-                    publishedInbounds: { type: 'integer', description: 'Inbounds of the portal; each subscription entry is repeated for every inbound.' },
+                    listeners: { type: 'array', items: { type: 'object', properties: {
+                        id: { type: 'string' }, inboundTag: { type: 'string' }, label: { type: 'string' }, port: { type: 'integer' },
+                    } } },
+                    publishedInbounds: { type: 'integer', description: 'Number of client listeners on this portal.' },
                     exits: {
                         type: 'array',
                         items: {

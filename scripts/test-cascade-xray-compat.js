@@ -243,6 +243,26 @@ assert.deepStrictEqual(linkXrayRequirement(link({ mode: 'reverse', tunnelTranspo
     assert.deepStrictEqual(normalizePortalSettings({ publishMode: 'x', balancerStrategy: 'roundRobin', fallback: 'leak', probeUrl: 'javascript:alert(1)', probeInterval: '1d' }),
         { ...PORTAL_DEFAULTS });
 
+    const selector = { inboundId: 'main', linkId: '64f000000000000000000001' };
+    assert.deepStrictEqual(sanitizePortalSettingsInput({ inboundRoutes: [selector] }).fields.inboundRoutes, [selector]);
+    assert.deepStrictEqual(sanitizePortalSettingsInput({ inboundRoutes: [] }).fields.inboundRoutes, []);
+    for (const bad of [null, {}, [null], [selector, selector], [{ ...selector, linkId: 'not-an-id' }]]) {
+        assert.ok(sanitizePortalSettingsInput({ inboundRoutes: bad }).error);
+    }
+
+    // A deleted link must never retarget a listener, even if a later link
+    // reuses its routeId. Two inbounds can share the same reverse exit.
+    const mainNode = { port: 443, xray: { security: 'none', extraInbounds: [
+        { id: 'x', port: 8443, inboundTag: 'renamed', transport: 'ws', security: 'none' },
+    ] }, cascadePortal: { inboundRoutes: ['main', 'x'].map(inboundId =>
+        ({ inboundId, linkId: String(rev(1)._id) })) } };
+    const guarded = JSON.parse(gen.generateXrayConfig(mainNode, []));
+    const pinned = guarded.routing.rules.find(r => r.ruleTag === 'cascade-inbound-' + rev(1)._id);
+    assert.deepStrictEqual(pinned.inboundTag, ['vless-in', 'renamed']);
+    assert.strictEqual(pinned.outboundTag, 'block');
+    gen.applyReversePortal(guarded, [rev(2, { routeId: 1 })], pinned.inboundTag, { publishMode: 'both' });
+    assert.strictEqual(pinned.outboundTag, 'block');
+
     // UUID route bytes.
     assert.strictEqual(uuidWithRoute(UUID, 3), '5783a3e7-e373-0003-8642-c83782b807c5');
     assert.strictEqual(uuidWithRoute(UUID.toUpperCase(), 4095), '5783a3e7-e373-0fff-8642-c83782b807c5');

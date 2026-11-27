@@ -192,6 +192,22 @@ async function attach(nodes, includeDown = false) {
         assert.ok(uri.startsWith(`vless://${routed(1)}@cdn.example.com:443?`), uri);
     }
 
+    // One fixed listener is published once even when other listeners expand per exit.
+    both.cascadePortal.inboundRoutes = [{ inboundId: 'x1', linkId: 'link-fi' }];
+    const mixed = sub.getXrayPublishedInbounds(both);
+    assert.deepStrictEqual(mixed.filter(i => !i.extraId).map(i => i.vlessRoute), [0, 1, 2]);
+    const fixed = mixed.filter(i => i.extraId === 'x1');
+    assert.strictEqual(fixed.length, 1);
+    assert.strictEqual(sub.uuidForInbound(user, fixed[0]), USER_UUID);
+    const front = sub.getXrayPublishedInbounds({
+        type: 'cdn', name: 'Fixed CDN', _resolvedOrigin: both,
+        cdn: { originInboundId: 'x1', domain: 'front.example.com', port: 443, security: 'tls' },
+    });
+    assert.strictEqual(front.length, 1);
+    assert.strictEqual(sub.uuidForInbound(user, front[0]), USER_UUID);
+    both.cascadePortal.publishMode = 'perExit';
+    assert.deepStrictEqual(sub.getXrayPublishedInbounds(both).map(i => i.vlessRoute), [undefined, 1, 2]);
+
     // ---- malformed UUIDs never fall back to the default route ---------------
     assert.strictEqual(sub.uuidForInbound({ xrayUuid: 'not-a-uuid' }, perExitInbounds[0]), null);
     assert.strictEqual(sub.uuidForInbound({}, perExitInbounds[0]), null);

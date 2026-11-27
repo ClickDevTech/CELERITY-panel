@@ -25,6 +25,7 @@ const {
     normalizePortalSettings,
     sanitizeLinkPublishInput,
     sanitizePortalSettingsInput,
+    portalListeners,
 } = require('../utils/cascadePublish');
 const { parsePositionsBody } = require('../utils/cascadeTopology');
 
@@ -804,14 +805,15 @@ async function buildPortalSettingsResponse(node) {
         .populate('bridgeNode', 'name flag')
         .sort({ routeId: 1 })
         .lean();
-    const extraInbounds = (node.xray?.extraInbounds || []).filter(i => i && i.port).length;
+    const listeners = portalListeners(node);
     return {
         nodeId: String(node._id),
         name: node.name,
         flag: node.flag || '',
         settings: normalizePortalSettings(node.cascadePortal),
         redeployPending: node.cascadePortal?.redeployPending === true,
-        publishedInbounds: 1 + extraInbounds,
+        publishedInbounds: listeners.length,
+        listeners,
         exits: links.map(l => ({
             linkId: String(l._id),
             name: l.name,
@@ -837,7 +839,7 @@ router.get('/portals/:nodeId/settings', requireScope('nodes:read'), async (req, 
             return res.status(400).json({ error: 'Invalid node ID' });
         }
         const node = await HyNode.findById(req.params.nodeId)
-            .select('name flag type cascadePortal xray.extraInbounds.port')
+            .select('name flag type port cascadePortal xray.inboundTag xray.extraInbounds.port xray.extraInbounds.id xray.extraInbounds.label xray.extraInbounds.inboundTag')
             .lean();
         if (!node) return res.status(404).json({ error: 'Node not found' });
         if (node.type !== 'xray') return res.status(400).json({ error: 'Only Xray nodes can be cascade portals' });
@@ -865,7 +867,7 @@ router.put('/portals/:nodeId/settings', requireScope('nodes:write'), deployLimit
             forceRedeploy: req.body.forceRedeploy === true,
         });
         const node = await HyNode.findById(req.params.nodeId)
-            .select('name flag type cascadePortal xray.extraInbounds.port')
+            .select('name flag type port cascadePortal xray.inboundTag xray.extraInbounds.port xray.extraInbounds.id xray.extraInbounds.label xray.extraInbounds.inboundTag')
             .lean();
         logger.info(`[Cascade API] Portal ${node?.name} publication settings updated`);
         res.json({

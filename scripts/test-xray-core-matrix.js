@@ -385,8 +385,9 @@ const routedUuid = route => USER_UUID.replace(/^(\w{8}-\w{4}-)\w{4}/, `$1${route
 
 /**
  * One portal with exits A and B, a client whose SOCKS ports 1080+N send the
- * user UUID with route N. Exit B redirects to its own page, so the response
- * tells which bridge carried the request.
+ * user UUID with route N. Direct traffic and each bridge return distinct
+ * markers so a direct connection cannot pass as a successful tunnel.
+ *   inbound-routes: one ordinary UUID reaches A or B based on its listener.
  *   routes: route 1 must reach A and route 2 must reach B.
  *   leastPing/leastLoad: only A runs; the balanced entry (route 0) must keep
  *   working, which a random balancer over a dead exit would not.
@@ -399,42 +400,61 @@ async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
     }
     const portalPort = await freePort();
     const socks = [await freePort(), await freePort(), await freePort()];
-    const settings = scenario === 'routes'
+    const pinned = scenario === 'inbound-routes';
+    const bothExits = pinned || scenario === 'routes';
+    const settings = bothExits
         ? { publishMode: 'both' }
         : { publishMode: 'both', balancerStrategy: scenario, fallback: 'block', probeUrl: `http://127.0.0.1:${pages.a}/`, probeInterval: '2s' };
 
-    const portalCfg = {
+    let portalCfg = {
         log: { loglevel: 'warning' },
         inbounds: [{ tag: 'vless-in', port: portalPort, protocol: 'vless', settings: { clients: [{ id: USER_UUID }], decryption: 'none' } }],
         outbounds: [{ tag: 'direct', protocol: 'freedom' }],
         routing: { rules: [] },
     };
-    gen.applyReversePortal(portalCfg, exitLinks, ['vless-in'], settings);
+    const secondPort = pinned ? await freePort() : portalPort;
+    if (pinned) {
+        const entry = node(portal._id, 'entry', '127.0.0.1', {
+            security: 'none', apiPort: await freePort(),
+            extraInbounds: [{ id: 'second', port: secondPort, inboundTag: 'second-in', transport: 'ws', security: 'none', wsPath: '/second' }],
+        });
+        entry.port = portalPort;
+        entry.cascadePortal = { ...settings, inboundRoutes: [
+            { inboundId: 'main', linkId: exitLinks[0]._id }, { inboundId: 'second', linkId: exitLinks[1]._id },
+        ] };
+        portalCfg = JSON.parse(gen.generateXrayConfig(entry, [{ userId: 'matrix', xrayUuid: USER_UUID }]));
+    }
+    gen.applyReversePortal(portalCfg, exitLinks, pinned ? ['vless-in', 'second-in'] : ['vless-in'], settings);
     const clientCfg = {
         log: { loglevel: 'warning' },
         inbounds: socks.map((port, route) => ({ tag: `socks-${route}`, port, protocol: 'socks', settings: { udp: false } })),
         outbounds: socks.map((_, route) => ({
             tag: `user-${route}`,
             protocol: 'vless',
-            settings: { address: '127.0.0.1', port: portalPort, id: routedUuid(route), encryption: 'none' },
+            settings: { address: '127.0.0.1', port: pinned && route === 2 ? secondPort : portalPort,
+                id: pinned && route !== 0 ? USER_UUID : routedUuid(pinned ? 2 : route), encryption: 'none' },
+            ...(pinned && route === 2 ? { streamSettings: { network: 'ws', wsSettings: { path: '/second' } } } : {}),
         })),
         routing: { rules: socks.map((_, route) => ({ type: 'field', inboundTag: [`socks-${route}`], outboundTag: `user-${route}` })) },
     };
-    const bridgeB = JSON.parse(gen.generateBridgeConfig(exitLinks[1], local));
-    for (const ob of bridgeB.outbounds) {
-        if (ob.protocol === 'freedom') ob.settings = { ...ob.settings, redirect: `127.0.0.1:${pages.b}` };
+    function markedBridge(exitLink, port) {
+        const config = JSON.parse(gen.generateBridgeConfig(exitLink, local));
+        for (const ob of config.outbounds) {
+            if (ob.protocol === 'freedom') ob.settings = { ...ob.settings, redirect: `127.0.0.1:${port}` };
+        }
+        return config;
     }
-    const pagePorts = [pages.a, pages.b];
+    const pagePorts = [pages.direct, pages.a, pages.b];
     const processes = [
         ['portal', portalCfg, []],
-        ['bridge-a', JSON.parse(gen.generateBridgeConfig(exitLinks[0], local)), pagePorts],
-        ...(scenario === 'routes' ? [['bridge-b', bridgeB, pagePorts]] : []),
+        ['bridge-a', markedBridge(exitLinks[0], pages.a), pagePorts],
+        ...(bothExits ? [['bridge-b', markedBridge(exitLinks[1], pages.b), pagePorts]] : []),
         ['client', clientCfg, []],
     ];
 
     const procs = [];
     let log = '';
-    const fetchVia = async route => (await socksGet(socks[route], pages.a)) || '';
+    const fetchVia = async route => (await socksGet(socks[route], pages.direct)) || '';
     try {
         for (const [name, cfg, ports] of processes) {
             const file = path.join(tmpDir, `multi-exit-${scenario}-${name}.json`);
@@ -448,13 +468,14 @@ async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
         }
 
         const deadline = Date.now() + 40000;
-        const expectations = scenario === 'routes' ? [[1, 'exit-a'], [2, 'exit-b']] : [[0, 'exit-a']];
+        const expectations = bothExits ? [[1, 'exit-a'], [2, 'exit-b']] : [[0, 'exit-a']];
+        if (pinned) expectations.push([0, 'exit-a']); // A pin overrides an explicit route to B.
         let verdict = 'no response through the tunnel';
         for (const [route, marker] of expectations) {
             let streak = 0;
             // Balancers need several clean answers in a row: a random pick over a
             // dead exit would fail about half of them.
-            const needed = scenario === 'routes' ? 3 : 8;
+            const needed = bothExits ? 3 : 8;
             while (streak < needed && Date.now() < deadline && procs.every(p => p.exitCode === null)) {
                 const body = await fetchVia(route);
                 if (body.includes(marker)) {
@@ -472,6 +493,16 @@ async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
                 if (VERBOSE) console.log(`\n--- multi-exit-${scenario} @ ${path.basename(coreDir)} ---\n${log}`);
                 const tailLines = log.trim().split(/\r?\n/).slice(-3).join(' | ');
                 return `FAIL: ${verdict}${tailLines ? `: ${tailLines.slice(0, 400)}` : ''}`;
+            }
+        }
+        if (pinned) {
+            const bridge = procs[processes.findIndex(([name]) => name === 'bridge-b')];
+            const stopped = new Promise(resolve => bridge.once('exit', resolve));
+            bridge.kill();
+            await stopped;
+            for (let i = 0; i < 3; i++) {
+                if ((await fetchVia(2)).includes('celerity-e2e-ok')) return 'disconnected listener used another exit';
+                if (!(await fetchVia(1)).includes('exit-a')) return 'unaffected listener stopped working';
             }
         }
         return 'OK';
@@ -546,10 +577,10 @@ async function main() {
         server.close();
         internal.close();
 
-        const pageServers = ['exit-a', 'exit-b'].map(marker => http.createServer((req, res) => res.end(`celerity-e2e-ok ${marker}`)));
+        const pageServers = ['exit-a', 'exit-b', 'direct'].map(marker => http.createServer((req, res) => res.end(`celerity-e2e-ok ${marker}`)));
         await Promise.all(pageServers.map(s => new Promise(r => s.listen(0, '127.0.0.1', r))));
-        const pages = { a: pageServers[0].address().port, b: pageServers[1].address().port };
-        const multiRows = ['routes', 'leastPing', 'leastLoad']
+        const pages = { a: pageServers[0].address().port, b: pageServers[1].address().port, direct: pageServers[2].address().port };
+        const multiRows = ['routes', 'inbound-routes', 'leastPing', 'leastLoad']
             .map(scenario => ({ scenario, tag: `multi-exit-${scenario}` }))
             .filter(row => !ONLY || new RegExp(ONLY).test(row.tag));
         for (const { scenario, tag } of multiRows) {

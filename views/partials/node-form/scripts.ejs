@@ -3137,6 +3137,7 @@ const cxI18n = {
         leastLoad: <%- JSON.stringify(t('nodes.cascadeStrategyLeastLoadHint')) %>,
     },
     balanced: <%- JSON.stringify(t('nodes.cascadePreviewBalanced')) %>,
+    sharedInbounds: <%- JSON.stringify(t('nodes.cascadePreviewInbounds')) %>,
     hiddenUntilOnline: <%- JSON.stringify(t('nodes.cascadePreviewHiddenUntilOnline')) %>,
     empty: <%- JSON.stringify(t('nodes.cascadePreviewEmpty')) %>,
     noBalancer: <%- JSON.stringify(t('nodes.cascadePreviewNoBalancer')) %>,
@@ -3171,6 +3172,9 @@ function cxState() {
         nodeFlag: card.dataset.nodeFlag || '',
         inbounds: parseInt(card.dataset.inbounds, 10) || 1,
         settings: {
+            inboundRoutes: Array.from(card.querySelectorAll('.cx-inbound-route'))
+                .filter(select => select.value)
+                .map(select => ({ inboundId: select.dataset.inboundId, linkId: select.value })),
             publishMode: mode,
             balancerStrategy: document.getElementById('cxStrategy').value,
             fallback: document.getElementById('cxFallback').value,
@@ -3202,11 +3206,16 @@ function renderCascadeExitsPreview() {
     const exitsShown = mode !== 'single' && visibleCount > 0;
     let count = 0;
 
-    if (mode !== 'perExit' || !exitsShown) {
+    const pinned = Array.from(s.card.querySelectorAll('.cx-inbound-route')).filter(select => select.value);
+    const shared = s.inbounds - pinned.length;
+    for (const select of pinned) {
+        cxAppendPreviewItem(list, select.dataset.label + ' → ' + select.selectedOptions[0].textContent, false);
+    }
+    if (shared && (mode !== 'perExit' || !exitsShown)) {
         cxAppendPreviewItem(list, `${s.nodeFlag} ${s.nodeName}`.trim() + ' — ' + cxI18n.balanced, false);
         count++;
     }
-    if (mode !== 'single') {
+    if (shared && mode !== 'single') {
         for (const exit of published) {
             const name = exit.label || `${exit.bridgeFlag || s.nodeFlag} ${s.nodeName} → ${exit.bridgeName}`.trim();
             const visible = CX_VISIBLE_STATUSES.includes(exit.status);
@@ -3215,9 +3224,11 @@ function renderCascadeExitsPreview() {
         }
         if (published.length === 0) cxAppendPreviewItem(list, cxI18n.empty, true);
     }
-    if (s.exits.every(e => !e.balancer)) cxAppendPreviewItem(list, cxI18n.noBalancer, true);
+    if (shared && s.exits.every(e => !e.balancer)) cxAppendPreviewItem(list, cxI18n.noBalancer, true);
+    const hint = document.getElementById('cxPreviewInbounds');
+    hint.textContent = shared > 1 ? cxI18n.sharedInbounds.replace('{count}', String(shared)) : '';
 
-    document.getElementById('cxPreviewCount').textContent = String(count * s.inbounds);
+    document.getElementById('cxPreviewCount').textContent = String(count * shared + pinned.length);
 }
 
 function onCascadeExitsChange() {
