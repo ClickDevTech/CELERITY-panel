@@ -10,6 +10,8 @@
  *   npm run test:xray-matrix
  *   npm run test:xray-matrix -- 26.3.27,latest,prerelease --e2e
  *
+ *   npm run test:xray-matrix -- 26.11.9 --with-caddy --only=multi-exit-front-sni  # needs caddy and openssl
+ *
  * Versions: comma-separated list; "latest", "prerelease" and "floor"
  * (MIN_CASCADE_XRAY_VERSION) are resolved. Default: floor, mKCP floor,
  * latest, prerelease. A config is only required to pass on versions at or
@@ -41,7 +43,8 @@ const {
 } = require('../src/utils/cascadeTransport');
 
 const args = process.argv.slice(2);
-const E2E = args.includes('--e2e');
+const WITH_CADDY = args.includes('--with-caddy');
+const E2E = WITH_CADDY || args.includes('--e2e');
 const VERBOSE = args.includes('--verbose');
 const ALL = args.includes('--all');
 const ONLY = (args.find(a => a.startsWith('--only=')) || '').slice('--only='.length);
@@ -383,6 +386,28 @@ async function runE2e(coreDir, variant, caFile, httpPort, internalPort, tmpDir) 
 const USER_UUID = 'b831381d-6324-4d53-ad4f-8cda48b30811';
 const routedUuid = route => USER_UUID.replace(/^(\w{8}-\w{4}-)\w{4}/, `$1${route.toString(16).padStart(4, '0')}`);
 
+// Exercise the generated Caddy site with a real, verified TLS handshake.
+function prepareSniFront(entry, tmpDir) {
+    const { buildCaddyfile } = require('../src/services/edgeFront/caddyfile');
+    const cert = path.join(tmpDir, 'front.pem');
+    const key = path.join(tmpDir, 'front.key');
+    const names = ['a.lab.test', 'b.lab.test', 'unassigned.lab.test'];
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+        '-subj', '/CN=a.lab.test', '-addext', 'subjectAltName=' + names.map(name => 'DNS:' + name).join(','),
+        '-keyout', key, '-out', cert], { stdio: 'pipe' });
+    entry.xray.manualCert = fs.readFileSync(cert, 'utf8');
+    entry.xray.manualKey = fs.readFileSync(key, 'utf8');
+    const { buildDesiredState } = require('../src/services/edgeFront/provisionService');
+    buildDesiredState(entry);
+    require('node:assert/strict').throws(() => buildDesiredState({ ...entry, domain: 'missing.lab.test' }), /does not cover/);
+    const file = path.join(tmpDir, 'Caddyfile');
+    // Keep the lab on loopback and leave the machine's public HTTP port alone.
+    fs.writeFileSync(file, buildCaddyfile(entry, { certPath: cert, keyPath: key, siteRoot: tmpDir })
+        .replace('admin off', 'admin off\n\tauto_https disable_redirects\n\tdefault_bind 127.0.0.1'));
+    execFileSync('caddy', ['validate', '--config', file, '--adapter', 'caddyfile'], { stdio: 'pipe' });
+    return { file, cert, names };
+}
+
 /**
  * One portal with exits A and B, a client whose SOCKS ports 1080+N send the
  * user UUID with route N. Direct traffic and each bridge return distinct
@@ -400,7 +425,9 @@ async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
     }
     const portalPort = await freePort();
     const socks = [await freePort(), await freePort(), await freePort()];
-    const pinned = scenario === 'inbound-routes';
+    const useFront = scenario === 'front-sni';
+    if (useFront) socks.push(await freePort());
+    const pinned = useFront || scenario === 'inbound-routes';
     const bothExits = pinned || scenario === 'routes';
     const settings = bothExits
         ? { publishMode: 'both' }
@@ -413,12 +440,23 @@ async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
         routing: { rules: [] },
     };
     const secondPort = pinned ? await freePort() : portalPort;
+    let front;
+    const publicPort = useFront ? await freePort() : portalPort;
     if (pinned) {
         const entry = node(portal._id, 'entry', '127.0.0.1', {
             security: 'none', apiPort: await freePort(),
             extraInbounds: [{ id: 'second', port: secondPort, inboundTag: 'second-in', transport: 'ws', security: 'none', wsPath: '/second' }],
         });
         entry.port = portalPort;
+        if (useFront) {
+            entry.domain = 'a.lab.test';
+            Object.assign(entry.xray, { tlsSource: 'manual', transport: 'ws', wsPath: '/tunnel', front: {
+                enabled: true, publicPort, inboundIds: ['main', 'second'],
+                serverNames: [{ inboundId: 'second', serverName: 'b.lab.test' }],
+            } });
+            entry.xray.extraInbounds[0].wsPath = '/tunnel';
+            front = prepareSniFront(entry, tmpDir);
+        }
         entry.cascadePortal = { ...settings, inboundRoutes: [
             { inboundId: 'main', linkId: exitLinks[0]._id }, { inboundId: 'second', linkId: exitLinks[1]._id },
         ] };
@@ -437,6 +475,16 @@ async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
         })),
         routing: { rules: socks.map((_, route) => ({ type: 'field', inboundTag: [`socks-${route}`], outboundTag: `user-${route}` })) },
     };
+    if (front) {
+        for (const [i, outbound] of clientCfg.outbounds.entries()) {
+            outbound.settings.port = publicPort;
+            outbound.streamSettings = {
+                network: 'ws', security: 'tls', wsSettings: { path: '/tunnel', host: 'a.lab.test' },
+                tlsSettings: { serverName: front.names[Math.max(0, i - 1)], alpn: ['http/1.1'],
+                    disableSystemRoot: true, certificates: [{ usage: 'verify', certificateFile: front.cert }] },
+            };
+        }
+    }
     function markedBridge(exitLink, port) {
         const config = JSON.parse(gen.generateBridgeConfig(exitLink, local));
         for (const ob of config.outbounds) {
@@ -452,10 +500,15 @@ async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
         ['client', clientCfg, []],
     ];
 
+    let caddy;
     const procs = [];
     let log = '';
     const fetchVia = async route => (await socksGet(socks[route], pages.direct)) || '';
     try {
+        if (front) {
+            caddy = spawn('caddy', ['run', '--config', front.file, '--adapter', 'caddyfile'], { stdio: ['ignore', 'ignore', 'pipe'] });
+            caddy.stderr.on('data', data => { log += data; });
+        }
         for (const [name, cfg, ports] of processes) {
             const file = path.join(tmpDir, `multi-exit-${scenario}-${name}.json`);
             fs.writeFileSync(file, JSON.stringify(localize(cfg, caFile, ports), null, 2));
@@ -495,6 +548,7 @@ async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
                 return `FAIL: ${verdict}${tailLines ? `: ${tailLines.slice(0, 400)}` : ''}`;
             }
         }
+        if (front && (await fetchVia(3)).includes('celerity-e2e-ok')) return 'unassigned SNI reached a bridge';
         if (pinned) {
             const bridge = procs[processes.findIndex(([name]) => name === 'bridge-b')];
             const stopped = new Promise(resolve => bridge.once('exit', resolve));
@@ -507,6 +561,7 @@ async function runMultiExitE2e(coreDir, scenario, caFile, pages, tmpDir) {
         }
         return 'OK';
     } finally {
+        if (caddy) caddy.kill();
         for (const p of procs) p.kill();
     }
 }
@@ -580,7 +635,7 @@ async function main() {
         const pageServers = ['exit-a', 'exit-b', 'direct'].map(marker => http.createServer((req, res) => res.end(`celerity-e2e-ok ${marker}`)));
         await Promise.all(pageServers.map(s => new Promise(r => s.listen(0, '127.0.0.1', r))));
         const pages = { a: pageServers[0].address().port, b: pageServers[1].address().port, direct: pageServers[2].address().port };
-        const multiRows = ['routes', 'inbound-routes', 'leastPing', 'leastLoad']
+        const multiRows = ['routes', 'inbound-routes', 'leastPing', 'leastLoad', ...(WITH_CADDY ? ['front-sni'] : [])]
             .map(scenario => ({ scenario, tag: `multi-exit-${scenario}` }))
             .filter(row => !ONLY || new RegExp(ONLY).test(row.tag));
         for (const { scenario, tag } of multiRows) {

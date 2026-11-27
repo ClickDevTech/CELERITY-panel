@@ -599,6 +599,7 @@ const i18n = {
     cdnMihomoExcluded: <%- JSON.stringify(t("nodes.cdnMihomoExcluded")) %>,
     cdnSaveFailed: <%- JSON.stringify(t("nodes.cdnSaveFailed")) %>,
     cdnSaving: <%- JSON.stringify(t("nodes.cdnSaving")) %>,
+    frontServerName: <%- JSON.stringify(t("nodes.frontServerName")) %>,
     frontMainInbound: <%- JSON.stringify(t("nodes.frontMainInbound")) %>,
     frontNoCandidates: <%- JSON.stringify(t("nodes.frontNoCandidates")) %>,
     frontSaveFirst: <%- JSON.stringify(t("nodes.frontSaveFirst")) %>,
@@ -1324,8 +1325,8 @@ const FRONT_TRANSPORTS = ['ws', 'grpc', 'xhttp'];
 function frontSelectedIds() {
     const section = document.getElementById('frontSection');
     if (!section) return [];
-    const checked = Array.from(section.querySelectorAll('input[name="xray.front.inboundIds"]:checked'));
-    if (checked.length > 0) return checked.map(input => input.value);
+    const inputs = Array.from(section.querySelectorAll('input[name="xray.front.inboundIds"]'));
+    if (inputs.length) return inputs.filter(input => input.checked).map(input => input.value);
     try {
         return JSON.parse(section.dataset.inboundIds || '[]');
     } catch (_) {
@@ -1363,6 +1364,11 @@ function refreshFrontInbounds() {
     const container = document.getElementById('frontInbounds');
     if (!container) return;
     const selected = new Set(frontSelectedIds());
+    const saved = JSON.parse(document.getElementById('frontSection').dataset.serverNames || '[]');
+    const names = new Map(saved.map(entry => [entry.inboundId, entry.serverName]));
+    for (const field of container.querySelectorAll('[data-front-server-name]')) {
+        names.set(field.dataset.frontServerName, field.value);
+    }
     const candidates = frontCandidates();
 
     container.innerHTML = '';
@@ -1393,9 +1399,31 @@ function refreshFrontInbounds() {
             ? i18n.frontLockedTransport.replace('{transport}', candidate.note)
             : candidate.note;
         text.append(name, meta);
-        input.addEventListener('change', refreshFrontSecurityNotes);
         label.append(input, text);
-        container.appendChild(label);
+        const row = document.createElement('div');
+        row.appendChild(label);
+        if (!candidate.locked) {
+            const fieldLabel = document.createElement('label');
+            fieldLabel.textContent = i18n.frontServerName;
+            const field = document.createElement('input');
+            field.type = 'text';
+            field.name = 'xray.front.serverName.' + candidate.id;
+            field.dataset.frontServerName = candidate.id;
+            field.value = names.get(candidate.id) || '';
+            field.maxLength = 253;
+            field.autocapitalize = 'none';
+            field.spellcheck = false;
+            field.disabled = !input.checked;
+            fieldLabel.hidden = !input.checked;
+            fieldLabel.appendChild(field);
+            row.appendChild(fieldLabel);
+            input.addEventListener('change', () => {
+                field.disabled = !input.checked;
+                fieldLabel.hidden = !input.checked;
+                refreshFrontSecurityNotes();
+            });
+        }
+        container.appendChild(row);
     }
     refreshFrontSecurityNotes();
     refreshRailBadges();

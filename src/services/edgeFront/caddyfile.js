@@ -7,6 +7,7 @@ const appConfig = require('../../../config');
 const {
     buildFrontRoutes,
     frontPublicHost,
+    validFrontServerName,
     XRAY_FRONT_ALPN,
 } = require('../../utils/xrayFront');
 
@@ -56,7 +57,11 @@ function buildTlsDirective(node, {
     return [`\t${head}`, alpnLine, '\t}'].join('\n');
 }
 
-function buildRouteBlock(route, index) {
+function routeSmokeValue(index, multiName) {
+    return multiName ? `${FRONT_SMOKE_VALUE}-${index}` : FRONT_SMOKE_VALUE;
+}
+
+function buildRouteBlock(route, index, serverName) {
     const matcher = `@front${index}`;
     const smokeMatcher = `@front${index}Smoke`;
     const paths = route.paths.map(p => `"${assertSafeToken(p, 'inbound path')}"`).join(' ');
@@ -65,10 +70,15 @@ function buildRouteBlock(route, index) {
         ? assertSafeToken(route.upstreamHost, 'upstream host')
         : '';
     const lines = [
-        `\t${matcher} path ${paths}`,
+        ...(serverName ? [
+            `\t${matcher} {`,
+            `\t\tpath ${paths}`,
+            `\t\tvars_regexp {http.request.tls.server_name} (?i)^${serverName.replace(/\./g, '[.]')}$`,
+            '\t}',
+        ] : [`\t${matcher} path ${paths}`]),
         `\t${smokeMatcher} {`,
         '\t\tremote_ip 127.0.0.1',
-        `\t\theader ${FRONT_SMOKE_HEADER} ${FRONT_SMOKE_VALUE}`,
+        `\t\theader ${FRONT_SMOKE_HEADER} ${routeSmokeValue(index, serverName)}`,
         '\t}',
         `\thandle ${matcher} {`,
         `\t\trespond ${smokeMatcher} 204`,
@@ -153,11 +163,21 @@ function buildCaddyfile(node, {
     // No h3: UDP/443 stays free for Hysteria, so it must not be advertised.
     global.push('\tservers {', '\t\tprotocols h1 h2', '\t}', '}');
 
+    const multiName = routes.some(route => route.serverName);
+    const names = new Set([multiName ? host.toLowerCase() : host]);
+    for (const route of routes) {
+        if (route.serverName) names.add(route.serverName.toLowerCase());
+    }
+    if (multiName && ![...names].every(validFrontServerName)) {
+        const err = new Error('FRONT_CONFIG_INVALID: invalid TLS server name');
+        err.code = 'FRONT_CONFIG_INVALID';
+        throw err;
+    }
     const body = [
-        `https://${host}:${port} {`,
+        [...names].map(name => `https://${name}:${port}`).join(', ') + ' {',
         buildTlsDirective(node, { certPath, keyPath }),
         '',
-        ...routes.flatMap((route, index) => [buildRouteBlock(route, index), '']),
+        ...routes.flatMap((route, index) => [buildRouteBlock(route, index, multiName && (route.serverName || host)), '']),
         // Everything else is the decoy site.
         '\thandle {',
         `\t\troot * ${siteRoot}`,
@@ -178,6 +198,7 @@ module.exports = {
     SITE_ROOT,
     FRONT_SMOKE_HEADER,
     FRONT_SMOKE_VALUE,
+    routeSmokeValue,
     frontSiteHost,
     resolveAcmeEmail,
     buildCaddyfile,

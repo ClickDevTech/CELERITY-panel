@@ -247,7 +247,7 @@ const xrayExtraInboundSchema = new mongoose.Schema({
 
 // Caddy front owning the public port: fronted inbounds move to loopback with
 // security='none', so only ws/grpc/xhttp can be fronted. Domain and TLS
-// material stay in node.domain / xray.tlsSource — same host, same cert. ALPN is
+// source stay in node.domain / xray.tlsSource; a listener can override its TLS name. ALPN is
 // not configurable: the front advertises h2 and http/1.1, and the client picks
 // per transport (see frontClientAlpn).
 const xrayFrontSchema = new mongoose.Schema({
@@ -262,6 +262,10 @@ const xrayFrontSchema = new mongoose.Schema({
     siteHtml: { type: Buffer, default: null, select: false },
     // 'main' for the main inbound, otherwise extraInbounds[].id.
     inboundIds: { type: [String], default: [] },
+    serverNames: { type: [new mongoose.Schema({
+        inboundId: { type: String, required: true },
+        serverName: { type: String, required: true, lowercase: true, trim: true },
+    }, { _id: false })], default: [] },
     // Public listener state captured before the inbounds move behind Caddy.
     // It is required for exact disable and provisioning rollback.
     layoutSnapshot: {

@@ -518,6 +518,11 @@ function parseXrayFront(body) {
         siteMode: body['xray.front.siteMode'],
         logLevel: body['xray.front.logLevel'],
         inboundIds: body['xray.front.inboundIds'],
+        ...(body['xray.front.serverNamesPresent'] === '1' ? {
+            serverNames: Object.entries(body)
+                .filter(([key, name]) => key.startsWith('xray.front.serverName.') && name !== '')
+                .map(([key, serverName]) => ({ inboundId: key.slice('xray.front.serverName.'.length), serverName })),
+        } : {}),
     });
 }
 

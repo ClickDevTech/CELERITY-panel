@@ -41,6 +41,7 @@ const {
     isInboundFrontPublished,
     frontClientAlpn,
     frontPublicHost,
+    frontServerName,
 } = require('../utils/xrayFront');
 
 // ==================== HELPERS ====================
@@ -730,6 +731,7 @@ function _applyFrontPublication(node, inbound) {
     const published = {
         ...inbound,
         address: frontPublicHost(node),
+        frontServerName: frontServerName(front, inbound.extraId),
         port: front.publicPort || 443,
         security: 'tls',
         alpn: frontClientAlpn(inbound.transport),
@@ -935,9 +937,10 @@ function _xhttpTuning(inbound) {
  * Returns { sni, host, allowInsecure, pinnedPeerCertSha256 } where any value may be empty.
  *
  * @param {Object} node
+ * @param {Object} [inbound] Published listener, including its optional TLS front name.
  * @returns {{ sni: string, host: string, allowInsecure: boolean, pinnedPeerCertSha256: string, source: string }}
  */
-function _resolveXrayTlsClientHints(node) {
+function _resolveXrayTlsClientHints(node, inbound) {
     if (node?.type === 'cdn') {
         const cdn = node.cdn || {};
         return {
@@ -959,7 +962,7 @@ function _resolveXrayTlsClientHints(node) {
     }
     if (tlsSource === 'manual' || tlsSource === 'acme') {
         const dom = (node?.domain || '').trim();
-        return { sni: dom, host: dom, allowInsecure: false, source: tlsSource };
+        return { sni: inbound?.frontServerName || dom, host: dom, allowInsecure: false, source: tlsSource };
     }
     // self-signed
     return {
@@ -1006,7 +1009,7 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
         params.set('fp', fingerprint);
     } else if (security === 'tls') {
         if (inbound.flow && transport === 'tcp') params.set('flow', inbound.flow);
-        const tls = _resolveXrayTlsClientHints(node);
+        const tls = _resolveXrayTlsClientHints(node, inbound);
         if (tls.sni) params.set('sni', tls.sni);
         params.set('fp', fingerprint);
         if (inbound.alpn && inbound.alpn.length > 0) {
@@ -1020,7 +1023,7 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
         params.set('path', inbound.wsPath || '/');
         // For TLS inbounds without an explicit wsHost we mirror the SNI so the
         // server's masquerade matches the Host header (panel/manual scenarios).
-        const wsHost = inbound.wsHost || (security === 'tls' ? _resolveXrayTlsClientHints(node).host : '');
+        const wsHost = inbound.wsHost || (security === 'tls' ? _resolveXrayTlsClientHints(node, inbound).host : '');
         if (wsHost) params.set('host', wsHost);
     } else if (transport === 'grpc') {
         params.set('serviceName', inbound.grpcServiceName || 'grpc');
@@ -1030,7 +1033,7 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
         params.set('path', inbound.xhttpPath || '/');
         // Same reasoning as ws — use the masquerade domain as a Host hint when
         // the operator did not set xhttpHost explicitly.
-        const xhttpHost = inbound.xhttpHost || (security === 'tls' ? _resolveXrayTlsClientHints(node).host : '');
+        const xhttpHost = inbound.xhttpHost || (security === 'tls' ? _resolveXrayTlsClientHints(node, inbound).host : '');
         if (xhttpHost) params.set('host', xhttpHost);
         if (inbound.xhttpMode && inbound.xhttpMode !== 'auto') params.set('mode', inbound.xhttpMode);
         // Framing has to match on both ends or the inbound answers 400, so every
@@ -1565,7 +1568,7 @@ function _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel = _pas
     client-fingerprint: ${fingerprint}`;
         if (transport === 'tcp' && inbound.flow) proxy += `\n    flow: ${inbound.flow}`;
     } else if (security === 'tls') {
-        const tls = _resolveXrayTlsClientHints(node);
+        const tls = _resolveXrayTlsClientHints(node, inbound);
         proxy += `
     network: ${transport}
     tls: true
@@ -1580,7 +1583,7 @@ function _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel = _pas
         proxy += `\n    network: ${transport}`;
     }
 
-    const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node) : null;
+    const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node, inbound) : null;
 
     if (transport === 'ws') {
         proxy += `
@@ -1801,7 +1804,7 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound, opts = {}) {
             },
         };
     } else if (security === 'tls') {
-        const tls = _resolveXrayTlsClientHints(node);
+        const tls = _resolveXrayTlsClientHints(node, inbound);
         outbound.tls = {
             enabled: true,
             server_name: tls.sni || host,
@@ -1813,7 +1816,7 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound, opts = {}) {
         }
     }
 
-    const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node) : null;
+    const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node, inbound) : null;
 
     if (transport === 'ws') {
         const wsHost = inbound.wsHost || (tlsHints ? tlsHints.host : '');
@@ -1915,7 +1918,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
                     spiderX: inbound.realitySpiderX || '',
                 };
             } else if (security === 'tls') {
-                const tls = _resolveXrayTlsClientHints(node);
+                const tls = _resolveXrayTlsClientHints(node, inbound);
                 streamSettings.security = 'tls';
                 streamSettings.tlsSettings = {
                     serverName: tls.sni || host,
@@ -1930,7 +1933,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
                 }
             }
 
-            const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node) : null;
+            const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node, inbound) : null;
 
             if (transport === 'ws') {
                 const wsHost = inbound.wsHost || (tlsHints ? tlsHints.host : '');

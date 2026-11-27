@@ -210,9 +210,11 @@ On a reverse portal, open the cascade exits card and choose **Fixed exit by list
 | --- | --- | --- |
 | Separate public ports | VLESS on 443 and 444 | Germany and the Netherlands |
 | One HTTPS address and port | Two WS or XHTTP paths, such as `/one` and `/two`, behind the panel's Caddy front | A different bridge per path |
-| Two TLS names on one IP and port | An operator-managed SNI frontend sends each name to its own listener | A different bridge per name |
+| Two TLS names on one IP and port | Set a TLS server name for each listener in the panel’s Caddy front. Both can use the same WebSocket path. | A different bridge per name |
 
-For the SNI case, configure DNS, certificates and the frontend separately. When it terminates TLS, bind the downstream plaintext listeners to loopback. The selection on the portal is by listener tag. Changing only the SNI on one VLESS listener does not select another bridge.
+For example, point `v1.example.com` and `v2.example.com` at the portal. Set the node domain to `v1.example.com`. In **Reverse proxy front**, select two WebSocket inbounds with the same path, such as `/tunnel`. Leave the first TLS name empty and enter `v2.example.com` on the second. Choose ACME, or upload a certificate whose SANs cover both names. Assign each inbound its bridge in the cascade settings and apply. Both profiles can use the same address, port, HTTP Host, path and UUID. Caddy selects the listener using the TLS handshake name and the path.
+
+The managed front supports WebSocket, gRPC and XHTTP. Raw TCP and REALITY listeners can use separate public ports.
 
 Specific node ACLs still run first. The listener's fixed exit takes precedence over a route encoded in the client UUID, destination-based cascade rules and the portal balancer. If the selected bridge disconnects or its link is removed, the pinned route stops forwarding. Select **Use portal routing** to release the pin.
 

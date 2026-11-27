@@ -198,10 +198,17 @@ Virtual nodes carry no IP/SSH/agent and never run health checks themselves.`,
                     default: 443,
                     description: 'Port Caddy listens on. Takes it over from the fronted inbounds.',
                 },
+                serverNames: {
+                    type: 'array',
+                    description: 'Optional TLS names for selected listeners. ACME challenges for each name must reach this node. A manual certificate must cover all names. Omitting the list preserves assignments on update. An empty list clears them.',
+                    items: { type: 'object', required: ['inboundId', 'serverName'], properties: {
+                        inboundId: { type: 'string' }, serverName: { type: 'string', example: 'v2.example.com' },
+                    } },
+                },
                 inboundIds: {
                     type: 'array',
                     items: { type: 'string' },
-                    description: 'Inbounds to serve through the front. `main` selects the main inbound, other values are extra inbound ids. Each needs a distinct path, and none may use `/`.',
+                    description: 'Inbounds to serve through the front. `main` selects the main inbound, other values are extra inbound ids. Paths must be distinct within each TLS name, and none may use `/`.',
                 },
                 siteMode: {
                     type: 'string',

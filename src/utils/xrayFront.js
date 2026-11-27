@@ -1,5 +1,7 @@
 'use strict';
 
+const { X509Certificate } = require('crypto');
+
 // Shared rules for the Caddy front: eligibility, routes, loopback layout and
 // validation. Pure, so the model, panel, REST, MCP and the provisioner agree.
 
@@ -45,6 +47,33 @@ function isFrontableTransport(transport) {
 
 function frontClientAlpn(transport) {
     return XRAY_FRONT_CLIENT_ALPN[String(transport || '')] || XRAY_FRONT_ALPN;
+}
+
+// Exact DNS names only. They become Caddy site addresses and certificate subjects.
+function validFrontServerName(host) {
+    return typeof host === 'string' && host.length <= 253 && host.includes('.')
+        && !/^[0-9.]+$/.test(host)
+        && host.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label));
+}
+
+function frontServerName(front, id) {
+    if (!Array.isArray(front?.serverNames)) return '';
+    return front.serverNames.find(entry => entry?.inboundId === (id || MAIN_INBOUND_ID))?.serverName || '';
+}
+
+function validateFrontCertificate(domain, assignments, pem) {
+    if (!assignments?.length) return null;
+    let leaf;
+    try {
+        leaf = new X509Certificate(pem);
+    } catch {
+        return 'Manual TLS requires a readable PEM leaf certificate for the front names.';
+    }
+    const names = new Set([domain, ...assignments.map(entry => entry.serverName)]);
+    for (const name of names) {
+        if (!leaf.checkHost(name, { subject: 'never' })) return `Manual TLS certificate does not cover front name ${name}.`;
+    }
+    return null;
 }
 
 function frontPublicHost(node = {}) {
@@ -151,6 +180,7 @@ function buildFrontRoutes(xray = {}, nodePort = 443) {
         const base = frontBasePath(inbound).replace(/\/+$/, '') || '/';
         routes.push({
             id: inbound.id,
+            serverName: frontServerName(front, inbound.id),
             transport: inbound.transport,
             // XHTTP and gRPC append segments below the base path, but a bare hit
             // must reach the inbound too instead of the decoy site.
@@ -294,6 +324,13 @@ function normalizeXrayFront(raw = {}) {
         siteMode: raw.siteMode === 'custom' ? 'custom' : 'nginx',
         inboundIds: [...new Set(normalizeStringList(raw.inboundIds))],
     };
+    if (raw.serverNames !== undefined) {
+        // Keep malformed input visible to validation instead of silently routing it to the default exit.
+        front.serverNames = Array.isArray(raw.serverNames) ? raw.serverNames.map(entry => ({
+            inboundId: entry?.inboundId,
+            serverName: typeof entry?.serverName === 'string' ? entry.serverName.trim().toLowerCase() : '',
+        })) : raw.serverNames;
+    }
     // Omitted keeps the stored level on partial REST/MCP patches. The value is
     // written into the Caddyfile, so only whitelisted levels pass.
     if (raw.logLevel !== undefined) {
@@ -344,12 +381,29 @@ function validateXrayFront(xray = {}, node = {}, context = {}) {
 
     const inbounds = listXrayInbounds(xray, node.port);
     const byId = new Map(inbounds.map(i => [i.id, i]));
-    const seenPaths = new Map();
+    const pathsByServerName = new Map();
     const seenPorts = new Set([publicPort, xray.apiPort || 61000, xray.agentPort || 62080]);
 
-    // An inbound that stays public keeps binding its own port, so the front
-    // cannot listen on the same one — Caddy and Xray would fight over it.
     const frontedIds = new Set(ids.map(id => String(id || '')));
+    if (front.serverNames !== undefined) {
+        if (!Array.isArray(front.serverNames)) return 'Front serverNames must be an array.';
+        const assigned = new Set();
+        for (const entry of front.serverNames) {
+            if (!frontedIds.has(entry?.inboundId) || assigned.has(entry.inboundId)) {
+                return 'Each front server name must reference a distinct selected inbound.';
+            }
+            if (!validFrontServerName(entry.serverName)) return 'Use an exact DNS name for the front TLS server name.';
+            assigned.add(entry.inboundId);
+        }
+        if (assigned.size && !validFrontServerName(frontPublicHost(node))) {
+            return 'A multi-name TLS front requires an exact DNS name for the node domain.';
+        }
+    }
+    if (tlsSource === 'manual' && xray.manualCert) {
+        const error = validateFrontCertificate(frontPublicHost(node), front.serverNames, xray.manualCert);
+        if (error) return error;
+    }
+    // Public inbounds outside Caddy still need exclusive use of their ports.
     for (const inbound of inbounds) {
         if (frontedIds.has(inbound.id) || inbound.port !== publicPort) continue;
         const name = inbound.id === MAIN_INBOUND_ID
@@ -390,20 +444,16 @@ function validateXrayFront(xray = {}, node = {}, context = {}) {
         if (!base.startsWith('/')) {
             return `Front requires the path of ${name} to start with '/'.`;
         }
-        if (seenPaths.has(base)) {
-            return `Front path '${base}' is used by more than one inbound.`;
-        }
-        seenPaths.set(base, id);
-    }
-
-    // A prefix of another route would swallow its requests in Caddy.
-    const bases = [...seenPaths.keys()];
-    for (const base of bases) {
-        for (const other of bases) {
-            if (base !== other && other.startsWith(`${base}/`)) {
-                return `Front path '${base}' is a prefix of '${other}'; give the inbounds unrelated paths.`;
+        const host = (frontServerName(front, id) || frontPublicHost(node)).toLowerCase();
+        const paths = pathsByServerName.get(host) || [];
+        if (paths.includes(base)) return `Front path '${base}' is used by more than one inbound on ${host}.`;
+        for (const other of paths) {
+            if (other.startsWith(`${base}/`) || base.startsWith(`${other}/`)) {
+                return `Front path is a prefix of another path on ${host}: '${base}', '${other}'.`;
             }
         }
+        paths.push(base);
+        pathsByServerName.set(host, paths);
     }
 
     return null;
@@ -422,6 +472,9 @@ module.exports = {
     xrayNeedsTls,
     frontClientAlpn,
     frontPublicHost,
+    frontServerName,
+    validFrontServerName,
+    validateFrontCertificate,
     frontBasePath,
     listXrayInbounds,
     buildFrontRoutes,
