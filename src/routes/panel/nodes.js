@@ -26,7 +26,7 @@ const { getActiveGroups, invalidateNodesCache, normalizeSubscriptionVariants } =
 const { buildNodeUiMeta } = require('../../utils/nodeUi');
 const { isServerlessNode, checkCascadeMembership } = require('../../utils/nodeTypes');
 const { normalizeVirtualObservatory } = require('../../utils/virtualObservatory');
-const { normalizePortalSettings } = require('../../utils/cascadePublish');
+const { normalizePortalSettings, portalListeners } = require('../../utils/cascadePublish');
 const nodeSetupLock = require('../../utils/nodeSetupLock');
 const { nodeOsFamily, buildServiceCommand } = require('../../utils/nodeOs');
 const {
@@ -985,7 +985,7 @@ router.get('/nodes/:id', async (req, res) => {
             CascadeLink.find({
                 $or: [{ portalNode: req.params.id }, { bridgeNode: req.params.id }],
             }).populate('portalNode', 'name ip flag')
-              .populate('bridgeNode', 'name ip flag')
+              .populate('bridgeNode', 'name ip flag active')
               .sort({ createdAt: -1 }),
             Settings.get(),
             // Virtual sources may include CDN fronts; CDN origins are filtered to Xray in the form.
@@ -1017,6 +1017,7 @@ router.get('/nodes/:id', async (req, res) => {
         // PEM replaced by ***SET*** (or empty). Sibling fields are unchanged.
         const renderNode = (typeof node.toObject === 'function') ? node.toObject() : { ...node };
         renderNode.xray = sanitizeXrayForRender(node.xray);
+        renderNode.cascadeListeners = portalListeners(node);
         renderNode.cascadePortal = {
             ...normalizePortalSettings(node.cascadePortal),
             redeployPending: node.cascadePortal?.redeployPending === true,

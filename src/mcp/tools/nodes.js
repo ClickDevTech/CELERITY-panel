@@ -142,6 +142,8 @@ const xrayExtraInboundZ = z.object({
 // knob: the front advertises h2 and http/1.1 and each transport negotiates
 // what it needs. The decoy page is uploaded through the panel, not here.
 const xrayFrontZ = z.object({
+    serverNames: z.array(z.object({ inboundId: z.string(), serverName: z.string() })).optional()
+        .describe('Exact TLS name per selected HTTP inbound. Unassigned listeners use the node domain.'),
     enabled: z.boolean().optional(),
     publicPort: z.number().int().min(1).max(65535).optional().describe('Port clients connect to; Caddy listens here instead of the inbounds (default 443)'),
     siteMode: z.enum(['nginx', 'custom']).optional().describe('Decoy site on /: built-in nginx welcome page, or HTML uploaded via the panel. Omit to keep the current mode; "nginx" keeps the uploaded page stored'),

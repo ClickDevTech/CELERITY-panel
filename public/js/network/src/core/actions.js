@@ -20,15 +20,16 @@ export function createActions(store, hooks = {}) {
         const id = linkIdOf(edgeId);
         if (!link || !id) return false;
         if (busy.has(edgeId)) return false;
-        if (confirmText && !window.confirm(confirmText)) return false;
 
         busy.add(edgeId);
         const targets = affected || [edgeId];
         const prev = new Map();
-        if (optimistic) {
-            for (const e of targets) prev.set(e, store.setLinkStatus(e, optimistic));
-        }
         try {
+            const prompt = typeof confirmText === 'function' ? await confirmText(id) : confirmText;
+            if (prompt && !window.confirm(prompt)) return false;
+            if (optimistic) {
+                for (const e of targets) prev.set(e, store.setLinkStatus(e, optimistic));
+            }
             const res = await call(id, link);
             if (success) {
                 const msg = typeof success === 'function' ? success(res) : success;
@@ -78,10 +79,15 @@ export function createActions(store, hooks = {}) {
         }),
 
         remove: async edgeId => {
+            let pins;
             const ok = await run(edgeId, {
-                confirmText: t('confirmDeleteLink'),
+                confirmText: async id => {
+                    pins = (await api.deleteImpact(id)).pinnedListeners;
+                    const names = pins.map(pin => pin.label || pin.inboundTag || pin.id).join(', ');
+                    return names ? t('confirmDeleteLink') + '\n' + t('pinnedDeleteWarning', { names }) : t('confirmDeleteLink');
+                },
                 optimistic: 'syncing',
-                call: id => api.deleteLink(id),
+                call: id => api.deleteLink(id, pins.map(pin => pin.id)),
                 success: t('deleteSuccess'),
                 failure: t('networkError'),
             });

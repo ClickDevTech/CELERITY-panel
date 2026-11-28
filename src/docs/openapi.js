@@ -17,6 +17,12 @@ const CASCADE_PUBLISH_PROPERTIES = {
 };
 
 const CASCADE_PORTAL_SETTINGS_PROPERTIES = {
+    inboundRoutes: {
+        type: 'array', description: 'Fixed reverse exits for selected listeners. Use main or the stable extra inbound ID. PUT replaces the list; an empty list clears it. A missing exit blocks the listener.',
+        items: { type: 'object', required: ['inboundId', 'linkId'], properties: {
+            inboundId: { type: 'string' }, linkId: { type: 'string', pattern: '^[a-fA-F0-9]{24}$' },
+        } },
+    },
     publishMode: { type: 'string', enum: ['single', 'perExit', 'both'], default: 'single', description: 'single: one balanced entry; perExit: one entry per exit; both: balanced entry plus one per exit. Per-exit entries reuse the portal inbounds and select the exit via vlessRoute (UUID third group, Xray 25.9.5+).' },
     balancerStrategy: { type: 'string', enum: ['random', 'leastPing', 'leastLoad'], default: 'random', description: 'Balancer of the shared entry. leastPing adds an observatory, leastLoad a burstObservatory on the portal.' },
     fallback: { type: 'string', enum: ['direct', 'block'], default: 'direct', description: 'Where the shared entry goes when leastPing/leastLoad find no live exit, or when no exit takes part in balancing. random does not probe exits and never falls back otherwise. direct leaves through the portal IP.' },
@@ -192,10 +198,17 @@ Virtual nodes carry no IP/SSH/agent and never run health checks themselves.`,
                     default: 443,
                     description: 'Port Caddy listens on. Takes it over from the fronted inbounds.',
                 },
+                serverNames: {
+                    type: 'array',
+                    description: 'Optional TLS names for selected listeners. ACME challenges for each name must reach this node. A manual certificate must cover all names. Omitting the list preserves assignments on update. An empty list clears them.',
+                    items: { type: 'object', required: ['inboundId', 'serverName'], properties: {
+                        inboundId: { type: 'string' }, serverName: { type: 'string', example: 'v2.example.com' },
+                    } },
+                },
                 inboundIds: {
                     type: 'array',
                     items: { type: 'string' },
-                    description: 'Inbounds to serve through the front. `main` selects the main inbound, other values are extra inbound ids. Each needs a distinct path, and none may use `/`.',
+                    description: 'Inbounds to serve through the front. `main` selects the main inbound, other values are extra inbound ids. Paths must be distinct within each TLS name, and none may use `/`.',
                 },
                 siteMode: {
                     type: 'string',
@@ -1446,6 +1459,14 @@ These endpoints are not under \`/api\` and are not part of this specification:
                     geoRouting: { type: 'object' },
                 },
             },
+            CascadePortalListener: {
+                type: 'object', required: ['id'],
+                properties: { id: { type: 'string' }, inboundTag: { type: 'string' }, label: { type: 'string' }, port: { type: 'integer' } },
+            },
+            CascadeDeleteImpact: {
+                type: 'object', required: ['pinnedListeners'],
+                properties: { pinnedListeners: { type: 'array', items: { $ref: '#/components/schemas/CascadePortalListener' } } },
+            },
             CascadePortalSettingsResponse: {
                 type: 'object',
                 properties: {
@@ -1454,7 +1475,8 @@ These endpoints are not under \`/api\` and are not part of this specification:
                     flag: { type: 'string' },
                     settings: { type: 'object', properties: CASCADE_PORTAL_SETTINGS_PROPERTIES },
                     redeployPending: { type: 'boolean', description: 'Exit flags changed but the portal config was not applied yet (deferred or failed push). The next PUT applies it.' },
-                    publishedInbounds: { type: 'integer', description: 'Inbounds of the portal; each subscription entry is repeated for every inbound.' },
+                    listeners: { type: 'array', items: { $ref: '#/components/schemas/CascadePortalListener' } },
+                    publishedInbounds: { type: 'integer', description: 'Number of client listeners on this portal.' },
                     exits: {
                         type: 'array',
                         items: {
@@ -2737,8 +2759,12 @@ integrations. Resolution is bound to the collection interval (~5 min), not per-s
             get: {
                 tags: ['Cascade'],
                 summary: 'Get cascade link',
+                parameters: [{ name: 'deleteImpact', in: 'query', schema: { type: 'string', enum: ['1'] },
+                    description: 'Return only pinnedListeners (listener IDs, tags, labels and ports) for deletion confirmation.' }],
                 responses: {
-                    200: { description: 'Cascade link', content: { 'application/json': { schema: { $ref: '#/components/schemas/CascadeLink' } } } },
+                    200: { description: 'Cascade link, or the affected listeners when deleteImpact=1', content: { 'application/json': { schema: {
+                        anyOf: [{ $ref: '#/components/schemas/CascadeLink' }, { $ref: '#/components/schemas/CascadeDeleteImpact' }],
+                    } } } },
                     400: { description: 'Invalid link ID' },
                     401: { $ref: '#/components/responses/Unauthorized' },
                     403: { $ref: '#/components/responses/Forbidden' },
@@ -2760,10 +2786,16 @@ integrations. Resolution is bound to the collection interval (~5 min), not per-s
             delete: {
                 tags: ['Cascade'],
                 summary: 'Delete cascade link',
-                description: 'Undeploys the link first when it is currently deployed/online/offline.',
+                description: 'A pinned link returns 409 and its affected listeners before any changes. Reassign the listeners or acknowledge their current IDs to delete the link and leave them blocked. Deployed links are undeployed first.',
+                requestBody: { required: false, content: { 'application/json': { schema: { type: 'object', properties: {
+                    acknowledgedPinnedListeners: { type: 'array', items: { type: 'string' } },
+                } } } } },
                 responses: {
                     200: { description: 'Deleted', content: { 'application/json': { schema: { $ref: '#/components/schemas/Success' } } } },
                     400: { description: 'Invalid link ID' },
+                    409: { description: 'Confirm the current listener IDs before deletion.', content: { 'application/json': { schema: { allOf: [
+                        { $ref: '#/components/schemas/CascadeDeleteImpact' }, { $ref: '#/components/schemas/Error' },
+                    ] } } } },
                     401: { $ref: '#/components/responses/Unauthorized' },
                     403: { $ref: '#/components/responses/Forbidden' },
                     404: { $ref: '#/components/responses/NotFound' },

@@ -27,6 +27,7 @@ const {
     normalizePortalSettings,
     sanitizeLinkPublishInput,
     sanitizePortalSettingsInput,
+    portalListeners,
 } = require('../../utils/cascadePublish');
 
 async function invalidateCascadeCache() {
@@ -47,8 +48,12 @@ const queryCascadeSchema = z.object({
 const manageCascadeSchema = z.object({
     action: z.enum(['create', 'update', 'delete', 'deploy', 'undeploy', 'reconnect', 'portal_settings']),
     id: z.string().optional().describe('Link _id (required for all except create and portal_settings)'),
+    acknowledgedPinnedListeners: z.array(z.string()).optional()
+        .describe('On delete, confirm the exact listener IDs returned by the pinned-link warning. Their traffic remains blocked until reassigned.'),
     nodeId: z.string().optional().describe('Portal node _id (required for portal_settings)'),
     portal: z.object({
+        inboundRoutes: z.array(z.object({ inboundId: z.string(), linkId: z.string() })).optional()
+            .describe('Replace fixed listener-to-exit routes (main or extra inbound ID, reverse link ID). Empty clears all pins.'),
         publishMode: z.enum(CASCADE_PUBLISH_MODES).optional()
             .describe('single: one balanced entry (default); perExit: one entry per exit; both: balanced entry plus one per exit'),
         balancerStrategy: z.enum(CASCADE_BALANCER_STRATEGIES).optional()
@@ -277,7 +282,7 @@ async function manageCascade(args, emit) {
 
         case 'portal_settings': {
             if (!parsed.nodeId) throw new Error('nodeId is required for portal_settings');
-            const node = await HyNode.findById(parsed.nodeId).select('name type cascadePortal').lean();
+            const node = await HyNode.findById(parsed.nodeId).select('name type port cascadePortal xray.inboundTag xray.extraInbounds.port xray.extraInbounds.id xray.extraInbounds.label xray.extraInbounds.inboundTag').lean();
             if (!node) return { error: 'Node not found', code: 404 };
             if (node.type !== 'xray') return { error: 'Only Xray nodes can be cascade portals', code: 400 };
 
@@ -286,6 +291,7 @@ async function manageCascade(args, emit) {
                     success: true,
                     nodeId: String(node._id),
                     settings: normalizePortalSettings(node.cascadePortal),
+                    listeners: portalListeners(node),
                     redeployPending: node.cascadePortal?.redeployPending === true,
                 };
             }
@@ -309,14 +315,9 @@ async function manageCascade(args, emit) {
             if (!id) throw new Error('id is required for delete');
             const link = await CascadeLink.findById(id);
             if (!link) return { error: `Cascade link '${id}' not found`, code: 404 };
-            if (link.status === 'active') {
-                emit('progress', { message: 'Undeploying before delete...' });
-                await cascadeService.undeployLink(link).catch(() => {});
-            }
-            await CascadeLink.findByIdAndDelete(id);
-            await invalidateCascadeCache();
-            logger.info(`[MCP] Deleted cascade link ${link.name}`);
-            return { success: true, message: `Link '${link.name}' deleted` };
+            const result = await cascadeService.deleteLink(link, parsed.acknowledgedPinnedListeners);
+            if (result.success) logger.info(`[MCP] Deleted cascade link ${link.name}`);
+            return result;
         }
 
         case 'deploy': {

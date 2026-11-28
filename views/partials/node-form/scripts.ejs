@@ -583,6 +583,7 @@ const i18n = {
     error: <%- JSON.stringify(t("common.error")) %>,
     confirmDeployCascade: <%- JSON.stringify(t("nodes.confirmDeployCascade")) %>,
     confirmUndeployCascade: <%- JSON.stringify(t("nodes.confirmUndeployCascade")) %>,
+    pinnedDeleteWarning: <%- JSON.stringify(t("network.pinnedDeleteWarning")) %>,
     confirmDeleteCascade: <%- JSON.stringify(t("nodes.confirmDeleteCascade")) %>,
     xrayGenerateKeysConfirm: <%- JSON.stringify(t("nodes.xrayGenerateKeysConfirm")) %>,
     xrayKeysSuccess: <%- JSON.stringify(t("nodes.xrayKeysSuccess")) %>,
@@ -599,6 +600,7 @@ const i18n = {
     cdnMihomoExcluded: <%- JSON.stringify(t("nodes.cdnMihomoExcluded")) %>,
     cdnSaveFailed: <%- JSON.stringify(t("nodes.cdnSaveFailed")) %>,
     cdnSaving: <%- JSON.stringify(t("nodes.cdnSaving")) %>,
+    frontServerName: <%- JSON.stringify(t("nodes.frontServerName")) %>,
     frontMainInbound: <%- JSON.stringify(t("nodes.frontMainInbound")) %>,
     frontNoCandidates: <%- JSON.stringify(t("nodes.frontNoCandidates")) %>,
     frontSaveFirst: <%- JSON.stringify(t("nodes.frontSaveFirst")) %>,
@@ -1324,8 +1326,8 @@ const FRONT_TRANSPORTS = ['ws', 'grpc', 'xhttp'];
 function frontSelectedIds() {
     const section = document.getElementById('frontSection');
     if (!section) return [];
-    const checked = Array.from(section.querySelectorAll('input[name="xray.front.inboundIds"]:checked'));
-    if (checked.length > 0) return checked.map(input => input.value);
+    const inputs = Array.from(section.querySelectorAll('input[name="xray.front.inboundIds"]'));
+    if (inputs.length) return inputs.filter(input => input.checked).map(input => input.value);
     try {
         return JSON.parse(section.dataset.inboundIds || '[]');
     } catch (_) {
@@ -1363,6 +1365,11 @@ function refreshFrontInbounds() {
     const container = document.getElementById('frontInbounds');
     if (!container) return;
     const selected = new Set(frontSelectedIds());
+    const saved = JSON.parse(document.getElementById('frontSection').dataset.serverNames || '[]');
+    const names = new Map(saved.map(entry => [entry.inboundId, entry.serverName]));
+    for (const field of container.querySelectorAll('[data-front-server-name]')) {
+        names.set(field.dataset.frontServerName, field.value);
+    }
     const candidates = frontCandidates();
 
     container.innerHTML = '';
@@ -1393,9 +1400,31 @@ function refreshFrontInbounds() {
             ? i18n.frontLockedTransport.replace('{transport}', candidate.note)
             : candidate.note;
         text.append(name, meta);
-        input.addEventListener('change', refreshFrontSecurityNotes);
         label.append(input, text);
-        container.appendChild(label);
+        const row = document.createElement('div');
+        row.appendChild(label);
+        if (!candidate.locked) {
+            const fieldLabel = document.createElement('label');
+            fieldLabel.textContent = i18n.frontServerName;
+            const field = document.createElement('input');
+            field.type = 'text';
+            field.name = 'xray.front.serverName.' + candidate.id;
+            field.dataset.frontServerName = candidate.id;
+            field.value = names.get(candidate.id) || '';
+            field.maxLength = 253;
+            field.autocapitalize = 'none';
+            field.spellcheck = false;
+            field.disabled = !input.checked;
+            fieldLabel.hidden = !input.checked;
+            fieldLabel.appendChild(field);
+            row.appendChild(fieldLabel);
+            input.addEventListener('change', () => {
+                field.disabled = !input.checked;
+                fieldLabel.hidden = !input.checked;
+                refreshFrontSecurityNotes();
+            });
+        }
+        container.appendChild(row);
     }
     refreshFrontSecurityNotes();
     refreshRailBadges();
@@ -3108,10 +3137,20 @@ async function cascadeAction(linkId, action, btn) {
 }
 
 async function cascadeDelete(linkId, name) {
-    const confirmMsg = i18n.confirmDeleteCascade.replace('{name}', name);
-    if (!confirm(confirmMsg)) return;
     try {
-        const res = await fetch('/api/cascade/links/' + linkId, { method: 'DELETE' });
+        const url = '/api/cascade/links/' + encodeURIComponent(linkId);
+        const impact = await fetch(url + '?deleteImpact=1');
+        if (!impact.ok) throw new Error((await impact.json()).error || 'HTTP ' + impact.status);
+        const { pinnedListeners } = await impact.json();
+        const names = pinnedListeners.map(pin => pin.label || pin.inboundTag || pin.id).join(', ');
+        let message = i18n.confirmDeleteCascade.replace('{name}', () => name);
+        if (names) message += '\n' + i18n.pinnedDeleteWarning.replace('{names}', () => names);
+        if (!confirm(message)) return;
+        const res = await fetch(url, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ acknowledgedPinnedListeners: pinnedListeners.map(pin => pin.id) }),
+        });
         if (res.ok) {
             location.reload();
         } else {
@@ -3137,6 +3176,7 @@ const cxI18n = {
         leastLoad: <%- JSON.stringify(t('nodes.cascadeStrategyLeastLoadHint')) %>,
     },
     balanced: <%- JSON.stringify(t('nodes.cascadePreviewBalanced')) %>,
+    sharedInbounds: <%- JSON.stringify(t('nodes.cascadePreviewInbounds')) %>,
     hiddenUntilOnline: <%- JSON.stringify(t('nodes.cascadePreviewHiddenUntilOnline')) %>,
     empty: <%- JSON.stringify(t('nodes.cascadePreviewEmpty')) %>,
     noBalancer: <%- JSON.stringify(t('nodes.cascadePreviewNoBalancer')) %>,
@@ -3159,7 +3199,7 @@ function cxState() {
         linkId: row.dataset.linkId,
         bridgeName: row.dataset.bridgeName || '',
         bridgeFlag: row.dataset.bridgeFlag || '',
-        status: row.dataset.status || '',
+        visible: row.dataset.active === '1' && CX_VISIBLE_STATUSES.includes(row.dataset.status),
         label: row.querySelector('.cx-label').value.trim(),
         publish: row.querySelector('.cx-publish').checked,
         balancer: row.querySelector('.cx-balancer').checked,
@@ -3171,6 +3211,9 @@ function cxState() {
         nodeFlag: card.dataset.nodeFlag || '',
         inbounds: parseInt(card.dataset.inbounds, 10) || 1,
         settings: {
+            inboundRoutes: Array.from(card.querySelectorAll('.cx-inbound-route'))
+                .filter(select => select.value)
+                .map(select => ({ inboundId: select.dataset.inboundId, linkId: select.value })),
             publishMode: mode,
             balancerStrategy: document.getElementById('cxStrategy').value,
             fallback: document.getElementById('cxFallback').value,
@@ -3197,27 +3240,38 @@ function renderCascadeExitsPreview() {
     list.textContent = '';
     const mode = s.settings.publishMode;
     const published = s.exits.filter(e => e.publish);
-    const visibleCount = published.filter(e => CX_VISIBLE_STATUSES.includes(e.status)).length;
+    const visibleCount = published.filter(e => e.visible).length;
     // With no working exit the subscription falls back to the balanced entry.
     const exitsShown = mode !== 'single' && visibleCount > 0;
     let count = 0;
 
-    if (mode !== 'perExit' || !exitsShown) {
+    const pinned = Array.from(s.card.querySelectorAll('.cx-inbound-route')).filter(select => select.value);
+    const shared = s.inbounds - pinned.length;
+    let visiblePins = 0;
+    for (const select of pinned) {
+        const exit = s.exits.find(e => e.linkId === select.value);
+        const label = select.dataset.label + ' → ' + select.selectedOptions[0].textContent;
+        cxAppendPreviewItem(list, exit && !exit.visible ? label + ' — ' + cxI18n.hiddenUntilOnline : label, !exit?.visible);
+        if (exit?.visible) visiblePins++;
+    }
+    if (shared && (mode !== 'perExit' || !exitsShown)) {
         cxAppendPreviewItem(list, `${s.nodeFlag} ${s.nodeName}`.trim() + ' — ' + cxI18n.balanced, false);
         count++;
     }
-    if (mode !== 'single') {
+    if (shared && mode !== 'single') {
         for (const exit of published) {
             const name = exit.label || `${exit.bridgeFlag || s.nodeFlag} ${s.nodeName} → ${exit.bridgeName}`.trim();
-            const visible = CX_VISIBLE_STATUSES.includes(exit.status);
+            const visible = exit.visible;
             cxAppendPreviewItem(list, visible ? name : `${name} — ${cxI18n.hiddenUntilOnline}`, !visible);
             if (visible) count++;
         }
         if (published.length === 0) cxAppendPreviewItem(list, cxI18n.empty, true);
     }
-    if (s.exits.every(e => !e.balancer)) cxAppendPreviewItem(list, cxI18n.noBalancer, true);
+    if (shared && s.exits.every(e => !e.balancer)) cxAppendPreviewItem(list, cxI18n.noBalancer, true);
+    const hint = document.getElementById('cxPreviewInbounds');
+    hint.textContent = shared > 1 ? cxI18n.sharedInbounds.replace('{count}', String(shared)) : '';
 
-    document.getElementById('cxPreviewCount').textContent = String(count * s.inbounds);
+    document.getElementById('cxPreviewCount').textContent = String(count * shared + visiblePins);
 }
 
 function onCascadeExitsChange() {

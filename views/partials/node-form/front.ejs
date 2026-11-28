@@ -12,6 +12,7 @@
 %>
 <div class="nf-pane" data-pane="xr-front" data-types="xray" id="frontSection"
      data-inbound-ids="<%= JSON.stringify(frontIds) %>"
+     data-server-names="<%= JSON.stringify(front.serverNames || []) %>"
      data-node-id="<%= node?._id || '' %>">
     <div class="nf-pane__head">
         <h3>
@@ -24,6 +25,7 @@
     </div>
 
     <input type="hidden" name="xray.front.present" value="1">
+    <input type="hidden" name="xray.front.serverNamesPresent" value="1">
 
     <div class="nf-standalone-field">
         <div class="nf-label-row">

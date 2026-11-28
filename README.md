@@ -202,6 +202,22 @@ Client ──▶ Portal ──▶ Relay (opt.) ──▶ Bridge (exit) ──▶
 - All nodes in the chain must have a public IP
 - REALITY is supported on each hop to encrypt inter-server traffic
 
+#### Choose an exit by listener
+
+On a reverse portal, open the cascade exits card and choose **Fixed exit by listener**. Assign the main listener or an extra inbound to a reverse link. Several listeners can share a bridge. The subscription publishes each pinned listener once with the user's usual UUID. Other listeners keep the portal's per-exit or balanced entries.
+
+| Entry point | Listener on the portal | Example exit |
+| --- | --- | --- |
+| Separate public ports | VLESS on 443 and 444 | Germany and the Netherlands |
+| One HTTPS address and port | Two WS or XHTTP paths, such as `/one` and `/two`, behind the panel's Caddy front | A different bridge per path |
+| Two TLS names on one IP and port | Set a TLS server name for each listener in the panel’s Caddy front. Both can use the same WebSocket path. | A different bridge per name |
+
+For example, point `v1.example.com` and `v2.example.com` at the portal. Set the node domain to `v1.example.com`. In **Reverse proxy front**, select two WebSocket inbounds with the same path, such as `/tunnel`. Leave the first TLS name empty and enter `v2.example.com` on the second. Choose ACME, or upload a certificate whose SANs cover both names. Assign each inbound its bridge in the cascade settings and apply. Both profiles can use the same address, port, HTTP Host, path and UUID. Caddy selects the listener using the TLS handshake name and the path.
+
+The managed front supports WebSocket, gRPC and XHTTP. Raw TCP and REALITY listeners can use separate public ports.
+
+Specific node ACLs still run first. The listener's fixed exit takes precedence over a route encoded in the client UUID, destination-based cascade rules and the portal balancer. If the selected bridge disconnects or its link is removed, the pinned route stops forwarding. Customer subscriptions hide the listener while its exit is unavailable and publish it again on recovery. Probes retain offline links. Deleting a pinned link shows the affected listeners before undeploying it. Confirming deletion keeps those listeners blocked until reassigned or released using **Use portal routing**.
+
 #### REALITY Between Nodes
 
 Tunnel-REALITY is configured **independently** from the client-facing REALITY on the Portal node. This enables:

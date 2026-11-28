@@ -25,6 +25,7 @@ const {
     normalizePortalSettings,
     sanitizeLinkPublishInput,
     sanitizePortalSettingsInput,
+    portalListeners,
 } = require('../utils/cascadePublish');
 const { parsePositionsBody } = require('../utils/cascadeTopology');
 
@@ -153,6 +154,9 @@ router.get('/links/:id', requireScope('nodes:read'), async (req, res) => {
             .populate('bridgeNode', 'name ip flag status');
 
         if (!link) return res.status(404).json({ error: 'Cascade link not found' });
+        if (req.query.deleteImpact === '1') {
+            return res.json({ pinnedListeners: await cascadeService.pinnedListenersForLink(link) });
+        }
         res.json(link);
     } catch (error) {
         logger.error(`[Cascade API] Get error: ${error.message}`);
@@ -640,16 +644,10 @@ router.delete('/links/:id', requireScope('nodes:write'), async (req, res) => {
         const link = await CascadeLink.findById(req.params.id);
         if (!link) return res.status(404).json({ error: 'Cascade link not found' });
 
-        if (['deployed', 'online', 'offline'].includes(link.status)) {
-            await cascadeService.undeployLink(link);
-        }
-
-        await CascadeLink.findByIdAndDelete(req.params.id);
-
-        // Invalidate subscription cache
-        await invalidateCascadeCache();
+        const result = await cascadeService.deleteLink(link, req.body?.acknowledgedPinnedListeners);
+        if (result.code) return res.status(result.code).json(result);
         logger.info(`[Cascade API] Deleted link ${link.name}`);
-        res.json({ success: true, message: 'Cascade link deleted' });
+        res.json(result);
     } catch (error) {
         logger.error(`[Cascade API] Delete error: ${error.message}`);
         res.status(500).json({ error: error.message });
@@ -804,14 +802,15 @@ async function buildPortalSettingsResponse(node) {
         .populate('bridgeNode', 'name flag')
         .sort({ routeId: 1 })
         .lean();
-    const extraInbounds = (node.xray?.extraInbounds || []).filter(i => i && i.port).length;
+    const listeners = portalListeners(node);
     return {
         nodeId: String(node._id),
         name: node.name,
         flag: node.flag || '',
         settings: normalizePortalSettings(node.cascadePortal),
         redeployPending: node.cascadePortal?.redeployPending === true,
-        publishedInbounds: 1 + extraInbounds,
+        publishedInbounds: listeners.length,
+        listeners,
         exits: links.map(l => ({
             linkId: String(l._id),
             name: l.name,
@@ -837,7 +836,7 @@ router.get('/portals/:nodeId/settings', requireScope('nodes:read'), async (req, 
             return res.status(400).json({ error: 'Invalid node ID' });
         }
         const node = await HyNode.findById(req.params.nodeId)
-            .select('name flag type cascadePortal xray.extraInbounds.port')
+            .select('name flag type port cascadePortal xray.inboundTag xray.extraInbounds.port xray.extraInbounds.id xray.extraInbounds.label xray.extraInbounds.inboundTag')
             .lean();
         if (!node) return res.status(404).json({ error: 'Node not found' });
         if (node.type !== 'xray') return res.status(400).json({ error: 'Only Xray nodes can be cascade portals' });
@@ -865,7 +864,7 @@ router.put('/portals/:nodeId/settings', requireScope('nodes:write'), deployLimit
             forceRedeploy: req.body.forceRedeploy === true,
         });
         const node = await HyNode.findById(req.params.nodeId)
-            .select('name flag type cascadePortal xray.extraInbounds.port')
+            .select('name flag type port cascadePortal xray.inboundTag xray.extraInbounds.port xray.extraInbounds.id xray.extraInbounds.label xray.extraInbounds.inboundTag')
             .lean();
         logger.info(`[Cascade API] Portal ${node?.name} publication settings updated`);
         res.json({

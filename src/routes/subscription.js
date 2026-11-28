@@ -33,6 +33,7 @@ const {
     publishesExits,
     publishesBalanced,
     uuidWithRoute,
+    isValidRouteId,
     PUBLISHED_EXIT_STATUSES,
 } = require('../utils/cascadePublish');
 const {
@@ -41,6 +42,7 @@ const {
     isInboundFrontPublished,
     frontClientAlpn,
     frontPublicHost,
+    frontServerName,
 } = require('../utils/xrayFront');
 
 // ==================== HELPERS ====================
@@ -159,10 +161,8 @@ async function getCascadeExitsWithCache() {
     const links = await CascadeLink.find({
         mode: { $ne: 'forward' },
         active: true,
-        publishInSubscription: { $ne: false },
-        routeId: { $type: 'number' },
     })
-        .select('name portalNode bridgeNode routeId subscriptionLabel status priority')
+        .select('name portalNode bridgeNode routeId publishInSubscription subscriptionLabel status priority')
         .populate('bridgeNode', 'name flag active')
         .sort({ priority: 1, routeId: 1 })
         .lean();
@@ -173,6 +173,7 @@ async function getCascadeExitsWithCache() {
         const portalId = String(link.portalNode);
         (byPortal[portalId] = byPortal[portalId] || []).push({
             linkId: String(link._id),
+            publishInSubscription: link.publishInSubscription !== false,
             routeId: link.routeId,
             label: link.subscriptionLabel || '',
             bridgeName: link.bridgeNode.name || link.name,
@@ -189,7 +190,7 @@ const PUBLISHED_EXIT_SET = new Set(PUBLISHED_EXIT_STATUSES);
 
 /**
  * Attach `_cascadeExits` to every xray node (and CDN origin) whose portal
- * publishes its exits. Probes see every exit, customers only working ones.
+ * publishes individual exits or has fixed listeners. Probes see every exit, customers only working ones.
  */
 async function attachCascadeExits(nodes, includeDown) {
     const portals = new Set();
@@ -197,7 +198,7 @@ async function attachCascadeExits(nodes, includeDown) {
         if (node.type === 'xray') portals.add(node);
         else if (node.type === 'cdn' && node._resolvedOrigin) portals.add(node._resolvedOrigin);
     }
-    const candidates = [...portals].filter(node => publishesExits(node.cascadePortal));
+    const candidates = [...portals].filter(node => publishesExits(node.cascadePortal) || node.cascadePortal?.inboundRoutes?.length);
     if (candidates.length === 0) return;
 
     const exitsByPortal = await getCascadeExitsWithCache();
@@ -518,15 +519,26 @@ function getXrayPublishedInbounds(node) {
  * the portal pins to that exit. Exit-major order groups entries per exit.
  */
 function _expandCascadeExits(portal, inbounds) {
-    const exits = portal?._cascadeExits;
-    if (!Array.isArray(exits) || exits.length === 0 || !publishesExits(portal.cascadePortal)) {
-        return inbounds;
-    }
-    const expanded = publishesBalanced(portal.cascadePortal)
-        ? inbounds.map(inbound => ({ ...inbound, vlessRoute: 0 }))
-        : [];
-    for (const exit of exits) {
-        for (const inbound of inbounds) {
+    const exits = portal?._cascadeExits || [];
+    const routes = portal?.cascadePortal?.inboundRoutes || [];
+    if (!exits.length && !routes.length) return inbounds;
+    const pins = new Map(routes.map(pin => [pin.inboundId, String(pin.linkId)]));
+    const visibleIds = new Set(exits.map(exit => exit.linkId));
+    const available = inbounds.filter(inbound => {
+        const linkId = pins.get(inbound.extraId || 'main');
+        return !linkId || visibleIds.has(linkId);
+    });
+    if (!publishesExits(portal?.cascadePortal)) return available;
+    const published = exits.filter(exit => exit.publishInSubscription && isValidRouteId(exit.routeId));
+    if (!published.length) return available;
+    const unpinned = available.filter(i => !pins.has(i.extraId || 'main'));
+    const balanced = publishesBalanced(portal.cascadePortal);
+    const expanded = available.flatMap(i => {
+        if (pins.has(i.extraId || 'main')) return [i];
+        return balanced ? [{ ...i, vlessRoute: 0 }] : [];
+    });
+    for (const exit of published) {
+        for (const inbound of unpinned) {
             expanded.push({ ...inbound, vlessRoute: exit.routeId, exit });
         }
     }
@@ -726,6 +738,7 @@ function _applyFrontPublication(node, inbound) {
     const published = {
         ...inbound,
         address: frontPublicHost(node),
+        frontServerName: frontServerName(front, inbound.extraId),
         port: front.publicPort || 443,
         security: 'tls',
         alpn: frontClientAlpn(inbound.transport),
@@ -931,9 +944,10 @@ function _xhttpTuning(inbound) {
  * Returns { sni, host, allowInsecure, pinnedPeerCertSha256 } where any value may be empty.
  *
  * @param {Object} node
+ * @param {Object} [inbound] Published listener, including its optional TLS front name.
  * @returns {{ sni: string, host: string, allowInsecure: boolean, pinnedPeerCertSha256: string, source: string }}
  */
-function _resolveXrayTlsClientHints(node) {
+function _resolveXrayTlsClientHints(node, inbound) {
     if (node?.type === 'cdn') {
         const cdn = node.cdn || {};
         return {
@@ -955,7 +969,7 @@ function _resolveXrayTlsClientHints(node) {
     }
     if (tlsSource === 'manual' || tlsSource === 'acme') {
         const dom = (node?.domain || '').trim();
-        return { sni: dom, host: dom, allowInsecure: false, source: tlsSource };
+        return { sni: inbound?.frontServerName || dom, host: dom, allowInsecure: false, source: tlsSource };
     }
     // self-signed
     return {
@@ -1002,7 +1016,7 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
         params.set('fp', fingerprint);
     } else if (security === 'tls') {
         if (inbound.flow && transport === 'tcp') params.set('flow', inbound.flow);
-        const tls = _resolveXrayTlsClientHints(node);
+        const tls = _resolveXrayTlsClientHints(node, inbound);
         if (tls.sni) params.set('sni', tls.sni);
         params.set('fp', fingerprint);
         if (inbound.alpn && inbound.alpn.length > 0) {
@@ -1016,7 +1030,7 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
         params.set('path', inbound.wsPath || '/');
         // For TLS inbounds without an explicit wsHost we mirror the SNI so the
         // server's masquerade matches the Host header (panel/manual scenarios).
-        const wsHost = inbound.wsHost || (security === 'tls' ? _resolveXrayTlsClientHints(node).host : '');
+        const wsHost = inbound.wsHost || (security === 'tls' ? _resolveXrayTlsClientHints(node, inbound).host : '');
         if (wsHost) params.set('host', wsHost);
     } else if (transport === 'grpc') {
         params.set('serviceName', inbound.grpcServiceName || 'grpc');
@@ -1026,7 +1040,7 @@ function generateVlessURIForInbound(user, node, inbound, dedupeLabel = _passthro
         params.set('path', inbound.xhttpPath || '/');
         // Same reasoning as ws — use the masquerade domain as a Host hint when
         // the operator did not set xhttpHost explicitly.
-        const xhttpHost = inbound.xhttpHost || (security === 'tls' ? _resolveXrayTlsClientHints(node).host : '');
+        const xhttpHost = inbound.xhttpHost || (security === 'tls' ? _resolveXrayTlsClientHints(node, inbound).host : '');
         if (xhttpHost) params.set('host', xhttpHost);
         if (inbound.xhttpMode && inbound.xhttpMode !== 'auto') params.set('mode', inbound.xhttpMode);
         // Framing has to match on both ends or the inbound answers 400, so every
@@ -1561,7 +1575,7 @@ function _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel = _pas
     client-fingerprint: ${fingerprint}`;
         if (transport === 'tcp' && inbound.flow) proxy += `\n    flow: ${inbound.flow}`;
     } else if (security === 'tls') {
-        const tls = _resolveXrayTlsClientHints(node);
+        const tls = _resolveXrayTlsClientHints(node, inbound);
         proxy += `
     network: ${transport}
     tls: true
@@ -1576,7 +1590,7 @@ function _buildClashVlessProxyForInbound(user, node, inbound, dedupeLabel = _pas
         proxy += `\n    network: ${transport}`;
     }
 
-    const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node) : null;
+    const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node, inbound) : null;
 
     if (transport === 'ws') {
         proxy += `
@@ -1797,7 +1811,7 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound, opts = {}) {
             },
         };
     } else if (security === 'tls') {
-        const tls = _resolveXrayTlsClientHints(node);
+        const tls = _resolveXrayTlsClientHints(node, inbound);
         outbound.tls = {
             enabled: true,
             server_name: tls.sni || host,
@@ -1809,7 +1823,7 @@ function _buildSingboxVlessOutboundForInbound(user, node, inbound, opts = {}) {
         }
     }
 
-    const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node) : null;
+    const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node, inbound) : null;
 
     if (transport === 'ws') {
         const wsHost = inbound.wsHost || (tlsHints ? tlsHints.host : '');
@@ -1911,7 +1925,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
                     spiderX: inbound.realitySpiderX || '',
                 };
             } else if (security === 'tls') {
-                const tls = _resolveXrayTlsClientHints(node);
+                const tls = _resolveXrayTlsClientHints(node, inbound);
                 streamSettings.security = 'tls';
                 streamSettings.tlsSettings = {
                     serverName: tls.sni || host,
@@ -1926,7 +1940,7 @@ function _buildV2rayOutboundsForNode(user, node, tagOverride, dedupeLabel = _pas
                 }
             }
 
-            const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node) : null;
+            const tlsHints = security === 'tls' ? _resolveXrayTlsClientHints(node, inbound) : null;
 
             if (transport === 'ws') {
                 const wsHost = inbound.wsHost || (tlsHints ? tlsHints.host : '');

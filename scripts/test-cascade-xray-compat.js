@@ -243,6 +243,26 @@ assert.deepStrictEqual(linkXrayRequirement(link({ mode: 'reverse', tunnelTranspo
     assert.deepStrictEqual(normalizePortalSettings({ publishMode: 'x', balancerStrategy: 'roundRobin', fallback: 'leak', probeUrl: 'javascript:alert(1)', probeInterval: '1d' }),
         { ...PORTAL_DEFAULTS });
 
+    const selector = { inboundId: 'main', linkId: '64f000000000000000000001' };
+    assert.deepStrictEqual(sanitizePortalSettingsInput({ inboundRoutes: [selector] }).fields.inboundRoutes, [selector]);
+    assert.deepStrictEqual(sanitizePortalSettingsInput({ inboundRoutes: [] }).fields.inboundRoutes, []);
+    for (const bad of [null, {}, [null], [selector, selector], [{ ...selector, linkId: 'not-an-id' }]]) {
+        assert.ok(sanitizePortalSettingsInput({ inboundRoutes: bad }).error);
+    }
+
+    // A deleted link must never retarget a listener, even if a later link
+    // reuses its routeId. Two inbounds can share the same reverse exit.
+    const mainNode = { port: 443, xray: { security: 'none', extraInbounds: [
+        { id: 'x', port: 8443, inboundTag: 'renamed', transport: 'ws', security: 'none' },
+    ] }, cascadePortal: { inboundRoutes: ['main', 'x'].map(inboundId =>
+        ({ inboundId, linkId: String(rev(1)._id) })) } };
+    const guarded = JSON.parse(gen.generateXrayConfig(mainNode, []));
+    const pinned = guarded.routing.rules.find(r => r.ruleTag === 'cascade-inbound-' + rev(1)._id);
+    assert.deepStrictEqual(pinned.inboundTag, ['vless-in', 'renamed']);
+    assert.strictEqual(pinned.outboundTag, 'block');
+    gen.applyReversePortal(guarded, [rev(2, { routeId: 1 })], pinned.inboundTag, { publishMode: 'both' });
+    assert.strictEqual(pinned.outboundTag, 'block');
+
     // UUID route bytes.
     assert.strictEqual(uuidWithRoute(UUID, 3), '5783a3e7-e373-0003-8642-c83782b807c5');
     assert.strictEqual(uuidWithRoute(UUID.toUpperCase(), 4095), '5783a3e7-e373-0fff-8642-c83782b807c5');
@@ -392,6 +412,7 @@ async function runPortalPublicationTests() {
     const originals = {
         findById: HyNode.findById,
         updateOne: HyNode.updateOne,
+        findByIdAndUpdate: HyNode.findByIdAndUpdate,
         countDocuments: CascadeLink.countDocuments,
         invalidate: cascadeService.invalidatePublication,
         ensure: cascadeService.ensureRouteIds,
@@ -426,6 +447,17 @@ async function runPortalPublicationTests() {
         await cascadeService._onExitStatusChange(rev, { cascadePortal: { publishMode: 'both' } }, 'offline', 'error', null);
         assert.strictEqual(invalidations, 0, 'an exit that stays hidden changes nothing');
 
+        const fixed = { cascadePortal: { publishMode: 'single', inboundRoutes: [{ inboundId: 'main', linkId: 'fixed-only' }] } };
+        const hidden = { ...rev, _id: 'fixed-only', publishInSubscription: false };
+        for (const [status, next, id, expected] of [
+            ['online', 'offline', 'fixed-only', true], ['offline', 'online', 'fixed-only', true],
+            ['online', 'deployed', 'fixed-only', false], ['online', 'offline', 'unrelated', false],
+        ]) {
+            const changed = { exitsChanged: false };
+            await cascadeService._onExitStatusChange({ ...hidden, _id: id }, fixed, status, next, changed);
+            assert.strictEqual(changed.exitsChanged, expected);
+        }
+
         // A pending push is applied by a save that changes nothing.
         const applied = await cascadeService.updatePortalSettings('p1', {});
         assert.deepStrictEqual([applied.redeployed, applied.redeployPending, pushes], [true, false, 1]);
@@ -443,9 +475,24 @@ async function runPortalPublicationTests() {
         pushes = 0;
         const idle = await cascadeService.updatePortalSettings('p1', {});
         assert.deepStrictEqual([idle.redeployed, idle.redeployPending, pushes], [false, false, 0]);
+        // With no deployed exit a pin still changes the standalone config.
+        const pin = { inboundId: 'main', linkId: '64f000000000000000000001' };
+        let activePins = [];
+        CascadeLink.countDocuments = async query => query._id ? 1 : 0;
+        HyNode.findByIdAndUpdate = async (_id, { $set }) => {
+            if ($set['cascadePortal.inboundRoutes']) activePins = $set['cascadePortal.inboundRoutes'];
+            stored.cascadePortal.inboundRoutes = activePins;
+            return stored;
+        };
+        pushError = null;
+        for (const [pins, expected] of [[[pin], true], [[pin], false], [[], true], [[], false]]) {
+            assert.strictEqual((await cascadeService.updatePortalSettings('p1', { inboundRoutes: pins })).redeployed, expected);
+        }
+        assert.strictEqual(pushes, 2);
     } finally {
         HyNode.findById = originals.findById;
         HyNode.updateOne = originals.updateOne;
+        HyNode.findByIdAndUpdate = originals.findByIdAndUpdate;
         CascadeLink.countDocuments = originals.countDocuments;
         cascadeService.invalidatePublication = originals.invalidate;
         cascadeService.ensureRouteIds = originals.ensure;
@@ -453,9 +500,51 @@ async function runPortalPublicationTests() {
     }
 }
 
+async function runPinnedDeletionTests() {
+    const saved = {
+        impact: cascadeService.pinnedListenersForLink,
+        undeploy: cascadeService.undeployLink,
+        remove: CascadeLink.findByIdAndDelete,
+        invalidate: cascadeService.invalidatePublication,
+    };
+    const calls = [];
+    const link = { _id: 'target', status: 'online' };
+    try {
+        const listeners = [{ id: 'main', inboundTag: 'vless-in' }, { id: 'ws', label: 'WebSocket' }];
+        cascadeService.pinnedListenersForLink = async () => listeners;
+        cascadeService.undeployLink = async (_link, opts) => calls.push(opts.requirePortalPush);
+        CascadeLink.findByIdAndDelete = async id => calls.push(id);
+        cascadeService.invalidatePublication = async () => calls.push('invalidate');
+        for (const ack of [undefined, true, ['main'], ['ws', 'ws'], ['main', 'old']]) {
+            const warning = await cascadeService.deleteLink(link, ack);
+            assert.strictEqual(warning.code, 409);
+            assert.deepStrictEqual(warning.pinnedListeners, listeners);
+            assert.deepStrictEqual(calls, [], 'preview and stale confirmations cause no writes');
+        }
+        assert.ok((await cascadeService.deleteLink(link, ['ws', 'main'])).success);
+        assert.deepStrictEqual(calls, [true, 'target', 'invalidate']);
+
+        calls.length = 0;
+        cascadeService.undeployLink = async () => { throw new Error('portal unreachable'); };
+        await assert.rejects(cascadeService.deleteLink(link, ['main', 'ws']), /portal unreachable/);
+        assert.deepStrictEqual(calls, [], 'keep the link if the block could not be applied');
+
+        cascadeService.pinnedListenersForLink = async () => [];
+        link.status = 'pending';
+        assert.ok((await cascadeService.deleteLink(link)).success);
+        assert.deepStrictEqual(calls, ['target', 'invalidate']);
+    } finally {
+        cascadeService.pinnedListenersForLink = saved.impact;
+        cascadeService.undeployLink = saved.undeploy;
+        CascadeLink.findByIdAndDelete = saved.remove;
+        cascadeService.invalidatePublication = saved.invalidate;
+    }
+}
+
 runFilterTests()
     .then(runOutdatedLinkTests)
     .then(runPortalPublicationTests)
+    .then(runPinnedDeletionTests)
     .then(() => {
         console.log('cascade xray compat tests passed');
         process.exit(0);

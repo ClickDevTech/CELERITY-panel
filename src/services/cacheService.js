@@ -34,7 +34,7 @@ const PREFIX = {
     DEVICES: 'devices:',     // devices:{userId} - Hash with device IPs
     ONLINE: 'online',        // online (stores all sessions) - legacy
     NODES: 'nodes:active',   // nodes:active
-    CASCADE_EXITS: 'cascade:exits', // reverse-cascade exits published in subscriptions
+    CASCADE_EXITS: 'cascade:exits:v2', // active reverse links, including exits used only by pinned listeners
     SETTINGS: 'settings',    // settings
     TRAFFIC_STATS: 'traffic:stats', // Total traffic stats
     GROUPS: 'groups:active', // Active groups

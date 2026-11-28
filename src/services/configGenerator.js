@@ -17,7 +17,7 @@ const {
     cascadeProtocol,
     usesLinkVlessEncryption,
 } = require('../utils/cascadeTransport');
-const { normalizePortalSettings, publishesExits, isValidRouteId } = require('../utils/cascadePublish');
+const { normalizePortalSettings, publishesExits, isValidRouteId, portalListeners } = require('../utils/cascadePublish');
 const vlessEncryption = require('../utils/vlessEncryption');
 const { buildServerDecryption } = vlessEncryption;
 
@@ -1113,6 +1113,24 @@ function generateXrayConfig(node, users, options = {}) {
         config.routing.rules.push(routingRule);
         }
         
+    // A standalone config (setup, undeploy, or an incompatible exit) keeps the
+    // listener closed. applyReversePortal resolves only links actually installed.
+    const pins = node.cascadePortal?.inboundRoutes || [];
+    if (pins.length) {
+        const byId = new Map(portalListeners(node).map(i => [i.id, i.inboundTag]));
+        const byExit = new Map();
+        for (const { inboundId, linkId } of pins) {
+            const tag = byId.get(inboundId);
+            if (!tag) continue;
+            const key = String(linkId);
+            if (!byExit.has(key)) byExit.set(key, []);
+            byExit.get(key).push(tag);
+        }
+        for (const [linkId, inboundTag] of byExit) {
+            config.routing.rules.push({ type: 'field', ruleTag: `cascade-inbound-${linkId}`, inboundTag, outboundTag: 'block' });
+        }
+    }
+
     // geoip:private block is added later by ensurePrivateIpBlock() after cascade rules
 
     return JSON.stringify(config, null, 2);
@@ -1191,6 +1209,9 @@ function applyReversePortal(config, portalLinks, clientInboundTags, portalSettin
             settings: buildCascadeInboundSettings(link, portalTag),
             streamSettings: buildCascadeTunnelStreamSettings(link, { server: true }),
         });
+
+        const pin = config.routing.rules.find(rule => rule.ruleTag === `cascade-inbound-${link._id}`);
+        if (pin) pin.outboundTag = portalTag;
 
         if (link.publishInSubscription !== false && isValidRouteId(link.routeId)) {
             exitLinks.push({ link, portalTag });

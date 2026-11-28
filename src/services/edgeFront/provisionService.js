@@ -18,6 +18,7 @@ const nodeSetupLock = require('../../utils/nodeSetupLock');
 const { NGINX_WELCOME_BUFFER } = require('../../utils/decoyPage');
 const {
     buildFrontRoutes,
+    validateFrontCertificate,
     restoreFrontInboundLayout,
 } = require('../../utils/xrayFront');
 const { resolveCaddyVersion, selectCaddyAsset, normalizeVersion } = require('./release');
@@ -29,7 +30,7 @@ const {
     CADDY_KEY_PATH,
     SITE_ROOT,
     FRONT_SMOKE_HEADER,
-    FRONT_SMOKE_VALUE,
+    routeSmokeValue,
     buildCaddyfile,
     frontSiteHost,
 } = require('./caddyfile');
@@ -57,6 +58,8 @@ function resolveTlsMaterial(node) {
         const cert = String(node?.xray?.manualCert || '');
         const key = String(node?.xray?.manualKey || '');
         if (!cert || !key) throw new Error('Manual TLS is selected but the certificate or key is missing');
+        const error = validateFrontCertificate(node.domain, node.xray.front?.serverNames, cert);
+        if (error) throw new Error(error);
         return { cert, key };
     }
     const error = new Error(`FRONT_CONFIG_INVALID: TLS source '${tlsSource}' cannot serve the node domain; use manual PEM or ACME`);
@@ -276,12 +279,18 @@ function buildApplyScript({
     releaseDir,
     host,
     publicPort,
-    routePaths,
+    routes,
+    verifyPublicCert = false,
 }) {
     if (!TASK_ID_RE.test(requestId)) throw new Error('Invalid front request id');
     if (releaseDir !== `${RELEASES_ROOT}/${requestId}`) throw new Error('Invalid front release directory');
 
-    const smokePaths = routePaths.map(shellQuote).join(' ');
+    const names = [...new Set([host, ...routes.map(route => route.serverName || host)])];
+    const multiName = routes.some(route => route.serverName);
+    const smokeRoutes = routes.map((route, index) => {
+        const marker = `${FRONT_SMOKE_HEADER}: ${routeSmokeValue(index, multiName)}`;
+        return `smoke_route ${shellQuote(route.serverName || host)} ${shellQuote(route.paths[0])} ${shellQuote(marker)}`;
+    }).join('\n');
     return `#!/bin/bash
 set -Eeuo pipefail
 
@@ -290,9 +299,7 @@ RELEASE_DIR=${shellQuote(releaseDir)}
 BACKUP_ROOT=${shellQuote(`${BACKUP_PREFIX}/${requestId}`)}
 TRANSACTION_MARKER=${TRANSACTION_MARKER}
 XRAY_CONFIG=${XRAY_CONFIG_PATH}
-HOST=${shellQuote(host)}
 PORT=${publicPort}
-SMOKE_HEADER=${shellQuote(`${FRONT_SMOKE_HEADER}: ${FRONT_SMOKE_VALUE}`)}
 LIVE_MUTATED=0
 TRANSACTION_ARMED=0
 OWNS_TRANSACTION=0
@@ -444,23 +451,26 @@ systemctl is-active --quiet caddy || {
 }
 
 # Retried: an ACME certificate takes a few seconds on the first start.
-SITE_CODE=""
-for attempt in 1 2 3 4 5 6; do
-    SITE_CODE="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 \\
-        --resolve "$HOST:$PORT:127.0.0.1" "https://$HOST:$PORT/" || true)"
-    if [ "$SITE_CODE" = "200" ]; then
-        break
-    fi
-    sleep 5
+for HOST in ${names.map(shellQuote).join(' ')}; do
+    SITE_CODE=""
+    for attempt in 1 2 3 4 5 6; do
+        SITE_CODE="$(curl ${verifyPublicCert ? '-s' : '-sk'} -o /dev/null -w '%{http_code}' --max-time 10 \\
+            --resolve "$HOST:$PORT:127.0.0.1" "https://$HOST:$PORT/" || true)"
+        if [ "$SITE_CODE" = "200" ]; then
+            break
+        fi
+        sleep 5
+    done
+    echo "SMOKE $HOST/ -> \${SITE_CODE:-no response}"
+    [ "$SITE_CODE" = "200" ] || { echo "ERROR: the decoy site did not answer on $HOST:$PORT"; exit 1; }
 done
-echo "SMOKE / -> \${SITE_CODE:-no response}"
-[ "$SITE_CODE" = "200" ] || { echo "ERROR: the decoy site did not answer on port $PORT"; exit 1; }
 
-for path in ${smokePaths}; do
+smoke_route() {
+    local HOST="$1" path="$2" SMOKE_HEADER="$3"
     ROUTE_CODE="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 \\
         -H "$SMOKE_HEADER" \\
         --resolve "$HOST:$PORT:127.0.0.1" "https://$HOST:$PORT$path" || true)"
-    echo "ROUTE SMOKE $path -> \${ROUTE_CODE:-no response}"
+    echo "ROUTE SMOKE $HOST$path -> \${ROUTE_CODE:-no response}"
     if [ "$ROUTE_CODE" != "204" ]; then
         echo "ERROR: $path did not reach the expected Caddy route"
         exit 1
@@ -468,14 +478,15 @@ for path in ${smokePaths}; do
 
     UPSTREAM_CODE="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 \\
         --resolve "$HOST:$PORT:127.0.0.1" "https://$HOST:$PORT$path" || true)"
-    echo "UPSTREAM SMOKE $path -> \${UPSTREAM_CODE:-no response}"
+    echo "UPSTREAM SMOKE $HOST$path -> \${UPSTREAM_CODE:-no response}"
     case "$UPSTREAM_CODE" in
         000|502|503|504|'')
             echo "ERROR: $path matched Caddy but the Xray upstream is unavailable"
             exit 1
             ;;
     esac
-done
+}
+${smokeRoutes}
 
 mapfile -t OLD_RELEASES < <(ls -1dt ${RELEASES_ROOT}/* 2>/dev/null || true)
 for ((i=3; i<\${#OLD_RELEASES[@]}; i++)); do
@@ -656,7 +667,8 @@ async function activatePreparedFront(node, prepared, log) {
             releaseDir: prepared.releaseDir,
             host: prepared.host,
             publicPort: prepared.publicPort,
-            routePaths: prepared.routes.map(route => route.paths[0]),
+            routes: prepared.routes,
+            verifyPublicCert: node.xray.tlsSource === 'acme' && prepared.routes.some(route => route.serverName),
         }), 'Front apply');
         log(output);
         return {

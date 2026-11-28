@@ -288,13 +288,13 @@ function makeNode(overrides = {}) {
         releaseDir: '/var/lib/celerity-front/releases/12345678-1234-1234-1234-123456789abc',
         host: issue126.domain,
         publicPort: issue126.xray.front.publicPort,
-        routePaths: issue126Routes.map(route => route.paths[0]),
+        routes: issue126Routes,
     });
     assert.ok(buildCaddyfile(issue126)
         .includes('@front0 path "/r5r4he/djt4rejs" "/r5r4he/djt4rejs/*"'));
-    assert.ok(applyScript.includes("for path in '/r5r4he/djt4rejs'; do"));
+    assert.ok(applyScript.includes("smoke_route 'de.example.com' '/r5r4he/djt4rejs'"));
     assert.ok(applyScript.includes(
-        `SMOKE_HEADER='${FRONT_SMOKE_HEADER}: ${FRONT_SMOKE_VALUE}'`
+        `smoke_route 'de.example.com' '/r5r4he/djt4rejs' '${FRONT_SMOKE_HEADER}: ${FRONT_SMOKE_VALUE}'`
     ));
     assert.ok(applyScript.includes(`-H "$SMOKE_HEADER"`));
     assert.ok(applyScript.includes('if [ "$ROUTE_CODE" != "204" ]; then'));
@@ -326,7 +326,7 @@ function makeNode(overrides = {}) {
         releaseDir: '/var/lib/celerity-front/releases/87654321-4321-4321-4321-cba987654321',
         host: 'acme.example.com',
         publicPort: 443,
-        routePaths: ['/api'],
+        routes: [{ paths: ['/api'] }],
     });
     assert.ok(acmeApplyScript.includes(
         "RELEASE_DIR='/var/lib/celerity-front/releases/87654321-4321-4321-4321-cba987654321'"
@@ -414,6 +414,45 @@ function makeNode(overrides = {}) {
     off.xray.front.enabled = false;
     off.xray.listen = '0.0.0.0';
     assert.strictEqual(validateXrayFront(off.xray, off, VALID_CONTEXT), null);
+}
+
+// The handshake name scopes path conflicts and the per-host cutover checks.
+{
+    const n = makeNode();
+    n.xray.tlsSource = 'acme';
+    const front = n.xray.front;
+    const binding = { inboundId: 'extra-ws', serverName: 'nl.example.com' };
+    front.serverNames = [binding];
+    n.xray.extraInbounds[0].wsPath = n.xray.xhttpPath;
+    assert.strictEqual(validateXrayFront(n.xray, n, VALID_CONTEXT), null);
+    const withNames = buildDesiredState(n);
+    assert.ok(withNames.caddyfile.includes('https://de.example.com:443, https://nl.example.com:443'));
+    assert.ok(withNames.caddyfile.includes('vars_regexp {http.request.tls.server_name}'));
+    const routes = buildFrontRoutes(n.xray, n.port);
+    const apply = buildApplyScript({ requestId: '12345678-1234-1234-1234-123456789abc',
+        releaseDir: '/var/lib/celerity-front/releases/12345678-1234-1234-1234-123456789abc',
+        host: n.domain, publicPort: 443, routes, verifyPublicCert: true });
+    for (const [index, host] of ['de.example.com', 'nl.example.com'].entries()) {
+        assert.ok(apply.includes(`smoke_route '${host}' '/api/sync' '${FRONT_SMOKE_HEADER}: route-${index}'`));
+    }
+    front.serverNames = [{ ...binding, serverName: 'DE.EXAMPLE.COM' }];
+    assert.match(validateXrayFront(n.xray, n, VALID_CONTEXT), /more than one inbound/);
+    for (const invalid of [null, {}, [null], [binding, binding], [{ ...binding, inboundId: 'missing' }],
+        ...['', '*.example.com', '127.0.0.1', 'a:443', 'a.test,', 'a.test/b', 'a.test {'].map(serverName => [{ ...binding, serverName }])]) {
+        front.serverNames = invalid;
+        assert.ok(validateXrayFront(n.xray, n, VALID_CONTEXT));
+    }
+    front.serverNames = normalizeXrayFront({ serverNames: [{ ...binding, serverName: ' NL.Example.com ' }] }).serverNames;
+    assert.deepStrictEqual(front.serverNames, [binding]);
+    const previous = { ...front };
+    n.xray.front = { logLevel: 'ERROR' };
+    assert.strictEqual(applyFrontPatch(n.xray, n, previous), null);
+    assert.deepStrictEqual(n.xray.front.serverNames, [binding], 'an unrelated partial update keeps the names');
+    n.xray.front = { serverNames: [] };
+    n.xray.extraInbounds[0].wsPath = '/separate';
+    assert.strictEqual(applyFrontPatch(n.xray, n, previous), null);
+    assert.deepStrictEqual(n.xray.front.serverNames, [], 'explicit removal restores the shared name');
+    assert.ok(!buildCaddyfile(n).includes('vars_regexp'), 'legacy routing needs no handshake matcher');
 }
 
 // ---- normalization ----------------------------------------------------------
@@ -709,6 +748,22 @@ function makeNode(overrides = {}) {
         getXrayPublishedInbounds(disabling)[0]
     ).includes('@de.example.com:443?'),
         'the committed front stays published until disable has completed remotely');
+
+    const named = makeNode();
+    named.xray.front.serverNames = [{ inboundId: 'extra-ws', serverName: 'nl.example.com' }];
+    const [main, extra] = getXrayPublishedInbounds(named);
+    const mainURI = new URL(vlessURIForInbound(user, named, main));
+    const extraURI = new URL(vlessURIForInbound(user, named, extra));
+    assert.strictEqual(mainURI.host, extraURI.host);
+    assert.strictEqual(mainURI.username, extraURI.username);
+    assert.strictEqual(mainURI.searchParams.get('sni'), named.domain);
+    assert.strictEqual(extraURI.searchParams.get('sni'), 'nl.example.com');
+    assert.strictEqual(extraURI.searchParams.get('host'), named.domain);
+    assert.match(clashVlessProxyForInbound(user, named, extra).proxy, /servername: nl\.example\.com/);
+    assert.strictEqual(singboxVlessOutboundForInbound(user, named, extra).outbound.tls.server_name, 'nl.example.com');
+    assert.strictEqual(v2rayOutboundsForNode(user, named)[1].outbound.streamSettings.tlsSettings.serverName, 'nl.example.com');
+    named.xray.front.status = 'pending';
+    assert.deepStrictEqual(getXrayPublishedInbounds(named), [], 'pending names are withheld until cutover');
 
     const customUpstreamHosts = makeNode();
     customUpstreamHosts.xray.xhttpHost = 'xhttp.internal';

@@ -255,14 +255,15 @@
         : [];
     // The edit route passes normalized settings; the card is edit-only.
     const _cx = node?.cascadePortal || {};
-    const _cxInbounds = 1 + ((node?.xray?.extraInbounds) || []).filter(i => i && i.port).length;
+    const _cxInbounds = node?.cascadeListeners || [];
+    const _pins = new Map((_cx.inboundRoutes || []).map(r => [r.inboundId, String(r.linkId)]));
 %>
-<% if (_cxLinks.length > 0) { %>
+<% if (_cxLinks.length > 0 || _pins.size > 0) { %>
 <div class="card mt-3" id="cascadeExitsCard"
      data-node-id="<%= node._id %>"
      data-node-name="<%= node.name %>"
      data-node-flag="<%= node.flag || '' %>"
-     data-inbounds="<%= _cxInbounds %>">
+     data-inbounds="<%= _cxInbounds.length %>">
     <div class="card-header">
         <h2><i class="ti ti-route-2" style="margin-right:6px"></i> <%= t('nodes.cascadeExitsTitle') %></h2>
         <span class="badge badge-secondary"><%= _cxLinks.length %></span>
@@ -346,6 +347,7 @@
                         data-bridge-name="<%= bridgeName %>"
                         data-bridge-flag="<%= bridgeFlag %>"
                         data-status="<%= link.status %>"
+                        data-active="<%= link.active !== false && link.bridgeNode && link.bridgeNode.active !== false ? '1' : '0' %>"
                         data-orig-label="<%= link.subscriptionLabel || '' %>"
                         data-orig-publish="<%= link.publishInSubscription !== false ? '1' : '0' %>"
                         data-orig-balancer="<%= link.includeInBalancer !== false ? '1' : '0' %>">
@@ -377,15 +379,33 @@
             </table>
         </div>
 
+        <fieldset class="mt-2">
+            <legend><%= t('nodes.cascadeInboundRoutes') %></legend>
+            <p class="hint"><%= t('nodes.cascadeInboundRoutesHint') %></p>
+            <% _cxInbounds.forEach(inbound => { const selected = _pins.get(inbound.id) || ''; %>
+            <label class="form-group">
+                <span><%= inbound.label || inbound.inboundTag %> · <%= inbound.port %></span>
+                <select class="form-control cx-inbound-route" data-inbound-id="<%= inbound.id %>"
+                        data-label="<%= inbound.label || inbound.inboundTag %>" onchange="onCascadeExitsChange()">
+                    <option value=""><%= t('nodes.cascadeUsePortalRoutes') %></option>
+                    <% if (selected && !_cxLinks.some(l => String(l._id) === selected)) { %>
+                    <option value="<%= selected %>" selected><%= t('nodes.cascadeMissingExit') %></option>
+                    <% } %>
+                    <% _cxLinks.forEach(l => { %>
+                    <option value="<%= l._id %>" <%= selected === String(l._id) ? 'selected' : '' %>><%= l.bridgeNode?.name || l.name %></option>
+                    <% }); %>
+                </select>
+            </label>
+            <% }); %>
+        </fieldset>
+
         <div class="cx-preview mt-2">
             <div class="cx-preview-head">
                 <strong><%= t('nodes.cascadePreviewTitle') %></strong>
                 <span class="badge badge-secondary" id="cxPreviewCount"></span>
             </div>
             <ul class="cx-preview-list" id="cxPreviewList"></ul>
-            <small class="hint" id="cxPreviewInbounds" style="<%= _cxInbounds > 1 ? '' : 'display:none;' %>">
-                <%= t('nodes.cascadePreviewInbounds').replace('{count}', _cxInbounds) %>
-            </small>
+            <small class="hint" id="cxPreviewInbounds"></small>
         </div>
 
         <div class="xrv-actions mt-2">
