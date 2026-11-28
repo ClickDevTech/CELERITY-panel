@@ -37,6 +37,7 @@ const {
     captureFrontRollbackState,
 } = require('../../services/edgeFront/frontConfig');
 const vlessEncryption = require('../../utils/vlessEncryption');
+const { normalizeIpv6Input } = require('../../utils/netAddress');
 
 async function invalidateNodesCache() {
     await cache.invalidateNodes();
@@ -46,6 +47,10 @@ async function invalidateNodesCache() {
 
 function getSyncService() {
     return require('../../services/syncService');
+}
+
+function getCascadeService() {
+    return require('../../services/cascadeService');
 }
 
 // Active SSH sessions managed by ssh_session tool (sessionId -> {conn, buffer})
@@ -171,6 +176,8 @@ const manageNodeSchema = z.object({
     data: z.object({
         name: z.string().optional(),
         ip: z.string().optional().describe('IPv4/IPv6 of the host (required for hysteria/xray; ignored for virtual/cdn)'),
+        ipv6: z.string().max(45).optional()
+            .describe('Optional public IPv6 used only by cascade links with ipVersion 6; empty string clears it. The panel keeps reaching the node over ip'),
         domain: z.string().optional(),
         sni: z.string().optional(),
         port: z.number().optional(),
@@ -422,6 +429,8 @@ async function manageNode(args, emit) {
             if (!isServerlessNode(nodeType) && !data.ip) {
                 throw new Error('ip is required for hysteria and xray nodes');
             }
+            const ipv6Input = normalizeIpv6Input(isServerlessNode(nodeType) ? '' : data.ipv6);
+            if (ipv6Input.error) return { error: ipv6Input.error, code: 400 };
 
             // Validate virtual-specific fields up-front so the caller gets a
             // clear 400 instead of a generic ValidationError 500 from save().
@@ -489,6 +498,7 @@ async function manageNode(args, emit) {
             const nodeData = {
                 name: data.name,
                 ip: isServerlessNode(nodeType) ? null : data.ip,
+                ipv6: ipv6Input.value,
                 type: nodeType,
                 domain: isServerlessNode(nodeType) ? '' : (data.domain || ''),
                 sni: isServerlessNode(nodeType) ? '' : (data.sni || ''),
@@ -627,6 +637,18 @@ async function manageNode(args, emit) {
             const cascadeError = await checkCascadeMembership(existing, nextType);
             if (cascadeError) return { error: cascadeError, code: 409 };
 
+            let ipv6Changed = false;
+            if (data.ipv6 !== undefined || isServerlessNode(nextType)) {
+                const ipv6Input = normalizeIpv6Input(isServerlessNode(nextType) ? '' : data.ipv6);
+                if (ipv6Input.error) return { error: ipv6Input.error, code: 400 };
+                if (ipv6Input.value !== (existing.ipv6 || '')) {
+                    const ipv6Error = await getCascadeService().ipv6ChangeError(id, ipv6Input.value);
+                    if (ipv6Error) return { error: ipv6Error, code: 409 };
+                    updates.ipv6 = ipv6Input.value;
+                    ipv6Changed = true;
+                }
+            }
+
             if (nextType === 'virtual') {
                 const v = nextVirtual || {};
                 if (v.selectMode === 'group' && !v.sourceGroup) {
@@ -733,6 +755,9 @@ async function manageNode(args, emit) {
             // simply emit a no-op via the existing type guards in syncService.
             getSyncService().schedulePush(node._id, updates);
             getSyncService().maybePushCdnOrigins(existing, node);
+            if (ipv6Changed && updates.ipv6) {
+                getCascadeService().redeployIpv6LinksInBackground(node._id);
+            }
 
             logger.info(`[MCP] Updated node ${node.name}`);
             return { success: true, node: vlessEncryption.redactNode(node) };

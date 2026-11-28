@@ -298,6 +298,29 @@ Verdicts: `net_unreachable`, `handshake_failed`, `auth_rejected`, `tunnel_no_dat
 
 **Available Actions:** `create` | `update` | `delete` | `deploy` | `undeploy` | `reconnect`
 
+`data.ipVersion` (`4` or `6`, default `4`) picks how the two nodes of the link connect. With `6` the dialing node connects to the IPv6 of the listening node: the portal for `reverse`, the bridge for `forward`. Set that address first with `manage_node` → `update` → `data.ipv6`. IPv6 is not available with `mKCP`. Clients and panel SSH keep using IPv4.
+
+<details>
+<summary>📖 Example: Reverse link over IPv6</summary>
+
+```json
+{
+  "name": "manage_cascade",
+  "arguments": {
+    "action": "create",
+    "data": {
+      "name": "DE → NL over IPv6",
+      "portalNodeId": "portalNodeId123",
+      "bridgeNodeId": "bridgeNodeId456",
+      "mode": "reverse",
+      "ipVersion": 6
+    }
+  }
+}
+```
+
+</details>
+
 ---
 
 ### 💻 execute_ssh — Execute Commands

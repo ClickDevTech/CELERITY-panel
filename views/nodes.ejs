@@ -480,6 +480,22 @@ function nodeMetaFor(node) {
                         <select name="bridgeNodeId" class="form-input" id="selectBridge" required></select>
                     </div>
                 </div>
+
+                <!-- Tunnel address family -->
+                <div class="form-group">
+                    <label><%= t('network.ipVersion') %></label>
+                    <div class="mode-switcher" id="ipVersionSwitcher">
+                        <button type="button" class="mode-btn active" data-ip-version="4">
+                            <i class="ti ti-network"></i> IPv4
+                        </button>
+                        <button type="button" class="mode-btn" data-ip-version="6">
+                            <i class="ti ti-world"></i> IPv6
+                        </button>
+                    </div>
+                    <input type="hidden" name="ipVersion" id="linkIpVersionInput" value="4">
+                    <div class="form-hint" id="ipVersionHint"><%= t('network.ipVersion4Hint') %></div>
+                    <div class="form-warning" id="ipVersionWarnHint" style="display:none;margin-top:6px"></div>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label><%= t('network.tunnelPort') %></label>

@@ -284,6 +284,7 @@ export function createInspector(el, { store, actions, onGoto, onClose, openAdvan
                         h('span.nm-tag', null, String(l.tunnelProtocol || '').toUpperCase()),
                         h('span.nm-tag', null, String(l.tunnelTransport || '').toUpperCase()),
                         h(`span.nm-tag${sec !== 'none' ? '.good' : ''}`, null, sec === 'none' ? t('map.secNone') : sec.toUpperCase()),
+                        l.ipVersion === 6 ? h('span.nm-tag', null, 'IPv6') : null,
                         l.muxEnabled ? h('span.nm-tag', null, 'MUX') : null)),
                     prop('plug', t('map.port'), h('span.mono', null, String(l.tunnelPort || '—')),
                         t('map.listensOn', { name: isFwd ? tName : sName })),

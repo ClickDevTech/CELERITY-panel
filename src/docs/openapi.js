@@ -9,6 +9,12 @@ const CASCADE_KCP_PROPERTIES = {
     kcpHeader: { type: 'string', enum: ['none', 'wechat', 'dtls', 'srtp', 'wireguard'], default: 'none', description: 'mKCP packet-header camouflage' },
 };
 
+const CASCADE_IP_VERSION_PROPERTY = {
+    ipVersion: { type: 'integer', enum: [4, 6], default: 4, description: 'Address family of the node-to-node tunnel. 6 dials the IPv6 of the listening node (portal for reverse, bridge for forward), which must be set on that node. Not available with mKCP. Clients and panel SSH keep using IPv4.' },
+};
+
+const NODE_IPV6_DESCRIPTION = 'Public IPv6 of the server, dialed only by cascade links with ipVersion=6. Must be a global unicast address (2000::/3); stored in canonical form. Empty string clears it, which is refused (409) while an active IPv6 link listens on this node.';
+
 // Reverse links only; ignored for forward chains. routeId is allocated by the panel.
 const CASCADE_PUBLISH_PROPERTIES = {
     publishInSubscription: { type: 'boolean', default: true, description: 'Publish this exit as a separate subscription entry when the portal publishMode is perExit or both.' },
@@ -273,6 +279,7 @@ Serverless node types require their corresponding \`virtual\` or \`cdn\` object.
             properties: {
                 name: { type: 'string', example: 'Germany 1', description: 'Display name shown in panel and subscriptions.' },
                 ip: { type: 'string', example: '203.0.113.10', description: 'Server IP address. Required for hysteria/xray, ignored for serverless node types.' },
+                ipv6: { type: 'string', maxLength: 45, example: '2001:db8:c17:1::1', description: NODE_IPV6_DESCRIPTION },
                 type: { type: 'string', enum: ['hysteria', 'xray', 'virtual', 'cdn'], default: 'hysteria', description: 'Node type. `virtual` and `cdn` have no remote server.' },
                 domain: { type: 'string', example: 'de.example.com', description: 'Public domain for TLS/SNI.' },
                 sni: { type: 'string', example: 'de.example.com', description: 'Optional SNI override.' },
@@ -312,6 +319,7 @@ omitted from \`cdn\` are preserved.`,
             properties: {
                 name: { type: 'string' },
                 ip: { type: 'string', format: 'ip', description: 'Required when converting a virtual/CDN node back to hysteria or xray.' },
+                ipv6: { type: 'string', maxLength: 45, description: NODE_IPV6_DESCRIPTION },
                 domain: { type: 'string' },
                 sni: { type: 'string' },
                 port: { type: 'integer' },
@@ -347,6 +355,7 @@ omitted from \`cdn\` are preserved.`,
                 tunnelProtocol: { type: 'string', enum: ['vless', 'vmess'], default: 'vless', description: CASCADE_PROTOCOL_DESCRIPTION },
                 tunnelSecurity: { type: 'string', enum: ['none', 'tls', 'reality'], default: 'none', description: CASCADE_SECURITY_DESCRIPTION },
                 tunnelTransport: { type: 'string', enum: ['tcp', 'ws', 'grpc', 'xhttp', 'splithttp', 'kcp'], default: 'tcp' },
+                ...CASCADE_IP_VERSION_PROPERTY,
                 ...CASCADE_KCP_PROPERTIES,
                 ...CASCADE_PUBLISH_PROPERTIES,
                 autoDeploy: { type: 'boolean', example: false, description: 'Deploy the chain after creating the link.' },
@@ -363,6 +372,7 @@ omitted from \`cdn\` are preserved.`,
                 tunnelProtocol: { type: 'string', enum: ['vless', 'vmess'], description: CASCADE_PROTOCOL_DESCRIPTION },
                 tunnelSecurity: { type: 'string', enum: ['none', 'tls', 'reality'] },
                 tunnelTransport: { type: 'string', enum: ['tcp', 'ws', 'grpc', 'xhttp', 'splithttp', 'kcp'] },
+                ...CASCADE_IP_VERSION_PROPERTY,
                 ...CASCADE_KCP_PROPERTIES,
                 ...CASCADE_PUBLISH_PROPERTIES,
                 active: { type: 'boolean' },
@@ -1318,6 +1328,7 @@ These endpoints are not under \`/api\` and are not part of this specification:
                     _id:  { type: 'string' },
                     name: { type: 'string', example: 'Germany' },
                     ip:   { type: 'string', example: '1.2.3.4' },
+                    ipv6: { type: 'string', example: '2001:db8::1' },
                 },
             },
             Stats: {
@@ -1435,6 +1446,7 @@ These endpoints are not under \`/api\` and are not part of this specification:
                     tunnelProtocol: { type: 'string', enum: ['vless', 'vmess'], description: CASCADE_PROTOCOL_DESCRIPTION },
                     tunnelSecurity: { type: 'string', enum: ['none', 'tls', 'reality'] },
                     tunnelTransport: { type: 'string', enum: ['tcp', 'ws', 'grpc', 'xhttp', 'splithttp', 'kcp'] },
+                    ...CASCADE_IP_VERSION_PROPERTY,
                     ...CASCADE_KCP_PROPERTIES,
                     ...CASCADE_PUBLISH_PROPERTIES,
                     routeId: { type: 'integer', minimum: 1, maximum: 4095, nullable: true, readOnly: true, description: 'Reverse links: value written into the client UUID third group to select this exit (vlessRoute). Allocated by the panel, unique per portal.' },
@@ -2714,6 +2726,7 @@ integrations. Resolution is bound to the collection interval (~5 min), not per-s
                                     tunnelProtocol: { type: 'string', enum: ['vless', 'vmess'], default: 'vless', description: CASCADE_PROTOCOL_DESCRIPTION },
                                     tunnelSecurity: { type: 'string', enum: ['none', 'tls', 'reality'], default: 'none', description: CASCADE_SECURITY_DESCRIPTION },
                                     tunnelTransport: { type: 'string', enum: ['tcp', 'ws', 'grpc', 'xhttp', 'splithttp', 'kcp'], default: 'tcp' },
+                                    ...CASCADE_IP_VERSION_PROPERTY,
                                     ...CASCADE_KCP_PROPERTIES,
                                     ...CASCADE_PUBLISH_PROPERTIES,
                                     autoDeploy: { type: 'boolean', description: 'Deploy chain after creation' },

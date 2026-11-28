@@ -590,6 +590,11 @@ const i18n = {
     cdnResolved: <%- JSON.stringify(t("nodes.cdnResolved")) %>,
     cdnResolvedSources: <%- JSON.stringify(t("nodes.cdnResolvedSources")) %>,
     cdnEdgeLimit: <%- JSON.stringify(t("nodes.cdnEdgeLimit")) %>,
+    ipv6DetectFound: <%- JSON.stringify(t("nodes.ipv6DetectFound")) %>,
+    ipv6DetectPick: <%- JSON.stringify(t("nodes.ipv6DetectPick")) %>,
+    ipv6DetectPicked: <%- JSON.stringify(t("nodes.ipv6DetectPicked")) %>,
+    ipv6DetectNone: <%- JSON.stringify(t("nodes.ipv6DetectNone")) %>,
+    ipv6DetectNoTool: <%- JSON.stringify(t("nodes.ipv6DetectNoTool")) %>,
     cdnPathMustExtend: <%- JSON.stringify(t("nodes.cdnPathMustExtend")) %>,
     cdnPathMustMatchOrigin: <%- JSON.stringify(t("nodes.cdnPathMustMatchOrigin")) %>,
     cdnPathMustEqual: <%- JSON.stringify(t("nodes.cdnPathMustEqual")) %>,
@@ -2689,6 +2694,65 @@ async function resolveCdnEdges() {
         if (status) status.textContent = `${i18n.error}: ${error.message}`;
     } finally {
         if (button) button.disabled = false;
+        if (icon) icon.classList.remove('spin');
+    }
+}
+
+// Fills the IPv6 field from the addresses found on the server; nothing is
+// saved until the operator submits the form.
+async function detectNodeIpv6() {
+    const button = document.getElementById('ipv6DetectBtn');
+    const input = document.getElementById('ipv6');
+    const status = document.getElementById('ipv6DetectStatus');
+    const choices = document.getElementById('ipv6DetectChoices');
+    if (!button || !input || !status || !choices) return;
+    const icon = button.querySelector('i');
+    const fill = (address) => {
+        input.value = address;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    choices.replaceChildren();
+    choices.style.display = 'none';
+    status.textContent = i18n.checking;
+    button.disabled = true;
+    if (icon) icon.classList.add('spin');
+    try {
+        const response = await fetch(`/panel/nodes/${encodeURIComponent(button.dataset.nodeId)}/detect-ipv6`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`);
+
+        const addresses = Array.isArray(data.addresses) ? data.addresses : [];
+        if (addresses.length === 0) {
+            status.textContent = data.toolMissing ? i18n.ipv6DetectNoTool : i18n.ipv6DetectNone;
+        } else if (addresses.length === 1) {
+            fill(addresses[0]);
+            status.textContent = i18n.ipv6DetectFound.replace('{address}', addresses[0]);
+        } else {
+            status.textContent = i18n.ipv6DetectPick;
+            for (const address of addresses) {
+                const choice = document.createElement('button');
+                choice.type = 'button';
+                choice.className = 'btn btn-sm';
+                choice.textContent = address;
+                choice.addEventListener('click', () => {
+                    fill(address);
+                    choices.replaceChildren();
+                    choices.style.display = 'none';
+                    status.textContent = i18n.ipv6DetectPicked.replace('{address}', address);
+                });
+                choices.appendChild(choice);
+            }
+            choices.style.display = 'flex';
+        }
+    } catch (error) {
+        status.textContent = `${i18n.error}: ${error.message}`;
+    } finally {
+        button.disabled = false;
         if (icon) icon.classList.remove('spin');
     }
 }

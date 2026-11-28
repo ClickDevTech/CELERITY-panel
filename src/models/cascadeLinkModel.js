@@ -11,6 +11,7 @@ const {
     KCP_HEADERS,
     KCP_LIMITS,
     KCP_DEFAULTS,
+    IP_VERSIONS,
 } = require('../utils/cascadeTransport');
 const { ROUTE_ID_MIN, ROUTE_ID_MAX, SUBSCRIPTION_LABEL_MAX } = require('../utils/cascadePublish');
 
@@ -23,6 +24,10 @@ const cascadeLinkSchema = new mongoose.Schema({
 
     portalNode: { type: mongoose.Schema.Types.ObjectId, ref: 'HyNode', required: true },
     bridgeNode: { type: mongoose.Schema.Types.ObjectId, ref: 'HyNode', required: true },
+
+    // Address family of the tunnel between the nodes. 6 dials the listening
+    // node's `ipv6` (portal for reverse, bridge for forward) instead of `ip`.
+    ipVersion: { type: Number, enum: IP_VERSIONS, default: 4 },
 
     tunnelUuid: { type: String, required: true },
     tunnelPort: { type: Number, default: 10086 },

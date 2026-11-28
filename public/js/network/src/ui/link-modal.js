@@ -33,6 +33,7 @@ export function createLinkModal({ store, onSaved }) {
     const submit = $('linkModalSubmit');
     const linkIdInput = $('linkIdInput');
     const modeInput = $('linkModeInput');
+    const ipVersionInput = $('linkIpVersionInput');
     let editingId = '';
     let submitting = false;
 
@@ -83,6 +84,47 @@ export function createLinkModal({ store, onSaved }) {
         if (vmess.disabled && form.tunnelProtocol.value === 'vmess') form.tunnelProtocol.value = 'vless';
     }
 
+    /**
+     * Why the current selection cannot run over IPv6, or ''. The listening
+     * node needs an IPv6 in the panel: the portal for reverse, the bridge for
+     * forward. The server repeats these checks on save.
+     */
+    function ipv6Blocker() {
+        if (form.tunnelTransport.value === 'kcp') return t('ipVersionKcpOnlyV4');
+        const isForward = modeInput.value === 'forward';
+        const listenId = isForward ? bridgeSel.value : portalSel.value;
+        const node = listenId ? store.index.nodes.get(listenId) : null;
+        if (node && !node.ipv6) {
+            return t(isForward ? 'ipVersionNoBridgeIpv6' : 'ipVersionNoPortalIpv6', { name: nodeTitle(node) });
+        }
+        return '';
+    }
+
+    function setIpVersion(version) {
+        const v = Number(version) === 6 ? '6' : '4';
+        if (!ipVersionInput) return;
+        ipVersionInput.value = v;
+        const sw = $('ipVersionSwitcher');
+        if (sw) sw.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.ipVersion === v));
+        applyIpVersionUi();
+    }
+
+    function applyIpVersionUi() {
+        if (!ipVersionInput) return;
+        const v6 = ipVersionInput.value === '6';
+        const hint = $('ipVersionHint');
+        if (hint) {
+            hint.textContent = !v6
+                ? t('ipVersion4Hint')
+                : t(modeInput.value === 'forward' ? 'ipVersion6ForwardHint' : 'ipVersion6ReverseHint');
+        }
+        const warn = $('ipVersionWarnHint');
+        if (!warn) return;
+        const blocker = v6 ? ipv6Blocker() : '';
+        warn.style.display = blocker ? '' : 'none';
+        warn.textContent = blocker;
+    }
+
     function applyGeoUi() {
         const fields = $('geoRoutingFields');
         if (fields) fields.style.display = $('geoRoutingEnabled').checked ? '' : 'none';
@@ -97,6 +139,7 @@ export function createLinkModal({ store, onSaved }) {
     }
 
     function updateWarnings() {
+        applyIpVersionUi();
         const isForward = modeInput.value === 'forward';
         const section = $('linkSubscriptionSection');
         const fwdHint = $('linkSubscriptionForwardHint');
@@ -145,6 +188,8 @@ export function createLinkModal({ store, onSaved }) {
         $('geoRoutingDomains').value = '';
         $('geoRoutingGeoip').value = '';
         applyGeoUi();
+        // Hidden inputs keep their value across form.reset().
+        setIpVersion(4);
         setMode('reverse');
         applyTransportUi();
         setSubmitLabel(false);
@@ -232,6 +277,7 @@ export function createLinkModal({ store, onSaved }) {
         if (form.subscriptionLabel) form.subscriptionLabel.value = link.subscriptionLabel || '';
         setRouteIdHint(link.routeId);
 
+        setIpVersion(link.ipVersion);
         setMode(link.mode || 'reverse');
         form.tunnelProtocol.value = link.tunnelProtocol || 'vless';
         applyProtocolUi(modeInput.value);
@@ -255,6 +301,7 @@ export function createLinkModal({ store, onSaved }) {
             tunnelProtocol: form.tunnelProtocol.value,
             tunnelTransport: form.tunnelTransport.value,
             tunnelSecurity: form.tunnelSecurity.value,
+            ipVersion: ipVersionInput && ipVersionInput.value === '6' ? 6 : 4,
             autoDeploy: !!form.autoDeploy.checked,
             muxEnabled: !!form.muxEnabled.checked,
             muxConcurrency: intOr(form.muxConcurrency.value, 8),
@@ -299,6 +346,11 @@ export function createLinkModal({ store, onSaved }) {
             toast(t('map.create.badPort'), 'error');
             return;
         }
+        const ipv6Error = data.ipVersion === 6 ? ipv6Blocker() : '';
+        if (ipv6Error) {
+            toast(ipv6Error, 'error');
+            return;
+        }
 
         submitting = true;
         setSubmitLabel(true);
@@ -322,6 +374,11 @@ export function createLinkModal({ store, onSaved }) {
     const switcher = $('modeSwitcher');
     if (switcher) {
         switcher.querySelectorAll('.mode-btn').forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+    }
+    const ipVersionSwitcher = $('ipVersionSwitcher');
+    if (ipVersionSwitcher) {
+        ipVersionSwitcher.querySelectorAll('.mode-btn')
+            .forEach(btn => btn.addEventListener('click', () => setIpVersion(btn.dataset.ipVersion)));
     }
     form.tunnelSecurity.addEventListener('change', () => { applySecurityUi(); updateWarnings(); });
     form.tunnelTransport.addEventListener('change', () => { applyTransportUi(); updateWarnings(); });

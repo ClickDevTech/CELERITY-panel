@@ -114,7 +114,7 @@ export function linkTip(index, link) {
     return [
         h('div.t', null, dot(link.status), link.label || ''),
         h('div.m', null,
-            `${link.mode === 'forward' ? 'Forward' : 'Reverse'} · ${String(link.tunnelProtocol || '').toUpperCase()} / ${String(link.tunnelTransport || '').toUpperCase()}${sec} · ${t('map.port')} ${link.tunnelPort || '—'}`,
+            `${link.mode === 'forward' ? 'Forward' : 'Reverse'} · ${String(link.tunnelProtocol || '').toUpperCase()} / ${String(link.tunnelTransport || '').toUpperCase()}${sec}${link.ipVersion === 6 ? ' · IPv6' : ''} · ${t('map.port')} ${link.tunnelPort || '—'}`,
             h('br'),
             typeof link.latencyMs === 'number' && link.status === 'online' ? t('map.latencyValue', { n: link.latencyMs }) : statusName(link.status),
             link.lastError ? [h('br'), h('span.err', null, link.lastError)] : null),

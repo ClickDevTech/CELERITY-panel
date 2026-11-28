@@ -77,6 +77,31 @@
         </div>
     </div>
 
+    <%# Dialed only by cascade links over IPv6; the panel keeps using the IP above. %>
+    <div class="form-row" data-types="hysteria xray">
+        <div class="form-group" id="ipv6FormGroup">
+            <div class="nf-label-row">
+                <label for="ipv6"><%= t('nodes.ipv6Address') %> <span class="nf-opt"><%= t('nodes.optionalSuffix') %></span></label>
+                <%- include('field-help', { textKey: 'nodes.ipv6AddressHelp' }) %>
+            </div>
+            <% if (node?._id) { %>
+            <div class="input-with-button">
+                <input type="text" id="ipv6" name="ipv6" value="<%= node?.ipv6 || '' %>" maxlength="45"
+                       placeholder="2a01:4f8:c17:1::1" autocomplete="off" spellcheck="false">
+                <button type="button" class="btn btn-sm" id="ipv6DetectBtn"
+                        data-node-id="<%= node._id %>" onclick="detectNodeIpv6()">
+                    <i class="ti ti-world-search"></i> <%= t('nodes.ipv6Detect') %>
+                </button>
+            </div>
+            <% } else { %>
+            <input type="text" id="ipv6" name="ipv6" value="<%= node?.ipv6 || '' %>" maxlength="45"
+                   placeholder="2a01:4f8:c17:1::1" autocomplete="off" spellcheck="false">
+            <% } %>
+            <small id="ipv6DetectStatus" style="display:block;" role="status" aria-live="polite"><% if (!node?._id) { %><%= t('nodes.ipv6DetectAfterSave') %><% } %></small>
+            <div id="ipv6DetectChoices" style="display:none; flex-wrap:wrap; gap:6px; margin-top:6px;"></div>
+        </div>
+    </div>
+
     <%# Drives the connection address, TLS serverName and certificate mode, so
         it stays visible for every protocol that has a host of its own. %>
     <div data-types="hysteria xray">

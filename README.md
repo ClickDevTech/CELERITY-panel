@@ -222,6 +222,32 @@ Both ends of a link need at least Xray **25.9.11** for reverse links, **25.9.5**
 
 Links deployed by an older panel version (legacy `reverse` section, plain VLESS tunnels) are redeployed on both ends automatically the first time one of their nodes is synced. A link whose redeploy fails is shown as an error on the Network Map; deploy it manually after fixing the cause.
 
+#### Cascade Links over IPv6
+
+Each link can connect its two nodes over IPv4 (the default) or over IPv6. IPv6 helps when IPv4 between two hosting providers is filtered, slow or unstable while IPv6 works fine. Only the tunnel between the nodes changes: clients connect to the Portal as before, and the panel keeps managing the nodes over SSH on IPv4. The panel itself does not need IPv6. Every link in a chain has its own setting, so IPv4 and IPv6 hops can be mixed freely.
+
+Which node needs what:
+
+| Mode | Listening node: needs its IPv6 address in the panel | Dialing node: needs working IPv6 |
+|------|-----------------------------------------------------|----------------------------------|
+| Reverse | Portal | Bridge |
+| Forward | Bridge (or the Relay of this hop) | Portal (or the previous Relay) |
+
+How to enable:
+
+1. Open the listening node, click **Detect** next to **IPv6 address** (or type the address in) and save the node.
+2. In the link editor choose **IPv6** under **Connection between nodes**, then deploy the link.
+
+Before deploying, the panel checks over SSH that the listening node really has this IPv6 address and that the dialing node has an IPv6 route. If something is missing, nothing is deployed and the error tells what to fix. Health checks work the same way as on IPv4: for reverse links the panel counts tunnel connections on the Portal, and for forward links the Portal itself dials the Bridge's IPv6 address and port.
+
+Good to know:
+
+- Use the server's permanent IPv6 address. Detect skips temporary (privacy) addresses.
+- If the hosting provider changes the address, click Detect again and save the node: its deployed IPv6 links are redeployed automatically.
+- The IPv6 field can't be cleared while active IPv6 links listen on the node. Switch those links to IPv4 or delete them first.
+- If the hosting provider has an external firewall (security groups), allow the tunnel port for IPv6 there as well.
+- To check by hand, run `ss -6tn state established '( sport = :10086 )'` on the listening node (use your `tunnelPort`).
+
 #### Post-Deploy Recommendations
 
 1. Check hop statuses on the Network Map
@@ -237,6 +263,7 @@ Links deployed by an older panel version (legacy `reverse` section, plain VLESS 
 | Mixed modes in one chain | Reverse and Forward use different Xray mechanisms and cannot be combined |
 | VMess on reverse links | VLESS Reverse Proxy has no VMess counterpart |
 | Same port on relay for two hops | A relay that is both bridge and portal requires different ports for incoming and outgoing tunnels |
+| mKCP over IPv6 | Not supported yet: mKCP links run over IPv4 |
 
 ---
 
@@ -736,6 +763,7 @@ disk usage in check.
 | `name` | String | Display name |
 | `flag` | String | Country flag (emoji) |
 | `ip` | String | IP address |
+| `ipv6` | String | Public IPv6, used only by cascade links over IPv6 |
 | `domain` | String | Domain for SNI/ACME |
 | `sni` | String | Custom SNI for masquerading |
 | `port` | Number | Main port (443) |

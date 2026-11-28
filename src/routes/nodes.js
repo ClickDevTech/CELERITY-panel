@@ -17,6 +17,12 @@ const syncService = require('../services/syncService');
 const { isServerlessNode, checkCascadeMembership } = require('../utils/nodeTypes');
 const { normalizeVirtualObservatory } = require('../utils/virtualObservatory');
 const nodeSetupLock = require('../utils/nodeSetupLock');
+const { normalizeIpv6Input } = require('../utils/netAddress');
+
+// Loaded on first use: only IPv6 edits need it, and it starts the SSH pool.
+function getCascadeService() {
+    return require('../services/cascadeService');
+}
 const {
     mergeCdnConfig,
     normalizeCdnConfig,
@@ -307,6 +313,8 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
         if (!isServerlessNode(nodeType) && !ip) {
             return res.status(400).json({ error: 'ip is required for hysteria and xray nodes' });
         }
+        const ipv6Input = normalizeIpv6Input(isServerlessNode(nodeType) ? '' : req.body.ipv6);
+        if (ipv6Input.error) return res.status(400).json({ error: ipv6Input.error });
         // The front takes over the public port, so the stored one can differ.
         const frontNode = { port: parseInt(port, 10) || 443, domain, ip };
         if (nodeType === 'xray' && xray) {
@@ -380,6 +388,7 @@ router.post('/', requireScope('nodes:write'), async (req, res) => {
         const nodeData = {
             name,
             ip: isServerlessNode(nodeType) ? null : ip,
+            ipv6: ipv6Input.value,
             type: nodeType,
             domain: isServerlessNode(nodeType) ? '' : (domain || ''),
             sni: isServerlessNode(nodeType) ? '' : (sni || ''),
@@ -534,6 +543,18 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         const cascadeError = await checkCascadeMembership(existing, nextType);
         if (cascadeError) return res.status(409).json({ error: cascadeError });
 
+        let ipv6Changed = false;
+        if (req.body.ipv6 !== undefined || isServerlessNode(nextType)) {
+            const ipv6Input = normalizeIpv6Input(isServerlessNode(nextType) ? '' : req.body.ipv6);
+            if (ipv6Input.error) return res.status(400).json({ error: ipv6Input.error });
+            if (ipv6Input.value !== (existing.ipv6 || '')) {
+                const ipv6Error = await getCascadeService().ipv6ChangeError(req.params.id, ipv6Input.value);
+                if (ipv6Error) return res.status(409).json({ error: ipv6Error });
+                updates.ipv6 = ipv6Input.value;
+                ipv6Changed = true;
+            }
+        }
+
         if (nextType === 'virtual') {
             const v = nextVirtual || {};
             if (v.selectMode === 'group' && !v.sourceGroup) {
@@ -653,6 +674,9 @@ router.put('/:id', requireScope('nodes:write'), async (req, res) => {
         // Auto-push config to the node if any config-affecting field changed.
         syncService.schedulePush(node._id, updates);
         syncService.maybePushCdnOrigins(existing, node);
+        if (ipv6Changed && updates.ipv6) {
+            getCascadeService().redeployIpv6LinksInBackground(node._id);
+        }
 
         // Invalidate cache
         await invalidateNodesCache();

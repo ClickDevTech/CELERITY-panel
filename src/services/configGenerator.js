@@ -16,6 +16,7 @@ const {
     normalizeTransport,
     cascadeProtocol,
     usesLinkVlessEncryption,
+    cascadeDialAddress,
 } = require('../utils/cascadeTransport');
 const { normalizePortalSettings, publishesExits, isValidRouteId } = require('../utils/cascadePublish');
 const vlessEncryption = require('../utils/vlessEncryption');
@@ -1359,7 +1360,7 @@ function generateBridgeConfig(link, portalNode) {
     const tunnelOutbound = {
         tag: 'tunnel',
         protocol: 'vless',
-        settings: buildCascadeOutboundSettings(link, portalNode.ip, 'bridge'),
+        settings: buildCascadeOutboundSettings(link, cascadeDialAddress(link, portalNode), 'bridge'),
         streamSettings: buildCascadeTunnelStreamSettings(link),
     };
 
@@ -1418,7 +1419,7 @@ function generateRelayConfig(upstreamLink, upstreamPortal, downstreamLinks) {
     const tunnelUpOutbound = {
         tag: 'tunnel-up',
         protocol: 'vless',
-        settings: buildCascadeOutboundSettings(upstreamLink, upstreamPortal.ip, 'bridge-up'),
+        settings: buildCascadeOutboundSettings(upstreamLink, cascadeDialAddress(upstreamLink, upstreamPortal), 'bridge-up'),
         streamSettings: buildCascadeTunnelStreamSettings(upstreamLink),
     };
 
@@ -1645,7 +1646,10 @@ function applyForwardChain(config, forwardLinks, clientInboundTags) {
         const outbound = {
             tag,
             protocol: cascadeProtocol(link),
-            settings: buildCascadeOutboundSettings(link, bridgeNode.ip || bridgeNode.domain || ''),
+            settings: buildCascadeOutboundSettings(
+                link,
+                cascadeDialAddress(link, bridgeNode, bridgeNode.ip || bridgeNode.domain || '')
+            ),
             streamSettings: buildCascadeTunnelStreamSettings(link),
         };
 

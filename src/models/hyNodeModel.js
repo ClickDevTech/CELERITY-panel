@@ -5,6 +5,7 @@
 const mongoose = require('mongoose');
 const net = require('net');
 const { isServerlessNode } = require('../utils/nodeTypes');
+const { isGlobalIpv6 } = require('../utils/netAddress');
 const {
     CDN_ALPN_VALUES,
     CDN_FINGERPRINT_VALUES,
@@ -556,6 +557,19 @@ const hyNodeSchema = new mongoose.Schema({
     comment: { type: String, default: '', trim: true, maxlength: 500 },
     // Required for hysteria/xray; null for serverless virtual/CDN nodes.
     ip: { type: String, default: null },
+    // Optional public IPv6 used only by cascade links with ipVersion 6; the
+    // panel itself keeps reaching the node over `ip`.
+    ipv6: {
+        type: String,
+        default: '',
+        trim: true,
+        lowercase: true,
+        maxlength: 45,
+        validate: {
+            validator: value => !value || isGlobalIpv6(value),
+            message: 'ipv6 must be a public (global unicast) IPv6 address',
+        },
+    },
     domain: { type: String, default: '' },
     sni: { type: String, default: '' },
     port: { type: Number, default: 443 },

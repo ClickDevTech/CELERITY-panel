@@ -27,6 +27,7 @@ const { buildNodeUiMeta } = require('../../utils/nodeUi');
 const { isServerlessNode, checkCascadeMembership } = require('../../utils/nodeTypes');
 const { normalizeVirtualObservatory } = require('../../utils/virtualObservatory');
 const { normalizePortalSettings } = require('../../utils/cascadePublish');
+const { normalizeIpv6Input } = require('../../utils/netAddress');
 const nodeSetupLock = require('../../utils/nodeSetupLock');
 const { nodeOsFamily, buildServiceCommand } = require('../../utils/nodeOs');
 const {
@@ -544,6 +545,10 @@ router.post('/nodes', async (req, res) => {
         if (!isServerlessNode(nodeType) && !ip) {
             return sendNodeFormResult(req, res, '/panel/nodes/add', 'IP address is required');
         }
+        const ipv6Input = normalizeIpv6Input(isServerlessNode(nodeType) ? '' : req.body.ipv6);
+        if (ipv6Input.error) {
+            return sendNodeFormResult(req, res, '/panel/nodes/add', ipv6Input.error);
+        }
 
         // Ensure no duplicate node for the same IP + protocol type (skipped for virtual: no IP).
         if (!isServerlessNode(nodeType)) {
@@ -599,6 +604,7 @@ router.post('/nodes', async (req, res) => {
         const nodeData = {
             name,
             ip: isServerlessNode(nodeType) ? null : ip,
+            ipv6: ipv6Input.value,
             type: nodeType,
             domain: isServerlessNode(nodeType) ? '' : (req.body.domain || ''),
             sni: isServerlessNode(nodeType) ? '' : (req.body.sni || ''),
@@ -1122,6 +1128,24 @@ router.post('/nodes/:id', async (req, res) => {
             initScript: req.body.initScript || '',
         };
 
+        // Touched only when posted, like the SSH fields below, so partial
+        // bodies keep the stored address.
+        let ipv6Changed = false;
+        if (req.body.ipv6 !== undefined || isServerlessNode(nodeType)) {
+            const ipv6Input = normalizeIpv6Input(isServerlessNode(nodeType) ? '' : req.body.ipv6);
+            if (ipv6Input.error) {
+                return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, ipv6Input.error);
+            }
+            if (ipv6Input.value !== (existingNode.ipv6 || '')) {
+                const ipv6Error = await cascadeService.ipv6ChangeError(nodeId, ipv6Input.value);
+                if (ipv6Error) {
+                    return sendNodeFormResult(req, res, `/panel/nodes/${nodeId}`, ipv6Error);
+                }
+                updates.ipv6 = ipv6Input.value;
+                ipv6Changed = true;
+            }
+        }
+
         // SSH transport fields are only touched when the request actually carries
         // them. Writing them unconditionally would reset a custom port/user to
         // 22/root for any caller that posts a partial body, and would also make
@@ -1265,6 +1289,9 @@ router.post('/nodes/:id', async (req, res) => {
 
         syncService.schedulePush(nodeId, updates);
         syncService.maybePushCdnOrigins(previousCdnSync, existingNode);
+        if (ipv6Changed && updates.ipv6) {
+            cascadeService.redeployIpv6LinksInBackground(nodeId);
+        }
 
         // Sync SSH credentials to the sibling node on the same host (if SSH was
         // part of this update). Skipped when the node was moved to another IP:
@@ -1379,6 +1406,42 @@ router.post('/nodes/:id/setup', async (req, res) => {
         res.status(500).json({ success: false, error: error.message, logs: [`Exception: ${error.message}`] });
     } finally {
         if (lockKey) nodeSetupLock.release(lockKey);
+    }
+});
+
+const detectIpv6Limiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => {
+        res.status(429).json({ success: false, error: 'Too many requests. Try again in a minute.' });
+    },
+});
+
+// POST /panel/nodes/:id/detect-ipv6 - List public IPv6 addresses of the node over SSH.
+// Read-only: the operator picks an address and saves the form.
+router.post('/nodes/:id/detect-ipv6', detectIpv6Limiter, async (req, res) => {
+    try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ success: false, error: 'Invalid node ID' });
+        }
+        const node = await HyNode.findById(req.params.id).select('name ip type ssh');
+        if (!node) {
+            return res.status(404).json({ success: false, error: 'Node not found' });
+        }
+        if (isServerlessNode(node)) {
+            return res.status(400).json({ success: false, error: 'This node type has no server to inspect' });
+        }
+        if (!node.ssh?.password && !node.ssh?.privateKey) {
+            return res.status(400).json({ success: false, error: 'SSH credentials not configured. Save the SSH access first.' });
+        }
+
+        const { addresses, toolMissing } = await cascadeService.detectNodeIpv6(node);
+        res.json({ success: true, addresses, toolMissing });
+    } catch (error) {
+        logger.warn(`[Panel] IPv6 detection failed for node ${req.params.id}: ${error.message}`);
+        res.status(502).json({ success: false, error: `Could not connect to the node: ${error.message}` });
     }
 });
 

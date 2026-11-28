@@ -20,6 +20,8 @@ const {
     validateTunnelProtocol,
     sanitizeKcpInput,
     generateKcpPassword,
+    sanitizeIpVersionInput,
+    validateLinkIpVersion,
 } = require('../utils/cascadeTransport');
 const {
     normalizePortalSettings,
@@ -128,8 +130,8 @@ router.get('/links', requireScope('nodes:read'), async (req, res) => {
         }
 
         const links = await CascadeLink.find(filter)
-            .populate('portalNode', 'name ip flag status')
-            .populate('bridgeNode', 'name ip flag status')
+            .populate('portalNode', 'name ip ipv6 flag status')
+            .populate('bridgeNode', 'name ip ipv6 flag status')
             .sort({ createdAt: -1 });
 
         res.json(links);
@@ -149,8 +151,8 @@ router.get('/links/:id', requireScope('nodes:read'), async (req, res) => {
         }
 
         const link = await CascadeLink.findById(req.params.id)
-            .populate('portalNode', 'name ip flag status')
-            .populate('bridgeNode', 'name ip flag status');
+            .populate('portalNode', 'name ip ipv6 flag status')
+            .populate('bridgeNode', 'name ip ipv6 flag status');
 
         if (!link) return res.status(404).json({ error: 'Cascade link not found' });
         res.json(link);
@@ -215,6 +217,10 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
         if (publishInput.error) {
             return res.status(400).json({ error: publishInput.error });
         }
+        const ipVersionInput = sanitizeIpVersionInput(req.body);
+        if (ipVersionInput.error) {
+            return res.status(400).json({ error: ipVersionInput.error });
+        }
 
         const [portalNode, bridgeNode] = await Promise.all([
             HyNode.findById(portalNodeId),
@@ -225,6 +231,16 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
         if (!bridgeNode) return res.status(404).json({ error: 'Bridge node not found' });
         if (isServerlessNode(portalNode) || isServerlessNode(bridgeNode)) {
             return res.status(400).json({ error: 'Serverless nodes cannot participate in cascade links' });
+        }
+        const ipVersionError = validateLinkIpVersion({
+            ipVersion: ipVersionInput.fields.ipVersion,
+            mode: linkMode,
+            transport: trans,
+            portalNode,
+            bridgeNode,
+        });
+        if (ipVersionError) {
+            return res.status(400).json({ error: ipVersionError });
         }
 
         // Port conflict: for forward mode the listening side is the bridge; for reverse it is the portal.
@@ -276,6 +292,7 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
             priority: parseInt(priority) || 100,
             ...kcpInput.fields,
             ...publishInput.fields,
+            ...ipVersionInput.fields,
         };
         if (isKcpTransport(trans)) {
             linkData.kcpPassword = generateKcpPassword();
@@ -308,8 +325,8 @@ router.post('/links', requireScope('nodes:write'), async (req, res) => {
         }
 
         const populated = await CascadeLink.findById(link._id)
-            .populate('portalNode', 'name ip flag status')
-            .populate('bridgeNode', 'name ip flag status');
+            .populate('portalNode', 'name ip ipv6 flag status')
+            .populate('bridgeNode', 'name ip ipv6 flag status');
 
         logger.info(`[Cascade API] Created ${linkMode} link ${name}: ${portalNode.name} -> ${bridgeNode.name}`);
 
@@ -372,9 +389,16 @@ router.put('/links/:id', requireScope('nodes:write'), async (req, res) => {
             }
         }
 
+        const ipVersionInput = sanitizeIpVersionInput(req.body);
+        if (ipVersionInput.error) {
+            return res.status(400).json({ error: ipVersionInput.error });
+        }
+        Object.assign(updates, ipVersionInput.fields);
+
         // Fetch current link once for all validation checks
         let currentLink = null;
         const needsCurrentLink = updates.tunnelPort !== undefined ||
+            updates.ipVersion !== undefined ||
             updates.mode !== undefined ||
             updates.tunnelProtocol !== undefined ||
             updates.tunnelSecurity !== undefined ||
@@ -436,6 +460,26 @@ router.put('/links/:id', requireScope('nodes:write'), async (req, res) => {
             );
             if (transportError) {
                 return res.status(400).json({ error: transportError });
+            }
+        }
+
+        const familyChanged = updates.ipVersion !== undefined || updates.mode !== undefined ||
+            updates.tunnelTransport !== undefined;
+        if (currentLink && familyChanged) {
+            const effectiveIpVersion = updates.ipVersion !== undefined ? updates.ipVersion : currentLink.ipVersion;
+            if (effectiveIpVersion === 6) {
+                const [portalNode, bridgeNode] = await Promise.all([
+                    HyNode.findById(currentLink.portalNode).select('name ipv6').lean(),
+                    HyNode.findById(currentLink.bridgeNode).select('name ipv6').lean(),
+                ]);
+                const ipVersionError = validateLinkIpVersion({
+                    ipVersion: effectiveIpVersion,
+                    mode: updates.mode || currentLink.mode || 'reverse',
+                    transport: effectiveTrans,
+                    portalNode,
+                    bridgeNode,
+                });
+                if (ipVersionError) return res.status(400).json({ error: ipVersionError });
             }
         }
 
@@ -510,8 +554,8 @@ router.put('/links/:id', requireScope('nodes:write'), async (req, res) => {
             req.params.id,
             { $set: updates },
             { new: true }
-        ).populate('portalNode', 'name ip flag status')
-         .populate('bridgeNode', 'name ip flag status');
+        ).populate('portalNode', 'name ip ipv6 flag status')
+         .populate('bridgeNode', 'name ip ipv6 flag status');
 
         if (!link) return res.status(404).json({ error: 'Cascade link not found' });
 
@@ -596,6 +640,21 @@ router.patch('/links/:id/reconnect', requireScope('nodes:write'), async (req, re
             return res.status(400).json({ error: 'Portal and Bridge must be different nodes' });
         }
 
+        if (link.ipVersion === 6) {
+            const [portalNode, bridgeNode] = await Promise.all([
+                newPortal || HyNode.findById(link.portalNode).select('name ipv6').lean(),
+                newBridge || HyNode.findById(link.bridgeNode).select('name ipv6').lean(),
+            ]);
+            const ipVersionError = validateLinkIpVersion({
+                ipVersion: 6,
+                mode: link.mode,
+                transport: link.tunnelTransport,
+                portalNode,
+                bridgeNode,
+            });
+            if (ipVersionError) return res.status(400).json({ error: ipVersionError });
+        }
+
         // Undeploy before changing topology
         if (['deployed', 'online', 'offline'].includes(link.status)) {
             try { await cascadeService.undeployLink(link); } catch (_) {}
@@ -613,8 +672,8 @@ router.patch('/links/:id/reconnect', requireScope('nodes:write'), async (req, re
             await cascadeService.ensureRouteIds(effectivePortalId);
         }
         const updated = await CascadeLink.findById(req.params.id)
-            .populate('portalNode', 'name ip flag status')
-            .populate('bridgeNode', 'name ip flag status');
+            .populate('portalNode', 'name ip ipv6 flag status')
+            .populate('bridgeNode', 'name ip ipv6 flag status');
 
         logger.info(`[Cascade API] Reconnected link ${updated.name}`);
 

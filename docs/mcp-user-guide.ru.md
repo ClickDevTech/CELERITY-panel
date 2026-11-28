@@ -298,6 +298,29 @@ curl -X POST https://your-panel.com/api/mcp \
 
 **Доступные действия:** `create` | `update` | `delete` | `deploy` | `undeploy` | `reconnect`
 
+`data.ipVersion` (`4` или `6`, по умолчанию `4`) задаёт, как соединяются две ноды связи. При `6` подключающаяся нода идёт на IPv6 слушающей: портала для `reverse`, bridge для `forward`. Сначала укажите этот адрес через `manage_node` → `update` → `data.ipv6`. Для `mKCP` IPv6 недоступен. Клиенты и SSH панели по-прежнему используют IPv4.
+
+<details>
+<summary>📖 Пример: Reverse-связь по IPv6</summary>
+
+```json
+{
+  "name": "manage_cascade",
+  "arguments": {
+    "action": "create",
+    "data": {
+      "name": "DE → NL по IPv6",
+      "portalNodeId": "portalNodeId123",
+      "bridgeNodeId": "bridgeNodeId456",
+      "mode": "reverse",
+      "ipVersion": 6
+    }
+  }
+}
+```
+
+</details>
+
 ---
 
 ### 💻 execute_ssh — Выполнение команд

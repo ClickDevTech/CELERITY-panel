@@ -18,6 +18,7 @@ const {
     validateTunnelProtocol,
     sanitizeKcpInput,
     generateKcpPassword,
+    validateLinkIpVersion,
 } = require('../../utils/cascadeTransport');
 const {
     CASCADE_PUBLISH_MODES,
@@ -76,6 +77,8 @@ const manageCascadeSchema = z.object({
             .describe('mKCP downlink capacity, MB/s'),
         kcpHeader: z.enum(KCP_HEADERS).optional().describe('mKCP packet-header camouflage'),
         mode: z.enum(['reverse', 'forward']).optional(),
+        ipVersion: z.union([z.literal(4), z.literal(6)]).optional()
+            .describe('Tunnel address family, default 4. 6 dials the ipv6 of the listening node: the portal for reverse, the bridge for forward. Both servers need working IPv6; mKCP is IPv4-only'),
         priority: z.number().int().optional(),
         publishInSubscription: z.boolean().optional()
             .describe('Reverse only: publish this exit as a separate subscription entry when the portal uses perExit/both'),
@@ -95,8 +98,8 @@ async function queryCascade(args) {
 
     if (parsed.id) {
         const link = await CascadeLink.findById(parsed.id)
-            .populate('portalNode', 'name ip status')
-            .populate('bridgeNode', 'name ip status');
+            .populate('portalNode', 'name ip ipv6 status')
+            .populate('bridgeNode', 'name ip ipv6 status');
         if (!link) return { error: `Cascade link '${parsed.id}' not found`, code: 404 };
         return { link };
     }
@@ -109,8 +112,8 @@ async function queryCascade(args) {
     }
 
     const links = await CascadeLink.find(filter)
-        .populate('portalNode', 'name ip status')
-        .populate('bridgeNode', 'name ip status')
+        .populate('portalNode', 'name ip ipv6 status')
+        .populate('bridgeNode', 'name ip ipv6 status')
         .sort({ createdAt: -1 });
 
     return { links };
@@ -154,6 +157,10 @@ async function manageCascade(args, emit) {
             if (kcpInput.error) return { error: kcpInput.error, code: 400 };
             const publishInput = sanitizeLinkPublishInput(data);
             if (publishInput.error) return { error: publishInput.error, code: 400 };
+            const ipVersionError = validateLinkIpVersion({
+                ipVersion: data.ipVersion, mode: linkMode, transport: trans, portalNode, bridgeNode,
+            });
+            if (ipVersionError) return { error: ipVersionError, code: 400 };
 
             const portCheckField = linkMode === 'forward' ? 'bridgeNode' : 'portalNode';
             const portCheckId = linkMode === 'forward' ? data.bridgeNodeId : data.portalNodeId;
@@ -181,6 +188,7 @@ async function manageCascade(args, emit) {
                 tunnelProtocol: data.tunnelProtocol || 'vless',
                 tunnelSecurity: sec,
                 tunnelTransport: trans,
+                ipVersion: data.ipVersion || 4,
                 priority: data.priority || 100,
                 tcpFastOpen: true,
                 tcpKeepAlive: 100,
@@ -203,22 +211,22 @@ async function manageCascade(args, emit) {
             logger.info(`[MCP] Created cascade link ${data.name}: ${portalNode.name} -> ${bridgeNode.name}`);
 
             const populated = await CascadeLink.findById(link._id)
-                .populate('portalNode', 'name ip status')
-                .populate('bridgeNode', 'name ip status');
+                .populate('portalNode', 'name ip ipv6 status')
+                .populate('bridgeNode', 'name ip ipv6 status');
 
             return { success: true, link: populated };
         }
 
         case 'update': {
             if (!id) throw new Error('id is required for update');
-            const allowed = ['name', 'tunnelPort', 'tunnelProtocol', 'tunnelSecurity', 'tunnelTransport', 'mode', 'priority'];
+            const allowed = ['name', 'tunnelPort', 'tunnelProtocol', 'tunnelSecurity', 'tunnelTransport', 'mode', 'ipVersion', 'priority'];
             const updates = {};
             for (const k of allowed) {
                 if (data[k] !== undefined) updates[k] = data[k];
             }
             const current = await CascadeLink.findById(id)
                 .select('mode portalNode bridgeNode tunnelPort tunnelProtocol tunnelTransport tunnelSecurity kcpPassword ' +
-                    'status publishInSubscription includeInBalancer').lean();
+                    'ipVersion status publishInSubscription includeInBalancer').lean();
             if (!current) return { error: `Cascade link '${id}' not found`, code: 404 };
             const effectiveMode = updates.mode || current.mode || 'reverse';
             if (updates.tunnelProtocol === undefined && effectiveMode !== 'forward' && current.tunnelProtocol === 'vmess') {
@@ -232,6 +240,19 @@ async function manageCascade(args, emit) {
                 updates.tunnelSecurity || current.tunnelSecurity || 'none'
             );
             if (transportError) return { error: transportError, code: 400 };
+            const effectiveIpVersion = updates.ipVersion !== undefined ? updates.ipVersion : current.ipVersion;
+            const familyChanged = updates.ipVersion !== undefined || updates.mode !== undefined ||
+                updates.tunnelTransport !== undefined;
+            if (effectiveIpVersion === 6 && familyChanged) {
+                const [portalNode, bridgeNode] = await Promise.all([
+                    HyNode.findById(current.portalNode).select('name ipv6').lean(),
+                    HyNode.findById(current.bridgeNode).select('name ipv6').lean(),
+                ]);
+                const ipVersionError = validateLinkIpVersion({
+                    ipVersion: 6, mode: effectiveMode, transport: effectiveTrans, portalNode, bridgeNode,
+                });
+                if (ipVersionError) return { error: ipVersionError, code: 400 };
+            }
             const kcpInput = sanitizeKcpInput(data);
             if (kcpInput.error) return { error: kcpInput.error, code: 400 };
             Object.assign(updates, kcpInput.fields);
@@ -258,8 +279,8 @@ async function manageCascade(args, emit) {
                 if (udpConflict) return { error: udpConflict, code: 409 };
             }
             const link = await CascadeLink.findByIdAndUpdate(id, { $set: updates }, { new: true })
-                .populate('portalNode', 'name ip status')
-                .populate('bridgeNode', 'name ip status');
+                .populate('portalNode', 'name ip ipv6 status')
+                .populate('bridgeNode', 'name ip ipv6 status');
             if (!link) return { error: `Cascade link '${id}' not found`, code: 404 };
             const portalId = link.portalNode?._id || link.portalNode;
             if (portalId && link.mode !== 'forward' && link.routeId == null) {
@@ -375,8 +396,8 @@ async function getTopology() {
     const [nodes, links] = await Promise.all([
         HyNode.find({ active: true }).select('name ip status cascadeRole cascadePortal.publishMode country type').lean(),
         CascadeLink.find({})
-            .populate('portalNode', 'name ip status')
-            .populate('bridgeNode', 'name ip status')
+            .populate('portalNode', 'name ip ipv6 status')
+            .populate('bridgeNode', 'name ip ipv6 status')
             .lean(),
     ]);
 
@@ -387,6 +408,7 @@ async function getTopology() {
             name: l.name,
             status: l.status,
             mode: l.mode,
+            ipVersion: l.ipVersion === 6 ? 6 : 4,
             tunnelPort: l.tunnelPort,
             routeId: l.routeId ?? null,
             publishInSubscription: l.publishInSubscription !== false,

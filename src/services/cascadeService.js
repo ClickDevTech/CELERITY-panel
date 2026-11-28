@@ -21,7 +21,16 @@ const {
     linkXrayRequirement,
     tunnelSocketProtocol,
     findHysteriaUdpConflict,
+    isIpv6Link,
+    validateLinkIpVersion,
+    ipv6ListenerLinkFilter,
 } = require('../utils/cascadeTransport');
+const {
+    isGlobalIpv6,
+    canonicalIpv6,
+    parseGlobalIpv6Addrs,
+    IPV6_ADDR_LIST_COMMAND,
+} = require('../utils/netAddress');
 const {
     normalizePortalSettings,
     publishesExits,
@@ -274,6 +283,9 @@ class CascadeService {
         try {
             const versionCache = new Map();
             await this._assertTransportSupport(link, [portalNode, bridgeNode], versionCache);
+            if (isIpv6Link(link)) {
+                await this._assertIpv6Path(link, portalNode, bridgeNode);
+            }
 
             if (link.mode === 'forward') {
                 // The portal config carries outbounds for every downstream hop.
@@ -290,7 +302,7 @@ class CascadeService {
 
             // For forward: check bridge; for reverse: check portal
             const checkNode = link.mode === 'forward' ? bridgeNode : portalNode;
-            const { healthy, latencyMs, note } = await this._probeLink(link, checkNode);
+            const { healthy, latencyMs, note } = await this._probeLink(link, checkNode, portalNode);
 
             const newStatus = healthy ? 'online' : 'deployed';
             await CascadeLink.updateOne({ _id: linkId }, {
@@ -384,6 +396,35 @@ class CascadeService {
 
         await this._updateNodeRoles();
         await this.invalidatePublication();
+    }
+
+    /**
+     * Why the IPv6 of `nodeId` may not be set to `nextIpv6`, or null.
+     * Clearing it would leave active IPv6 links dialing an empty address.
+     * @returns {Promise<string|null>}
+     */
+    async ipv6ChangeError(nodeId, nextIpv6) {
+        if (nextIpv6) return null;
+        const links = await CascadeLink.find(ipv6ListenerLinkFilter(nodeId)).select('name').limit(5).lean();
+        if (links.length === 0) return null;
+        const names = links.map(l => `"${l.name}"`).join(', ');
+        return `This IPv6 address is used by cascade links over IPv6 (${names}). Switch those links to IPv4 or delete them before clearing the address.`;
+    }
+
+    /**
+     * Redeploy, in the background, the deployed IPv6 links that dial `nodeId`
+     * after its IPv6 address changed. Failures end up in the link status.
+     */
+    redeployIpv6LinksInBackground(nodeId) {
+        CascadeLink.find({ ...ipv6ListenerLinkFilter(nodeId), status: { $in: DEPLOYED_STATUSES } })
+            .populate('portalNode bridgeNode')
+            .then(async (links) => {
+                for (const link of links) {
+                    const result = await this.deployLink(link).catch(err => ({ success: false, error: err.message }));
+                    if (!result.success) logger.warn(`[Cascade] IPv6 redeploy of ${link.name} failed: ${result.error}`);
+                }
+            })
+            .catch(err => logger.warn(`[Cascade] IPv6 redeploy lookup failed: ${err.message}`));
     }
 
     /**
@@ -858,11 +899,16 @@ class CascadeService {
     async healthCheckLink(link, batch = null) {
         const isForward = link.mode === 'forward';
         const checkNodeId = isForward ? link.bridgeNode : link.portalNode;
-        const checkNode = await HyNode.findById(checkNodeId);
-        if (!checkNode) return false;
+        // IPv6 forward links are dialed from the portal, which needs SSH access.
+        const dialFromPortal = isForward && isIpv6Link(link);
+        const [checkNode, portalNode] = await Promise.all([
+            HyNode.findById(checkNodeId),
+            dialFromPortal ? HyNode.findById(link.portalNode) : null,
+        ]);
+        if (!checkNode || (dialFromPortal && !portalNode)) return false;
 
         try {
-            const { healthy, latencyMs, note, failure } = await this._probeLink(link, checkNode);
+            const { healthy, latencyMs, note, failure } = await this._probeLink(link, checkNode, portalNode);
 
             const prevStatus = link.status;
             const newStatus  = healthy ? 'online' : 'offline';
@@ -955,7 +1001,7 @@ class CascadeService {
             // Virtual balancers have no topology endpoint. CDN fronts do and are
             // linked to their origin below.
             HyNode.find({ active: true, type: { $ne: 'virtual' } })
-                .select('name ip domain flag type status onlineUsers cascadeRole cascadePortal mapPosition country port ssh cdn lastError lastSync')
+                .select('name ip ipv6 domain flag type status onlineUsers cascadeRole cascadePortal mapPosition country port ssh cdn lastError lastSync')
                 .lean(),
             CascadeLink.find({ active: true })
                 .populate('portalNode', 'name ip')
@@ -969,6 +1015,7 @@ class CascadeService {
                 id: String(n._id),
                 label: n.name,
                 ip: n.type === 'cdn' ? (n.cdn?.domain || '') : n.ip,
+                ipv6: n.type === 'cdn' ? '' : (n.ipv6 || ''),
                 domain: n.type === 'cdn' ? (n.cdn?.domain || '') : (n.domain || ''),
                 flag: n.flag || '',
                 type: n.type,
@@ -1002,6 +1049,7 @@ class CascadeService {
                 tunnelProtocol: l.tunnelProtocol,
                 tunnelTransport: l.tunnelTransport,
                 mode: l.mode || 'reverse',
+                ipVersion: l.ipVersion === 6 ? 6 : 4,
                 muxEnabled: l.muxEnabled || false,
                 tunnelSecurity: l.tunnelSecurity || 'none',
                 routeId: l.routeId ?? null,
@@ -1391,10 +1439,24 @@ class CascadeService {
      * flow to it, since the bridge keeps the tunnel up permanently. Forward mode
      * only checks the listener: the portal dials it on demand, so an idle link
      * legitimately has no flow. Latency is not measured for mKCP.
+     * Forward links over IPv6 are dialed from the portal over SSH: the panel
+     * may have no IPv6 at all, and its IPv4 path says nothing about the tunnel.
+     * @param {Object} link
+     * @param {Object} checkNode - listening node: bridge for forward, portal for reverse
+     * @param {Object} [portalNode] - required for forward links over IPv6
      * @returns {Promise<{healthy: boolean, latencyMs: number|null, note?: string, failure?: string}>}
      */
-    async _probeLink(link, checkNode) {
+    async _probeLink(link, checkNode, portalNode = null) {
         const tunnelPort = link.tunnelPort || 10086;
+
+        if (link.mode === 'forward' && isIpv6Link(link) && !isKcpTransport(link.tunnelTransport)) {
+            const { reachable, latencyMs } = portalNode
+                ? await this._dialFromNode(portalNode, checkNode.ipv6, tunnelPort)
+                : { reachable: false, latencyMs: null };
+            return reachable
+                ? { healthy: true, latencyMs }
+                : { healthy: false, latencyMs: null, failure: 'Bridge unreachable over IPv6 from the portal' };
+        }
 
         if (isKcpTransport(link.tunnelTransport)) {
             const { listening, flows } = await this._checkUdpTunnel(checkNode, tunnelPort);
@@ -1422,6 +1484,132 @@ class CascadeService {
             this._measureTcpLatency(checkNode.ip, tunnelPort),
         ]);
         return { healthy, latencyMs };
+    }
+
+    /**
+     * Open a TCP connection to [host]:port from `fromNode` over SSH and time it.
+     * @param {Object} fromNode - node with SSH credentials
+     * @param {string} host - global IPv6 literal; anything else is refused
+     * @param {number} port
+     * @returns {Promise<{reachable: boolean, latencyMs: number|null}>} latency
+     *          is null where the node cannot time it (no nanosecond `date`)
+     */
+    async _dialFromNode(fromNode, host, port) {
+        const unreachable = { reachable: false, latencyMs: null };
+        const safePort = parseInt(port, 10);
+        // Both values reach a shell: only a validated IPv6 literal and a number pass.
+        if (!isGlobalIpv6(host) || !(safePort >= 1 && safePort <= 65535)) return unreachable;
+        if (!fromNode?.ssh?.password && !fromNode?.ssh?.privateKey) return unreachable;
+
+        // bash /dev/tcp where bash exists, nc otherwise (FreeBSD base system).
+        const command = [
+            `if command -v bash >/dev/null 2>&1; then C="timeout 3 bash -c '</dev/tcp/${host}/${safePort}'"; ` +
+                `else C="nc -z -w 3 ${host} ${safePort}"; fi`,
+            's=$(date +%s%N 2>/dev/null)',
+            'if eval "$C" >/dev/null 2>&1; then e=$(date +%s%N 2>/dev/null); ' +
+                'case "$s$e" in *[!0-9]*|"") echo OK ;; *) echo "OK $(( (e - s) / 1000000 ))" ;; esac; ' +
+                'else echo FAIL; fi',
+        ].join('; ');
+
+        const ssh = new NodeSSH(fromNode);
+        try {
+            await ssh.connect();
+            const result = await ssh.exec(command);
+            const match = /^OK(?:\s+(\d+))?$/m.exec(String(result.stdout || '').trim());
+            if (!match) return unreachable;
+            return { reachable: true, latencyMs: match[1] !== undefined ? parseInt(match[1], 10) : null };
+        } catch {
+            return unreachable;
+        } finally {
+            ssh.disconnect();
+        }
+    }
+
+    /**
+     * List the stable public IPv6 addresses configured on `node` (read-only).
+     * @returns {Promise<{addresses: string[], toolMissing: boolean}>}
+     * @throws when SSH is not configured or the connection fails
+     */
+    async detectNodeIpv6(node) {
+        if (!node?.ssh?.password && !node?.ssh?.privateKey) {
+            throw new Error('SSH credentials are not configured for this node');
+        }
+        const ssh = new NodeSSH(node);
+        try {
+            await ssh.connect();
+            const result = await ssh.exec(IPV6_ADDR_LIST_COMMAND);
+            const output = String(result.stdout || '');
+            return { addresses: parseGlobalIpv6Addrs(output), toolMissing: output.includes('NO_IP_TOOL') };
+        } finally {
+            ssh.disconnect();
+        }
+    }
+
+    /**
+     * Run a read-only probe on `node`; null when the node has no SSH access
+     * (the deploy itself reports that) or the connection fails.
+     * @returns {Promise<string|null>} stdout
+     */
+    async _probeExec(node, command) {
+        if (!node?.ssh?.password && !node?.ssh?.privateKey) return null;
+        const ssh = new NodeSSH(node);
+        try {
+            await ssh.connect();
+            const result = await ssh.exec(command);
+            return String(result.stdout || '');
+        } catch (err) {
+            logger.warn(`[Cascade] IPv6 probe on ${node.name} failed: ${err.message}`);
+            return null;
+        } finally {
+            ssh.disconnect();
+        }
+    }
+
+    /**
+     * Before any config is written, make sure an IPv6 link can come up: the
+     * listening node owns the IPv6 stored in the panel, and the dialing node
+     * has an IPv6 route to it. Throws an actionable error otherwise. A check
+     * that cannot run (no `ip` tool, SSH failure) is skipped, not fatal.
+     */
+    async _assertIpv6Path(link, portalNode, bridgeNode) {
+        const configError = validateLinkIpVersion({
+            ipVersion: 6,
+            mode: link.mode,
+            transport: link.tunnelTransport,
+            portalNode,
+            bridgeNode,
+        });
+        if (configError) throw new Error(configError);
+
+        const isForward = link.mode === 'forward';
+        const listener = isForward ? bridgeNode : portalNode;
+        const dialer = isForward ? portalNode : bridgeNode;
+        const listenerRole = isForward ? 'Bridge' : 'Portal';
+        const dialerRole = isForward ? 'Portal' : 'Bridge';
+        const address = canonicalIpv6(listener.ipv6);
+        if (!address || !isGlobalIpv6(address)) {
+            throw new Error(`${listenerRole} "${listener.name}" has an invalid IPv6 address in the panel. Click Detect on the node page to pick the current one.`);
+        }
+
+        const [addrOutput, routeOutput] = await Promise.all([
+            this._probeExec(listener, IPV6_ADDR_LIST_COMMAND),
+            this._probeExec(dialer,
+                `if command -v ip >/dev/null 2>&1; then R="ip -6 route get ${address}"; ` +
+                `elif [ "$(uname)" = FreeBSD ]; then R="route -n get -inet6 ${address}"; ` +
+                'else echo NO_IP_TOOL; exit 0; fi; ' +
+                '$R >/dev/null 2>&1 && echo ROUTE_OK || echo NO_ROUTE'),
+        ]);
+
+        if (addrOutput !== null && !addrOutput.includes('NO_IP_TOOL')) {
+            const owned = parseGlobalIpv6Addrs(addrOutput, { stableOnly: false });
+            if (!owned.includes(address)) {
+                const hint = owned.length > 0 ? ` The server has: ${owned.slice(0, 3).join(', ')}.` : ' The server has no public IPv6 at all.';
+                throw new Error(`${listenerRole} "${listener.name}" does not have the IPv6 address ${address} that is set in the panel.${hint} Click Detect on the node page to pick the current address, or switch the link to IPv4.`);
+            }
+        }
+        if (routeOutput !== null && routeOutput.includes('NO_ROUTE')) {
+            throw new Error(`${dialerRole} "${dialer.name}" has no IPv6 route to ${address}, so IPv6 is not working on that server. Ask the hosting provider to enable IPv6 or switch the link to IPv4.`);
+        }
     }
 
     /**
@@ -1554,7 +1742,9 @@ class CascadeService {
      */
     async filterLinksForNodeXray(node, { reverseLinks = [], forwardLinks = [], forwardHopLinks = [] }, opts = {}) {
         const groups = { reverseLinks, forwardLinks, forwardHopLinks };
-        if (![...reverseLinks, ...forwardLinks, ...forwardHopLinks].some(l => linkXrayRequirement(l))) return groups;
+        const needsCheck = [...reverseLinks, ...forwardLinks, ...forwardHopLinks].some(l => linkXrayRequirement(l))
+            || forwardLinks.some(isIpv6Link);
+        if (!needsCheck) return groups;
 
         const stored = opts.version ? null : await HyNode.findById(node._id).select('xrayVersion').lean();
         const version = opts.version || stored?.xrayVersion || node.xrayVersion;
@@ -1564,12 +1754,24 @@ class CascadeService {
             if (reason) reasons.set(l, reason);
             return !reason;
         };
+        // Forward outbounds dial the bridge address, so an IPv6 hop whose bridge
+        // lost its address would make the whole portal config unusable.
+        const checkHop = (l) => {
+            const reason = isIpv6Link(l) && !l.bridgeNode?.ipv6
+                ? `Bridge "${l.bridgeNode?.name || ''}" has no IPv6 address, but the link runs over IPv6`
+                : null;
+            if (reason) {
+                reasons.set(l, reason);
+                return false;
+            }
+            return check(l);
+        };
 
         const kept = {
             reverseLinks: reverseLinks.filter(check),
             forwardHopLinks: forwardHopLinks.filter(check),
         };
-        const chainReason = forwardLinks.map(l => (check(l) ? null : reasons.get(l))).find(Boolean);
+        const chainReason = forwardLinks.map(l => (checkHop(l) ? null : reasons.get(l))).find(Boolean);
         kept.forwardLinks = chainReason ? [] : forwardLinks;
         if (chainReason) for (const l of forwardLinks) if (!reasons.has(l)) reasons.set(l, chainReason);
         if (reasons.size === 0) return groups;

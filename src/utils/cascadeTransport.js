@@ -197,7 +197,102 @@ function findHysteriaUdpConflict(port, hysteriaNodes) {
     return null;
 }
 
+// ==================== ADDRESS FAMILY ====================
+
+const IP_VERSIONS = [4, 6];
+
+/**
+ * Validate `ipVersion` from untrusted input. Absent values return no field,
+ * so the result serves both create and partial update.
+ * @returns {{ fields: Object, error: string|null }}
+ */
+function sanitizeIpVersionInput(input = {}) {
+    const raw = input.ipVersion;
+    if (raw === undefined || raw === null || raw === '') return { fields: {}, error: null };
+    const value = Number(raw);
+    if (!IP_VERSIONS.includes(value)) {
+        return { fields: {}, error: 'ipVersion must be 4 or 6' };
+    }
+    return { fields: { ipVersion: value }, error: null };
+}
+
+function isIpv6Link(link) {
+    return Number(link?.ipVersion) === 6;
+}
+
+/**
+ * Node that accepts the tunnel: the bridge dials the portal in reverse mode,
+ * the portal dials the bridge in forward mode.
+ */
+function cascadeListenRole(mode) {
+    return mode === 'forward' ? 'bridge' : 'portal';
+}
+
+/**
+ * Address the dialing end of `link` connects to on `node` (the listening end).
+ * IPv6 links never fall back to IPv4: a missing address is a configuration
+ * error that must surface instead of silently changing the tunnel family.
+ * @param {Object} link
+ * @param {Object} node - listening node
+ * @param {string} [v4Address] - IPv4-side address, defaults to node.ip
+ * @returns {string}
+ */
+function cascadeDialAddress(link, node, v4Address = node?.ip) {
+    if (!isIpv6Link(link)) return v4Address || '';
+    const address = node?.ipv6 || '';
+    if (!address) {
+        throw new Error(`Cascade link "${link?.name || link?._id}" runs over IPv6, but node "${node?.name || node?._id}" has no IPv6 address`);
+    }
+    return address;
+}
+
+/**
+ * Check that an IPv6 link can be built from the given nodes.
+ * @param {Object} params
+ * @param {number} params.ipVersion
+ * @param {string} params.mode - 'reverse' | 'forward'
+ * @param {string} params.transport
+ * @param {Object} params.portalNode
+ * @param {Object} params.bridgeNode
+ * @returns {string|null} error message, or null when valid
+ */
+function validateLinkIpVersion({ ipVersion, mode, transport, portalNode, bridgeNode }) {
+    if (Number(ipVersion || 4) !== 6) return null;
+    if (isKcpTransport(transport)) {
+        return 'mKCP tunnels run over IPv4 only for now: switch the link to IPv4 or choose another transport';
+    }
+    const role = cascadeListenRole(mode);
+    const node = role === 'bridge' ? bridgeNode : portalNode;
+    if (!node?.ipv6) {
+        const modeLabel = mode === 'forward' ? 'Forward' : 'Reverse';
+        return `${modeLabel} link over IPv6 needs an IPv6 address on the ${role} "${node?.name || ''}": open the node and click Detect next to the IPv6 field, or switch the link to IPv4`;
+    }
+    return null;
+}
+
+/**
+ * Mongo filter for active IPv6 links whose listening end is `nodeId`, i.e.
+ * the links that stop working when the node loses its `ipv6`.
+ */
+function ipv6ListenerLinkFilter(nodeId) {
+    return {
+        active: true,
+        ipVersion: 6,
+        $or: [
+            { mode: { $ne: 'forward' }, portalNode: nodeId },
+            { mode: 'forward', bridgeNode: nodeId },
+        ],
+    };
+}
+
 module.exports = {
+    IP_VERSIONS,
+    sanitizeIpVersionInput,
+    isIpv6Link,
+    cascadeListenRole,
+    cascadeDialAddress,
+    validateLinkIpVersion,
+    ipv6ListenerLinkFilter,
     CASCADE_TRANSPORTS,
     CASCADE_SECURITIES,
     KCP_HEADERS,
