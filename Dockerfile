@@ -1,5 +1,5 @@
 # Hysteria Backend - Docker Image
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS agent
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS agent
 WORKDIR /src
 COPY cc-agent/go.mod cc-agent/go.sum ./
 RUN go mod download
