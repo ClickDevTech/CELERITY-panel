@@ -216,7 +216,7 @@ For example, point `v1.example.com` and `v2.example.com` at the portal. Set the 
 
 The managed front supports WebSocket, gRPC and XHTTP. Raw TCP and REALITY listeners can use separate public ports.
 
-Specific node ACLs still run first. The listener's fixed exit takes precedence over a route encoded in the client UUID, destination-based cascade rules and the portal balancer. If the selected bridge disconnects or its link is removed, the pinned route stops forwarding. Select **Use portal routing** to release the pin.
+Specific node ACLs still run first. The listener's fixed exit takes precedence over a route encoded in the client UUID, destination-based cascade rules and the portal balancer. If the selected bridge disconnects or its link is removed, the pinned route stops forwarding. Customer subscriptions hide the listener while its exit is unavailable and publish it again on recovery. Probes retain offline links. Deleting a pinned link shows the affected listeners before undeploying it. Confirming deletion keeps those listeners blocked until reassigned or released using **Use portal routing**.
 
 #### REALITY Between Nodes
 

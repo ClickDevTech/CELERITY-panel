@@ -347,6 +347,7 @@
                         data-bridge-name="<%= bridgeName %>"
                         data-bridge-flag="<%= bridgeFlag %>"
                         data-status="<%= link.status %>"
+                        data-active="<%= link.active !== false && link.bridgeNode && link.bridgeNode.active !== false ? '1' : '0' %>"
                         data-orig-label="<%= link.subscriptionLabel || '' %>"
                         data-orig-publish="<%= link.publishInSubscription !== false ? '1' : '0' %>"
                         data-orig-balancer="<%= link.includeInBalancer !== false ? '1' : '0' %>">

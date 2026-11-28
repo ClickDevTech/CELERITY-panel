@@ -48,6 +48,8 @@ const queryCascadeSchema = z.object({
 const manageCascadeSchema = z.object({
     action: z.enum(['create', 'update', 'delete', 'deploy', 'undeploy', 'reconnect', 'portal_settings']),
     id: z.string().optional().describe('Link _id (required for all except create and portal_settings)'),
+    acknowledgedPinnedListeners: z.array(z.string()).optional()
+        .describe('On delete, confirm the exact listener IDs returned by the pinned-link warning. Their traffic remains blocked until reassigned.'),
     nodeId: z.string().optional().describe('Portal node _id (required for portal_settings)'),
     portal: z.object({
         inboundRoutes: z.array(z.object({ inboundId: z.string(), linkId: z.string() })).optional()
@@ -313,14 +315,9 @@ async function manageCascade(args, emit) {
             if (!id) throw new Error('id is required for delete');
             const link = await CascadeLink.findById(id);
             if (!link) return { error: `Cascade link '${id}' not found`, code: 404 };
-            if (link.status === 'active') {
-                emit('progress', { message: 'Undeploying before delete...' });
-                await cascadeService.undeployLink(link).catch(() => {});
-            }
-            await CascadeLink.findByIdAndDelete(id);
-            await invalidateCascadeCache();
-            logger.info(`[MCP] Deleted cascade link ${link.name}`);
-            return { success: true, message: `Link '${link.name}' deleted` };
+            const result = await cascadeService.deleteLink(link, parsed.acknowledgedPinnedListeners);
+            if (result.success) logger.info(`[MCP] Deleted cascade link ${link.name}`);
+            return result;
         }
 
         case 'deploy': {

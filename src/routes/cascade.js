@@ -154,6 +154,9 @@ router.get('/links/:id', requireScope('nodes:read'), async (req, res) => {
             .populate('bridgeNode', 'name ip flag status');
 
         if (!link) return res.status(404).json({ error: 'Cascade link not found' });
+        if (req.query.deleteImpact === '1') {
+            return res.json({ pinnedListeners: await cascadeService.pinnedListenersForLink(link) });
+        }
         res.json(link);
     } catch (error) {
         logger.error(`[Cascade API] Get error: ${error.message}`);
@@ -641,16 +644,10 @@ router.delete('/links/:id', requireScope('nodes:write'), async (req, res) => {
         const link = await CascadeLink.findById(req.params.id);
         if (!link) return res.status(404).json({ error: 'Cascade link not found' });
 
-        if (['deployed', 'online', 'offline'].includes(link.status)) {
-            await cascadeService.undeployLink(link);
-        }
-
-        await CascadeLink.findByIdAndDelete(req.params.id);
-
-        // Invalidate subscription cache
-        await invalidateCascadeCache();
+        const result = await cascadeService.deleteLink(link, req.body?.acknowledgedPinnedListeners);
+        if (result.code) return res.status(result.code).json(result);
         logger.info(`[Cascade API] Deleted link ${link.name}`);
-        res.json({ success: true, message: 'Cascade link deleted' });
+        res.json(result);
     } catch (error) {
         logger.error(`[Cascade API] Delete error: ${error.message}`);
         res.status(500).json({ error: error.message });

@@ -985,7 +985,7 @@ router.get('/nodes/:id', async (req, res) => {
             CascadeLink.find({
                 $or: [{ portalNode: req.params.id }, { bridgeNode: req.params.id }],
             }).populate('portalNode', 'name ip flag')
-              .populate('bridgeNode', 'name ip flag')
+              .populate('bridgeNode', 'name ip flag active')
               .sort({ createdAt: -1 }),
             Settings.get(),
             // Virtual sources may include CDN fronts; CDN origins are filtered to Xray in the form.

@@ -94,8 +94,6 @@ async function attach(nodes, includeDown = false) {
     assert.deepStrictEqual(queries[0], {
         mode: { $ne: 'forward' },
         active: true,
-        publishInSubscription: { $ne: false },
-        routeId: { $type: 'number' },
     });
     assert.deepStrictEqual(both._cascadeExits.map(e => e.linkId), ['link-de', 'link-fi'],
         'offline exits, inactive bridges and deleted bridges are hidden');
@@ -207,6 +205,40 @@ async function attach(nodes, includeDown = false) {
     assert.strictEqual(sub.uuidForInbound(user, front[0]), USER_UUID);
     both.cascadePortal.publishMode = 'perExit';
     assert.deepStrictEqual(sub.getXrayPublishedInbounds(both).map(i => i.vlessRoute), [undefined, 1, 2]);
+
+    // Pins use the link's health even when it has no separately published UUID route.
+    const unlisted = { ...linkDocs[0], _id: 'fixed-only', routeId: null, publishInSubscription: false };
+    linkDocs.push(unlisted);
+    const customer = portalNode('single');
+    customer.cascadePortal.inboundRoutes = [{ inboundId: 'main', linkId: unlisted._id }];
+    const cdn = { type: 'cdn', name: 'Main CDN', _resolvedOrigin: customer, cdn: { domain: 'edge.example.com' } };
+    for (const mode of ['single', 'both', 'perExit']) {
+        customer.cascadePortal.publishMode = mode;
+        for (const [status, active, probe, expected] of [
+            ['online', true, false, 1], ['offline', true, false, 0], ['offline', true, true, 1],
+            ['error', true, false, 0], ['pending', true, false, 0], ['online', false, false, 0],
+            ['deployed', true, false, 1],
+        ]) {
+            unlisted.status = status;
+            unlisted.bridgeNode = { ...unlisted.bridgeNode, active };
+            cachedExits = null;
+            await attach([customer, cdn], probe);
+            const entries = sub.getXrayPublishedInbounds(customer);
+            assert.strictEqual(entries.filter(i => !i.extraId).length, expected, `${mode}/${status}/${active}/${probe}`);
+            assert.strictEqual(sub.getXrayPublishedInbounds(cdn).length, expected);
+            assert.ok(entries.some(i => i.extraId === 'x1'), 'unbound listener still available');
+            assert.ok(!entries.some(i => i.exit?.linkId === unlisted._id));
+        }
+    }
+    linkDocs.length = 0;
+    cachedExits = null;
+    await attach([customer], true);
+    assert.deepStrictEqual(sub.getXrayPublishedInbounds(customer).map(i => i.extraId), ['x1'],
+        'with no exits, even the probe cannot publish an orphan pin as a balanced profile');
+    customer.cascadePortal.inboundRoutes.push({ inboundId: 'x1', linkId: 'deleted' });
+    await attach([customer]);
+    assert.deepStrictEqual(sub.getXrayPublishedInbounds(customer), []);
+    assert.deepStrictEqual(sub.v2rayOutboundsForNode(user, customer), []);
 
     // ---- malformed UUIDs never fall back to the default route ---------------
     assert.strictEqual(sub.uuidForInbound({ xrayUuid: 'not-a-uuid' }, perExitInbounds[0]), null);

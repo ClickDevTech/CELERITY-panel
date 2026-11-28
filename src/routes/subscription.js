@@ -33,6 +33,7 @@ const {
     publishesExits,
     publishesBalanced,
     uuidWithRoute,
+    isValidRouteId,
     PUBLISHED_EXIT_STATUSES,
 } = require('../utils/cascadePublish');
 const {
@@ -160,10 +161,8 @@ async function getCascadeExitsWithCache() {
     const links = await CascadeLink.find({
         mode: { $ne: 'forward' },
         active: true,
-        publishInSubscription: { $ne: false },
-        routeId: { $type: 'number' },
     })
-        .select('name portalNode bridgeNode routeId subscriptionLabel status priority')
+        .select('name portalNode bridgeNode routeId publishInSubscription subscriptionLabel status priority')
         .populate('bridgeNode', 'name flag active')
         .sort({ priority: 1, routeId: 1 })
         .lean();
@@ -174,6 +173,7 @@ async function getCascadeExitsWithCache() {
         const portalId = String(link.portalNode);
         (byPortal[portalId] = byPortal[portalId] || []).push({
             linkId: String(link._id),
+            publishInSubscription: link.publishInSubscription !== false,
             routeId: link.routeId,
             label: link.subscriptionLabel || '',
             bridgeName: link.bridgeNode.name || link.name,
@@ -190,7 +190,7 @@ const PUBLISHED_EXIT_SET = new Set(PUBLISHED_EXIT_STATUSES);
 
 /**
  * Attach `_cascadeExits` to every xray node (and CDN origin) whose portal
- * publishes its exits. Probes see every exit, customers only working ones.
+ * publishes individual exits or has fixed listeners. Probes see every exit, customers only working ones.
  */
 async function attachCascadeExits(nodes, includeDown) {
     const portals = new Set();
@@ -198,7 +198,7 @@ async function attachCascadeExits(nodes, includeDown) {
         if (node.type === 'xray') portals.add(node);
         else if (node.type === 'cdn' && node._resolvedOrigin) portals.add(node._resolvedOrigin);
     }
-    const candidates = [...portals].filter(node => publishesExits(node.cascadePortal));
+    const candidates = [...portals].filter(node => publishesExits(node.cascadePortal) || node.cascadePortal?.inboundRoutes?.length);
     if (candidates.length === 0) return;
 
     const exitsByPortal = await getCascadeExitsWithCache();
@@ -519,18 +519,25 @@ function getXrayPublishedInbounds(node) {
  * the portal pins to that exit. Exit-major order groups entries per exit.
  */
 function _expandCascadeExits(portal, inbounds) {
-    const exits = portal?._cascadeExits;
-    if (!Array.isArray(exits) || exits.length === 0 || !publishesExits(portal.cascadePortal)) {
-        return inbounds;
-    }
-    const pinnedIds = new Set((portal.cascadePortal.inboundRoutes || []).map(route => route.inboundId));
-    const unpinned = inbounds.filter(i => !pinnedIds.has(i.extraId || 'main'));
+    const exits = portal?._cascadeExits || [];
+    const routes = portal?.cascadePortal?.inboundRoutes || [];
+    if (!exits.length && !routes.length) return inbounds;
+    const pins = new Map(routes.map(pin => [pin.inboundId, String(pin.linkId)]));
+    const visibleIds = new Set(exits.map(exit => exit.linkId));
+    const available = inbounds.filter(inbound => {
+        const linkId = pins.get(inbound.extraId || 'main');
+        return !linkId || visibleIds.has(linkId);
+    });
+    if (!publishesExits(portal?.cascadePortal)) return available;
+    const published = exits.filter(exit => exit.publishInSubscription && isValidRouteId(exit.routeId));
+    if (!published.length) return available;
+    const unpinned = available.filter(i => !pins.has(i.extraId || 'main'));
     const balanced = publishesBalanced(portal.cascadePortal);
-    const expanded = inbounds.flatMap(i => {
-        if (pinnedIds.has(i.extraId || 'main')) return [i];
+    const expanded = available.flatMap(i => {
+        if (pins.has(i.extraId || 'main')) return [i];
         return balanced ? [{ ...i, vlessRoute: 0 }] : [];
     });
-    for (const exit of exits) {
+    for (const exit of published) {
         for (const inbound of unpinned) {
             expanded.push({ ...inbound, vlessRoute: exit.routeId, exit });
         }

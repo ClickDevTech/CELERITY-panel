@@ -583,6 +583,7 @@ const i18n = {
     error: <%- JSON.stringify(t("common.error")) %>,
     confirmDeployCascade: <%- JSON.stringify(t("nodes.confirmDeployCascade")) %>,
     confirmUndeployCascade: <%- JSON.stringify(t("nodes.confirmUndeployCascade")) %>,
+    pinnedDeleteWarning: <%- JSON.stringify(t("network.pinnedDeleteWarning")) %>,
     confirmDeleteCascade: <%- JSON.stringify(t("nodes.confirmDeleteCascade")) %>,
     xrayGenerateKeysConfirm: <%- JSON.stringify(t("nodes.xrayGenerateKeysConfirm")) %>,
     xrayKeysSuccess: <%- JSON.stringify(t("nodes.xrayKeysSuccess")) %>,
@@ -3136,10 +3137,20 @@ async function cascadeAction(linkId, action, btn) {
 }
 
 async function cascadeDelete(linkId, name) {
-    const confirmMsg = i18n.confirmDeleteCascade.replace('{name}', name);
-    if (!confirm(confirmMsg)) return;
     try {
-        const res = await fetch('/api/cascade/links/' + linkId, { method: 'DELETE' });
+        const url = '/api/cascade/links/' + encodeURIComponent(linkId);
+        const impact = await fetch(url + '?deleteImpact=1');
+        if (!impact.ok) throw new Error((await impact.json()).error || 'HTTP ' + impact.status);
+        const { pinnedListeners } = await impact.json();
+        const names = pinnedListeners.map(pin => pin.label || pin.inboundTag || pin.id).join(', ');
+        let message = i18n.confirmDeleteCascade.replace('{name}', () => name);
+        if (names) message += '\n' + i18n.pinnedDeleteWarning.replace('{names}', () => names);
+        if (!confirm(message)) return;
+        const res = await fetch(url, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ acknowledgedPinnedListeners: pinnedListeners.map(pin => pin.id) }),
+        });
         if (res.ok) {
             location.reload();
         } else {
@@ -3188,7 +3199,7 @@ function cxState() {
         linkId: row.dataset.linkId,
         bridgeName: row.dataset.bridgeName || '',
         bridgeFlag: row.dataset.bridgeFlag || '',
-        status: row.dataset.status || '',
+        visible: row.dataset.active === '1' && CX_VISIBLE_STATUSES.includes(row.dataset.status),
         label: row.querySelector('.cx-label').value.trim(),
         publish: row.querySelector('.cx-publish').checked,
         balancer: row.querySelector('.cx-balancer').checked,
@@ -3229,15 +3240,19 @@ function renderCascadeExitsPreview() {
     list.textContent = '';
     const mode = s.settings.publishMode;
     const published = s.exits.filter(e => e.publish);
-    const visibleCount = published.filter(e => CX_VISIBLE_STATUSES.includes(e.status)).length;
+    const visibleCount = published.filter(e => e.visible).length;
     // With no working exit the subscription falls back to the balanced entry.
     const exitsShown = mode !== 'single' && visibleCount > 0;
     let count = 0;
 
     const pinned = Array.from(s.card.querySelectorAll('.cx-inbound-route')).filter(select => select.value);
     const shared = s.inbounds - pinned.length;
+    let visiblePins = 0;
     for (const select of pinned) {
-        cxAppendPreviewItem(list, select.dataset.label + ' → ' + select.selectedOptions[0].textContent, false);
+        const exit = s.exits.find(e => e.linkId === select.value);
+        const label = select.dataset.label + ' → ' + select.selectedOptions[0].textContent;
+        cxAppendPreviewItem(list, exit && !exit.visible ? label + ' — ' + cxI18n.hiddenUntilOnline : label, !exit?.visible);
+        if (exit?.visible) visiblePins++;
     }
     if (shared && (mode !== 'perExit' || !exitsShown)) {
         cxAppendPreviewItem(list, `${s.nodeFlag} ${s.nodeName}`.trim() + ' — ' + cxI18n.balanced, false);
@@ -3246,7 +3261,7 @@ function renderCascadeExitsPreview() {
     if (shared && mode !== 'single') {
         for (const exit of published) {
             const name = exit.label || `${exit.bridgeFlag || s.nodeFlag} ${s.nodeName} → ${exit.bridgeName}`.trim();
-            const visible = CX_VISIBLE_STATUSES.includes(exit.status);
+            const visible = exit.visible;
             cxAppendPreviewItem(list, visible ? name : `${name} — ${cxI18n.hiddenUntilOnline}`, !visible);
             if (visible) count++;
         }
@@ -3256,7 +3271,7 @@ function renderCascadeExitsPreview() {
     const hint = document.getElementById('cxPreviewInbounds');
     hint.textContent = shared > 1 ? cxI18n.sharedInbounds.replace('{count}', String(shared)) : '';
 
-    document.getElementById('cxPreviewCount').textContent = String(count * shared + pinned.length);
+    document.getElementById('cxPreviewCount').textContent = String(count * shared + visiblePins);
 }
 
 function onCascadeExitsChange() {

@@ -216,6 +216,8 @@ class CascadeService {
             active: true,
             status: { $in: DEPLOYED_STATUSES },
         });
+        // Even with no deployed link, the standalone config must install a
+        // block for a new pin, or remove it when the last pin is cleared.
         if (deployedLinks === 0 && !pinsChanged && !pending) {
             return result;
         }
@@ -357,30 +359,61 @@ class CascadeService {
         await this._deployPortalConfig(portalNode);
     }
 
+    async pinnedListenersForLink(link) {
+        if (link.mode === 'forward') return [];
+        const node = await HyNode.findOne({
+            _id: link.portalNode?._id || link.portalNode, 'cascadePortal.inboundRoutes.linkId': link._id,
+        }).select('port cascadePortal.inboundRoutes xray.inboundTag xray.extraInbounds.id xray.extraInbounds.port xray.extraInbounds.label xray.extraInbounds.inboundTag').lean();
+        if (!node) return [];
+        const listeners = new Map(portalListeners(node).map(listener => [listener.id, listener]));
+        return node.cascadePortal.inboundRoutes.filter(pin => String(pin.linkId) === String(link._id))
+            .map(pin => listeners.get(pin.inboundId) || { id: pin.inboundId });
+    }
+
+    async deleteLink(link, acknowledged = []) {
+        const pins = await this.pinnedListenersForLink(link);
+        if (pins.length && (!Array.isArray(acknowledged) || pins.length !== acknowledged.length
+            || !pins.every(pin => acknowledged.includes(pin.id)))) {
+            const names = pins.map(pin => pin.label || pin.inboundTag || pin.id).join(', ');
+            return { code: 409, error: `Deleting this link blocks the following listeners: ${names}. Reassign them or confirm their IDs in acknowledgedPinnedListeners.`, pinnedListeners: pins };
+        }
+        if (DEPLOYED_STATUSES.includes(link.status)) {
+            await this.undeployLink(link, { requirePortalPush: pins.length > 0 });
+        } else if (pins.length) {
+            // A pin can exist before its first deploy. Apply the block on the
+            // portal without touching a bridge service this link never started.
+            const node = await HyNode.findById(link.portalNode);
+            if (node) await this._deployPortalConfig(node, { excludeLinkIds: [link._id] });
+        }
+        await CascadeLink.findByIdAndDelete(link._id);
+        await this.invalidatePublication();
+        return { success: true, message: 'Cascade link deleted' };
+    }
+
     /**
      * Undeploy a cascade link: regenerate configs without this link's settings.
      * For reverse mode: regenerate Portal, stop xray-bridge on Bridge.
      * For forward mode: regenerate Portal (remove outbound), regenerate Bridge
      * (remove cascade inbound) if it's an existing Xray node, or stop xray-bridge.
      */
-    async undeployLink(link) {
+    async undeployLink(link, { requirePortalPush = false } = {}) {
         const portalNode = await HyNode.findById(link.portalNode);
         const bridgeNode = await HyNode.findById(link.bridgeNode);
 
-        // Mark as pending first so _deployPortalConfig excludes this link
-        await CascadeLink.updateOne({ _id: link._id }, {
-            $set: { status: 'pending', lastError: '' },
-        });
-
-        // Regenerate configs — _deployPortalConfig queries status != 'pending'
-        // for active links, so this link is excluded
+        // Exclude this link explicitly. A failed required push leaves it in
+        // its deployed state so retrying also performs the bridge cleanup.
         if (portalNode) {
             try {
                 await this._deployPortalConfig(portalNode, { excludeLinkIds: [link._id] });
             } catch (err) {
+                if (requirePortalPush) throw err;
                 logger.warn(`[Cascade] Portal redeploy on undeploy: ${err.message}`);
             }
         }
+
+        await CascadeLink.updateOne({ _id: link._id }, {
+            $set: { status: 'pending', lastError: '' },
+        });
 
         if (bridgeNode && (bridgeNode.ssh?.password || bridgeNode.ssh?.privateKey)) {
             if (link.mode === 'forward' && bridgeNode.type === 'xray' && bridgeNode.active) {
@@ -922,8 +955,11 @@ class CascadeService {
      * Portals that do not publish exits keep their subscriptions cached.
      */
     async _onExitStatusChange(link, portalNode, prevStatus, newStatus, batch) {
-        if (link.mode === 'forward' || link.publishInSubscription === false) return;
-        if (!publishesExits(portalNode?.cascadePortal)) return;
+        if (link.mode === 'forward') return;
+        const settings = portalNode?.cascadePortal;
+        const explicitlyPublished = link.publishInSubscription !== false && publishesExits(settings);
+        const pinned = settings?.inboundRoutes?.some(pin => String(pin.linkId) === String(link._id));
+        if (!explicitlyPublished && !pinned) return;
         const wasVisible = PUBLISHED_EXIT_STATUSES.includes(prevStatus);
         if (wasVisible === PUBLISHED_EXIT_STATUSES.includes(newStatus)) return;
         if (batch) {

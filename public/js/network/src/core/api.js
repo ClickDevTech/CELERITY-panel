@@ -68,7 +68,9 @@ export const api = {
     getLink: id => request('GET', `/api/cascade/links/${idPath(id)}`),
     createLink: body => request('POST', '/api/cascade/links', body),
     updateLink: (id, body) => request('PUT', `/api/cascade/links/${idPath(id)}`, body),
-    deleteLink: id => request('DELETE', `/api/cascade/links/${idPath(id)}`),
+    deleteImpact: id => request('GET', `/api/cascade/links/${idPath(id)}?deleteImpact=1`),
+    deleteLink: (id, acknowledgedPinnedListeners) => request('DELETE', `/api/cascade/links/${idPath(id)}`,
+        { acknowledgedPinnedListeners }, DEPLOY_TIMEOUT_MS),
     deployLink: id => request('POST', `/api/cascade/links/${idPath(id)}/deploy`, undefined, DEPLOY_TIMEOUT_MS),
     undeployLink: id => request('POST', `/api/cascade/links/${idPath(id)}/undeploy`, undefined, DEPLOY_TIMEOUT_MS),
     deployChain: linkId => {

@@ -1459,6 +1459,14 @@ These endpoints are not under \`/api\` and are not part of this specification:
                     geoRouting: { type: 'object' },
                 },
             },
+            CascadePortalListener: {
+                type: 'object', required: ['id'],
+                properties: { id: { type: 'string' }, inboundTag: { type: 'string' }, label: { type: 'string' }, port: { type: 'integer' } },
+            },
+            CascadeDeleteImpact: {
+                type: 'object', required: ['pinnedListeners'],
+                properties: { pinnedListeners: { type: 'array', items: { $ref: '#/components/schemas/CascadePortalListener' } } },
+            },
             CascadePortalSettingsResponse: {
                 type: 'object',
                 properties: {
@@ -1467,9 +1475,7 @@ These endpoints are not under \`/api\` and are not part of this specification:
                     flag: { type: 'string' },
                     settings: { type: 'object', properties: CASCADE_PORTAL_SETTINGS_PROPERTIES },
                     redeployPending: { type: 'boolean', description: 'Exit flags changed but the portal config was not applied yet (deferred or failed push). The next PUT applies it.' },
-                    listeners: { type: 'array', items: { type: 'object', properties: {
-                        id: { type: 'string' }, inboundTag: { type: 'string' }, label: { type: 'string' }, port: { type: 'integer' },
-                    } } },
+                    listeners: { type: 'array', items: { $ref: '#/components/schemas/CascadePortalListener' } },
                     publishedInbounds: { type: 'integer', description: 'Number of client listeners on this portal.' },
                     exits: {
                         type: 'array',
@@ -2753,8 +2759,12 @@ integrations. Resolution is bound to the collection interval (~5 min), not per-s
             get: {
                 tags: ['Cascade'],
                 summary: 'Get cascade link',
+                parameters: [{ name: 'deleteImpact', in: 'query', schema: { type: 'string', enum: ['1'] },
+                    description: 'Return only pinnedListeners (listener IDs, tags, labels and ports) for deletion confirmation.' }],
                 responses: {
-                    200: { description: 'Cascade link', content: { 'application/json': { schema: { $ref: '#/components/schemas/CascadeLink' } } } },
+                    200: { description: 'Cascade link, or the affected listeners when deleteImpact=1', content: { 'application/json': { schema: {
+                        anyOf: [{ $ref: '#/components/schemas/CascadeLink' }, { $ref: '#/components/schemas/CascadeDeleteImpact' }],
+                    } } } },
                     400: { description: 'Invalid link ID' },
                     401: { $ref: '#/components/responses/Unauthorized' },
                     403: { $ref: '#/components/responses/Forbidden' },
@@ -2776,10 +2786,16 @@ integrations. Resolution is bound to the collection interval (~5 min), not per-s
             delete: {
                 tags: ['Cascade'],
                 summary: 'Delete cascade link',
-                description: 'Undeploys the link first when it is currently deployed/online/offline.',
+                description: 'A pinned link returns 409 and its affected listeners before any changes. Reassign the listeners or acknowledge their current IDs to delete the link and leave them blocked. Deployed links are undeployed first.',
+                requestBody: { required: false, content: { 'application/json': { schema: { type: 'object', properties: {
+                    acknowledgedPinnedListeners: { type: 'array', items: { type: 'string' } },
+                } } } } },
                 responses: {
                     200: { description: 'Deleted', content: { 'application/json': { schema: { $ref: '#/components/schemas/Success' } } } },
                     400: { description: 'Invalid link ID' },
+                    409: { description: 'Confirm the current listener IDs before deletion.', content: { 'application/json': { schema: { allOf: [
+                        { $ref: '#/components/schemas/CascadeDeleteImpact' }, { $ref: '#/components/schemas/Error' },
+                    ] } } } },
                     401: { $ref: '#/components/responses/Unauthorized' },
                     403: { $ref: '#/components/responses/Forbidden' },
                     404: { $ref: '#/components/responses/NotFound' },
