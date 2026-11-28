@@ -87,8 +87,13 @@ async function spoolSize() {
 }
 
 async function removeSpoolFile(filePath) {
+    // Unlinking each unique batch name leaves a negative dentry in the
+    // long-lived spool directory. Reuse one name for the unlink instead.
+    // Concurrent removers may replace it: every file moved here is disposable.
+    const discarded = path.join(path.dirname(filePath), '.discarded');
     try {
-        await fsp.unlink(filePath);
+        await fsp.rename(filePath, discarded);
+        await fsp.unlink(discarded);
     } catch (e) {
         if (e.code !== 'ENOENT') logger.warn(`[AccessLogs] removeSpoolFile: ${e.message}`);
     }

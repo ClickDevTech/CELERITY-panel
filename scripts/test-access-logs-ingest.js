@@ -78,6 +78,18 @@ try { require('mongoose').set('bufferTimeoutMS', 1); } catch (_) { /* mongoose o
     list = await spoolService.listSpool();
     assert.strictEqual(list.length, 1, 'batch stays spooled when ClickHouse not configured');
 
+    // Simulate a restart between rename and unlink, then overlapping removals.
+    // The original unprocessed batch must remain visible and intact.
+    const discarded = path.join(path.dirname(spoolPath), '.discarded');
+    await fsp.writeFile(discarded, gz);
+    assert.deepStrictEqual(await spoolService.listSpool(), [spoolPath]);
+    const finished = await Promise.all(Array.from({ length: 16 }, (_, i) =>
+        spoolService.persistBatch('other-' + i, batchId, gz)));
+    await Promise.all([...finished, finished[0]].map(batch => spoolService.removeSpoolFile(batch.path)));
+    assert.deepStrictEqual(await spoolService.listSpool(), [spoolPath]);
+    assert.deepStrictEqual(await fsp.readFile(spoolPath), gz);
+    await assert.rejects(fsp.stat(discarded), { code: 'ENOENT' });
+
     await fsp.rm(TMP, { recursive: true, force: true });
     console.log('test-access-logs-ingest: OK');
 })().catch(async (e) => {

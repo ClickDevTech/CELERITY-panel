@@ -175,9 +175,11 @@ async function onlineTests() {
     await clickhouse.ensureSchema(7);
 
     const batchId = 'test-batch-' + Date.now();
+    // Keep the test events inside the seven-day retention window.
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/-/g, '/').replace('T', ' ');
     await clickhouse.insertRaw([
-        { node_id: 'n1', raw: '2023/11/22 17:01:32 1.2.3.4:1122 accepted tcp:example.com:443 [vless-in -> direct] email: 42' },
-        { node_id: 'n1', raw: '2023/11/22 17:01:33 from 9.9.9.9:5000 rejected proxy/vless/encoding: invalid request user id: abc' },
+        { node_id: 'n1', raw: `${timestamp} 1.2.3.4:1122 accepted tcp:example.com:443 [vless-in -> direct] email: 42` },
+        { node_id: 'n1', raw: `${timestamp} from 9.9.9.9:5000 rejected proxy/vless/encoding: invalid request user id: abc` },
     ], batchId);
 
     // Give the MV a moment (insert is synchronous, but read is eventually there).
